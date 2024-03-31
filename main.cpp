@@ -110,8 +110,8 @@ int main(int argc, const char **argv)
 
             orb->detect(image, keyPoints);
 
-            for (auto k = keyPoints.begin(); k != keyPoints.end(); ++k) {
-                cv::circle(image, k->pt, (int) k->size / 5, cv::Scalar(0, 0, 255), 1);
+            for (auto & keyPoint : keyPoints) {
+                cv::circle(image, keyPoint.pt, (int) keyPoint.size / 5, cv::Scalar(0, 0, 255), 1);
             }
 
             drawText(image, fps);
