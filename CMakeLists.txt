@@ -17,7 +17,7 @@ message(STATUS "    include path: ${OpenCV_INCLUDE_DIRS}")
 
 include_directories( ${OpenCV_INCLUDE_DIRS} )
 
-add_executable(embedded_cv main.cpp)
+add_executable(embedded_cv main.cpp ImageProcessor.cpp)
 
 target_link_libraries(embedded_cv PRIVATE ${OpenCV_LIBS})
 
