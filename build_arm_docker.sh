@@ -10,7 +10,7 @@ cd ${PROJECT_ROOT}/build/${ARCH}/OpenCV
 PREFIX=${PROJECT_ROOT}/release/${ARCH}
 OPEN_CV_PATH=${PROJECT_ROOT}/../opencv
 
-CXXFLAGS="-mabi=lp64 -march=armv8.2-a+crypto+fp16+rcpc+dotprod -mcmodel=small -mcpu=cortex-a76.cortex-a55+crypto -mtune=cortex-a76.cortex-a55"
+CXXFLAGS="-mabi=lp64 -march=armv8.2-a+crypto+fp16+rcpc+dotprod -mcmodel=small -mcpu=cortex-a76.cortex-a55+crypto -mtune=cortex-a76.cortex-a55 -DCV_OPENCL_RUN_VERBOSE ${CMAKE_CXX_FLAGS}"
 
 PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
  PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu \
@@ -18,8 +18,9 @@ PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
 cmake \
   -DCMAKE_C_FLAGS="${CXXFLAGS}" \
   -DCMAKE_CXX_FLAGS="${CXXFLAGS}" \
-  -DCMAKE_INSTALL_PREFIX=${PREFIX}/OpenCV \
+  -DCMAKE_INSTALL_PREFIX=${PREFIX}/${BUILD_TYPE}/OpenCV \
   -DWITH_OPENCL=ON \
+  -DWITH_OPENCL_SVM=ON \
   -DENABLE_VFPV3=OFF \
   -DENABLE_NEON=ON \
   -DBUILD_TBB=ON \
@@ -47,7 +48,7 @@ cmake \
   -DWITH_UEYE=OFF \
   -DWITH_V4L=ON \
   -DWITH_WEBP=ON \
-  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
   -DCMAKE_TOOLCHAIN_FILE=${OPEN_CV_PATH}/platforms/linux/aarch64-gnu.toolchain.cmake ${OPEN_CV_PATH} \
   && make -j 20 && make install || exit -1
 
@@ -59,7 +60,7 @@ PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
 cmake -DCMAKE_INSTALL_PREFIX=${PREFIX}/embedded_cv \
   -DCMAKE_C_FLAGS="${CXXFLAGS}" \
   -DCMAKE_CXX_FLAGS="${CXXFLAGS}" \
-  -DCMAKE_PREFIX_PATH=${PREFIX} \
-  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=${PREFIX}/${BUILD_TYPE} \
+  -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
   -DCMAKE_TOOLCHAIN_FILE=${OPEN_CV_PATH}/platforms/linux/aarch64-gnu.toolchain.cmake ${PROJECT_ROOT} \
   && make -j 20 && make install

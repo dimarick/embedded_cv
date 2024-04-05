@@ -7,10 +7,14 @@
 
 class ImageProcessor {
 private:
+    cv::Ptr<cv::FastFeatureDetector> fast;
     cv::Ptr<cv::ORB> orb;
+    cv::Ptr<cv::KAZE> kaze;
+    cv::Ptr<cv::AKAZE> akaze;
     std::vector<cv::KeyPoint> keyPoints;
     cv::UMat mask;
     cv::UMat descriptor;
+    cv::UMat grayImage;
 public:
     ImageProcessor(int capWidth, int capHeight);
     void processFrame(cv::UMat image);
