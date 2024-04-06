@@ -13,9 +13,10 @@
 void drawText(cv::UMat &image, double fps);
 
 int main(int argc, const char **argv) {
-    cv::Mat captureFrame;
-    cv::UMat output, input, image;
-    cv::VideoCapture capture;
+    cv::Mat captureFrameLeft, captureFrameRight;
+    cv::UMat output, outputLeft, inputLeft, imageLeft, outputRight, inputRight, imageRight;
+    cv::Mat resultLeft, resultRight;
+    cv::VideoCapture captureLeft, captureRight;
 
     cpptrace::register_terminate_handler();
 
@@ -23,17 +24,13 @@ int main(int argc, const char **argv) {
 
     std::cerr << "Built with OpenCV " << CV_VERSION << ", cv::ocl::haveSVM(): " << cv::ocl::haveSVM() << std::endl;
 
-#ifdef HAVE_OPENCV_HIGHGUI
-    cv::namedWindow("Sample");
-#endif
+    captureLeft.open(argv[1]);
+    captureRight.open(argv[2]);
 
-    capture.open(argv[1]);
-
-    capture.set(cv::CAP_PROP_CONVERT_RGB, false);
-    auto capFps = capture.get(cv::CAP_PROP_FPS);
-    auto capWidth = (int) capture.get(cv::CAP_PROP_FRAME_WIDTH);
-    auto capHeight = (int) capture.get(cv::CAP_PROP_FRAME_HEIGHT);
-    auto capPixFormat = (int) capture.get(cv::CAP_PROP_PVAPI_PIXELFORMAT);
+    auto capFps = captureLeft.get(cv::CAP_PROP_FPS);
+    auto capWidth = (int) captureLeft.get(cv::CAP_PROP_FRAME_WIDTH);
+    auto capHeight = (int) captureLeft.get(cv::CAP_PROP_FRAME_HEIGHT);
+    auto capPixFormat = (int) captureLeft.get(cv::CAP_PROP_PVAPI_PIXELFORMAT);
 
     const char *humanPixelFormat;
 
@@ -71,18 +68,27 @@ int main(int argc, const char **argv) {
 
     auto prev = std::chrono::high_resolution_clock::now();
 
-    capture.read(captureFrame);
+    if (!captureLeft.isOpened()) {
+        std::cerr << "Left Capture is not opened" << std::endl;
+        return -1;
+    }
 
-    captureFrame.type();
+    if (!captureRight.isOpened()) {
+        std::cerr << "Right Capture is not opened" << std::endl;
+        return -1;
+    }
 
-    cv::Size outputSize(640, 480);
-    cv::Size processingSize(640, 480);
+    captureLeft.read(captureFrameLeft);
+    captureRight.read(captureFrameRight);
 
-    const char command[] = "ffmpeg -f rawvideo -pixel_format yuyv422 -s %dx%d -re  -i - %s %s";
+    cv::Size outputSize(capWidth, capHeight);
+    cv::Size processingSize(capWidth, capHeight);
 
-    size_t bufferSize = sizeof(command) + strlen(argv[2]) + strlen(argv[3]) + 50;
+    const char command[] = "ffmpeg -f rawvideo -pixel_format bgr24 -s %dx%d -re  -i - %s %s";
+
+    size_t bufferSize = sizeof(command) + strlen(argv[3]) + strlen(argv[4]) + 50;
     char *formattedCommand = (char *) malloc(bufferSize);
-    snprintf(formattedCommand, bufferSize, command, outputSize.width, outputSize.height, argv[2], argv[3]);
+    snprintf(formattedCommand, bufferSize, command, outputSize.width, outputSize.height, argv[3], argv[4]);
 
     std::cerr << formattedCommand << std::endl;
     std::cerr.flush();
@@ -97,79 +103,80 @@ int main(int argc, const char **argv) {
         return -1;
     }
 
-    cv::Mat result, colorResult;
-
     ImageProcessor processor(processingSize.width, processingSize.height);
 
-    if (capture.isOpened()) {
-        std::cerr << "Capture is opened" << std::endl;
-        double fps = 0.;
-        double avgTime = 0.;
+    double fps = 0.;
+    double avgTime = 0.;
 
-        for (int i = 0;; i++) {
-            capture.read(captureFrame);
-            captureFrame.copyTo(input);
+    for (int i = 0;; i++) {
+        captureLeft.read(captureFrameLeft);
+        captureRight.read(captureFrameRight);
+        captureFrameLeft.copyTo(inputLeft);
+        captureFrameRight.copyTo(inputRight);
 
-            cv::ocl::setUseOpenCL(true);
+        cv::ocl::setUseOpenCL(true);
 
-            auto now = std::chrono::high_resolution_clock::now();
-            auto us = (double) (now - prev).count();
-            prev = now;
+        auto now = std::chrono::high_resolution_clock::now();
+        auto us = (double) (now - prev).count();
+        prev = now;
 
-            fps = 1e9 / us;
+        fps = 1e9 / us;
 
-            if (input.empty()) {
-                break;
-            }
+        if (inputLeft.empty()) {
+            break;
+        }
 
-            auto start = std::chrono::high_resolution_clock::now();
+        auto start = std::chrono::high_resolution_clock::now();
 
+        cv::resize(inputLeft, imageLeft, processingSize, 0, 0,
+                   cv::INTER_NEAREST);
 
-            cv::resize(input, image, processingSize, 0, 0,
-                       cv::INTER_NEAREST);
+        cv::resize(inputRight, imageRight, processingSize, 0, 0,
+                   cv::INTER_NEAREST);
 
-            processor.processFrame(image);
+        processor.processFrame(imageLeft, imageRight, output);
 
-            drawText(image, fps);
+        drawText(imageLeft, fps);
 
-            cv::resize(image, output, outputSize, 0, 0,
-                       cv::INTER_NEAREST);
+        cv::resize(imageLeft, outputLeft, outputSize, 0, 0,
+                   cv::INTER_NEAREST);
 
-            auto end = std::chrono::high_resolution_clock::now();
+        cv::resize(imageRight, outputRight, outputSize, 0, 0,
+                   cv::INTER_NEAREST);
 
-            cv::ocl::setUseOpenCL(false);
+        auto end = std::chrono::high_resolution_clock::now();
 
-            output.copyTo(result);
+        cv::ocl::setUseOpenCL(false);
 
-            double time = ((double) (end - start).count()) / 1e6;
-            double avgA = 2. / ((i < 50 ? 50 : 500) + 1);
-            avgTime = avgTime == 0. ? time : avgA * time + (1 - avgA) * avgTime;
+        outputLeft.copyTo(resultLeft);
+        outputRight.copyTo(resultRight);
 
-            std::cerr << "fps " << fps << " time " << time << " avg " << avgTime << " size "
-                      << result.dataend - result.datastart << std::endl;
+        double time = ((double) (end - start).count()) / 1e6;
+        double avgA = 2. / ((i < 50 ? 50 : 500) + 1);
+        avgTime = avgTime == 0. ? time : avgA * time + (1 - avgA) * avgTime;
 
-            fwrite(result.data, sizeof(char), result.dataend - result.datastart, pipe);
-            fflush(pipe);
+        std::cerr << "fps " << fps << " time " << time << " avg " << avgTime << " size "
+                  << resultLeft.dataend - resultLeft.datastart << std::endl;
+
+//        fwrite(resultLeft.data, sizeof(char), resultLeft.dataend - resultLeft.datastart, pipe);
+//        fflush(pipe);
 
 #ifdef HAVE_OPENCV_HIGHGUI
-            cv::cvtColor(result, colorResult, cv::COLOR_YUV2BGR_YUYV);
-            imshow("Sample", colorResult);
-
-            if (cv::waitKey(1) >= 0) {
-                break;
-            }
-#endif
+        imshow("Left", resultLeft);
+//        imshow("Right", resultRight);
+        if (!output.empty()) {
+            imshow("Result", output);
         }
-    } else {
-        std::cerr << "No capture" << std::endl;
 
-        capture.release();
-
-        return 0;
+        if (cv::waitKey(1) >= 0) {
+            break;
+        }
+#endif
     }
     std::cerr << "exiting..." << std::endl;
 
-    capture.release();
+    captureLeft.release();
+    captureRight.release();
 
 #ifdef HAVE_OPENCV_HIGHGUI
     cv::destroyAllWindows();

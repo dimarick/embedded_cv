@@ -3,11 +3,11 @@ project(embedded_cv)
 
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH};release/amd64/${CMAKE_BUILD_TYPE}/OpenCV)
 
-include_directories("../opencv")
+include_directories("release/amd64/Debug/OpenCV/include/opencv5")
 
 set(CMAKE_CXX_STANDARD 17)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")
-find_package(OpenCV 4.9.0 REQUIRED)
+find_package(OpenCV 5.0.0 REQUIRED)
 
 # If the package has been found, several variables will
 # be set, you can find the full list with descriptions

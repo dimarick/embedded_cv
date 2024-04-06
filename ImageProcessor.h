@@ -11,13 +11,19 @@ private:
     cv::Ptr<cv::ORB> orb;
     cv::Ptr<cv::KAZE> kaze;
     cv::Ptr<cv::AKAZE> akaze;
-    std::vector<cv::KeyPoint> keyPoints;
+    std::vector<cv::KeyPoint> keyPointsLeft;
+    std::vector<cv::KeyPoint> keyPointsRight;
     cv::UMat mask;
-    cv::UMat descriptor;
-    cv::UMat grayImage;
+    cv::UMat descriptorLeft;
+    cv::UMat descriptorRight;
+    cv::UMat grayLeft;
+    cv::UMat grayRight;
+    cv::BFMatcher matcher;
+    cv::FlannBasedMatcher fmatcher;
+    std::vector<cv::DMatch> matches;
 public:
     ImageProcessor(int capWidth, int capHeight);
-    void processFrame(cv::UMat image);
+    void processFrame(cv::UMat &left, cv::UMat &right, cv::UMat &output);
 };
 
 
