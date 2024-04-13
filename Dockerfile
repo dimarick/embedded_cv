@@ -18,4 +18,4 @@ RUN apt install -y git \
  crossbuild-essential-arm64 \
  unzip
 
-RUN apt install -y automake patch perl git tclsh
+RUN apt install -y automake patch perl git tclsh python3
