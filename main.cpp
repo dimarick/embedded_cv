@@ -24,8 +24,13 @@ int main(int argc, const char **argv) {
 
     std::cerr << "Built with OpenCV " << CV_VERSION << ", cv::ocl::haveSVM(): " << cv::ocl::haveSVM() << std::endl;
 
-    captureLeft.open(argv[1]);
-    captureRight.open(argv[2]);
+    if (strcmp(argv[1], argv[2]) == 0) {
+        captureLeft.open(argv[1]);
+        captureRight = captureLeft;
+    } else {
+        captureLeft.open(argv[1]);
+        captureRight.open(argv[2]);
+    }
 
     auto capFps = captureLeft.get(cv::CAP_PROP_FPS);
     auto capWidth = (int) captureLeft.get(cv::CAP_PROP_FRAME_WIDTH);
@@ -81,7 +86,7 @@ int main(int argc, const char **argv) {
     captureLeft.read(captureFrameLeft);
     captureRight.read(captureFrameRight);
 
-    cv::Size outputSize(capWidth, capHeight);
+    cv::Size outputSize(capWidth / 2, capHeight / 2);
     cv::Size processingSize(capWidth, capHeight);
 
     const char command[] = "ffmpeg -f rawvideo -pixel_format bgr24 -s %dx%d -re  -i - %s %s";
@@ -110,9 +115,9 @@ int main(int argc, const char **argv) {
 
     for (int i = 0;; i++) {
         captureLeft.read(captureFrameLeft);
-        captureRight.read(captureFrameRight);
+//        captureRight.read(captureFrameRight);
         captureFrameLeft.copyTo(inputLeft);
-        captureFrameRight.copyTo(inputRight);
+        captureFrameLeft.copyTo(inputRight);
 
         cv::ocl::setUseOpenCL(true);
 
@@ -158,8 +163,8 @@ int main(int argc, const char **argv) {
         std::cerr << "fps " << fps << " time " << time << " avg " << avgTime << " size "
                   << resultLeft.dataend - resultLeft.datastart << std::endl;
 
-//        fwrite(resultLeft.data, sizeof(char), resultLeft.dataend - resultLeft.datastart, pipe);
-//        fflush(pipe);
+        fwrite(resultLeft.data, sizeof(char), resultLeft.dataend - resultLeft.datastart, pipe);
+        fflush(pipe);
 
 #ifdef HAVE_OPENCV_HIGHGUI
         imshow("Left", resultLeft);

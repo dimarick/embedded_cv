@@ -1,9 +1,20 @@
 cmake_minimum_required(VERSION 3.16)
 project(embedded_cv)
 
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH};release/amd64/${CMAKE_BUILD_TYPE}/OpenCV)
+if(NOT DEFINED ARCH)
+    set(ARCH "amd64")
+    message("Set default arch to ${ARCH}")
+else()
+    message("arch is ${ARCH}")
+endif()
 
-include_directories("release/amd64/Debug/OpenCV/include/opencv5")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH};release/${ARCH}/${CMAKE_BUILD_TYPE}/OpenCV)
+
+include_directories("release/${ARCH}/Debug/OpenCV/include/opencv5")
+include_directories("release/${ARCH}/Debug/OpenCV/include/opencv5/opencv2")
+
+# only for ide analizer
+add_definitions(-include /home/dima/embedded_cv/release/${ARCH}/Debug/OpenCV/include/opencv5/opencv2/cvconfig.h)
 
 set(CMAKE_CXX_STANDARD 17)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")

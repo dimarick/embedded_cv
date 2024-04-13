@@ -15,4 +15,7 @@ RUN apt install -y git \
  pkgconf \
  build-essential \
  ninja-build \
- crossbuild-essential-arm64
+ crossbuild-essential-arm64 \
+ unzip
+
+RUN apt install -y automake patch perl git tclsh
