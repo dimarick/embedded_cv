@@ -22,5 +22,5 @@ docker run \
     -w /home/dima/embedded_cv/ \
     -it debian-build bash build_arm_docker.sh || exit -1
 
-rsync -av --progress ${PROJECT_ROOT}/release/${ARCH}/${BUILD_TYPE}/embedded_cv/bin/embedded_cv dima@192.168.1.41: || exit -1
-rsync -av --progress ${PROJECT_ROOT}/launch.sh dima@192.168.1.41: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/release/${ARCH}/${BUILD_TYPE}/embedded_cv/bin/embedded_cv dima@192.168.1.41: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/launch.sh dima@192.168.1.41: || exit -1
