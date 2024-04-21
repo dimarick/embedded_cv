@@ -1,5 +1,5 @@
-#ifndef WS_CTL_WSHANDLER_H
-#define WS_CTL_WSHANDLER_H
+#ifndef WS_CTL_SOCKETPROXY_H
+#define WS_CTL_SOCKETPROXY_H
 
 #include <seasocks/PrintfLogger.h>
 #include <seasocks/Server.h>
@@ -12,31 +12,22 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unistd.h>
+#include <netinet/in.h>
 
 using namespace seasocks;
 
-class WsHandler : public WebSocket::Handler {
-public:
-    explicit WsHandler(Server* server)
-            : _server(server), _currentValue(0) {
-        setValue(1);
-    }
-
-    void onConnect(WebSocket* connection) override;
-
-    void onData(WebSocket* connection, const char* data) override;
-
-    void onDisconnect(WebSocket* connection) override;
-
+class SocketProxy : public WebSocket::Handler {
 private:
     std::set<WebSocket*> _connections;
-    Server* _server;
-    int _currentValue;
-    std::string _currentSetValue;
-
-    void setValue(int value) {
-        _currentValue = value;
-    }
+    const Server &server;
+    const std::string &socketName;
+    int socketFd = 0;
+public:
+    explicit SocketProxy(const Server &server, const std::string &socketName) : server(server), socketName(socketName) {}
+    void onConnect(WebSocket* connection) override;
+    void onData(WebSocket* connection, const char* data) override;
+    void onDisconnect(WebSocket* connection) override;
 };
 
-#endif //WS_CTL_WSHANDLER_H
+#endif //WS_CTL_SOCKETPROXY_H

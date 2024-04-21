@@ -1,2 +1,6 @@
 /build/
 /release/
+/hw_ctl/build/
+/hw_ctl/cmake-build-debug/
+/hw_ctl/cmake-build-debug-coverage/
+/hw_ctl/release/

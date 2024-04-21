@@ -40,8 +40,11 @@ FetchContent_MakeAvailable(cpptrace)
 
 include_directories( ${OpenCV_INCLUDE_DIRS} )
 
+include_directories(./mini_server)
+add_subdirectory(./mini_server)
+
 add_executable(embedded_cv main.cpp ImageProcessor.cpp)
 
-target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS})
+target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} mini_server)
 
 install(TARGETS embedded_cv DESTINATION bin)

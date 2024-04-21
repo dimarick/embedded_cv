@@ -11,10 +11,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cpptrace)
 
-include_directories(../mini_server)
-add_subdirectory(../mini_server ./mini_server)
+add_library(mini_server BroadcastingServer.cpp CallbackHandler.cpp CommandServer.cpp
+        SocketFactory.cpp)
 
-add_executable(hw_ctl main.cpp)
-target_link_libraries(hw_ctl PRIVATE cpptrace::cpptrace mini_server)
-
-install(TARGETS hw_ctl DESTINATION bin)
+install(TARGETS mini_server DESTINATION lib)

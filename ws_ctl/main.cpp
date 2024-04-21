@@ -1,7 +1,7 @@
 #include <seasocks/PrintfLogger.h>
 #include <seasocks/Server.h>
 #include <cpptrace/cpptrace.hpp>
-#include "WsHandler.h"
+#include "SocketProxy.h"
 
 int main(int argc, const char* argv[]) {
     cpptrace::register_terminate_handler();
@@ -10,8 +10,10 @@ int main(int argc, const char* argv[]) {
 
     Server server(logger);
 
-    auto handler = std::make_shared<WsHandler>(&server);
-    server.addWebSocketHandler("/ws", handler);
+    server.addWebSocketHandler("/hw_ctl", std::make_unique<SocketProxy>(server, "hw_ctl"));
+    server.addWebSocketHandler("/hw_tm", std::make_unique<SocketProxy>(server, "hw_tm"));
+    server.addWebSocketHandler("/cv_ctl", std::make_unique<SocketProxy>(server, "cv_ctl"));
+    server.addWebSocketHandler("/cv_tm", std::make_unique<SocketProxy>(server, "cv_tm"));
     server.serve("web", 9090);
     return 0;
 }
