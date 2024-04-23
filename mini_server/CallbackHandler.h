@@ -8,9 +8,9 @@ typedef const std::function<void(int socket, const std::string &in, std::string 
 
 namespace mini_server {
     class CallbackHandler : public HandlerInterface {
-        const HandlerFunction &handler;
+        HandlerFunction &handler;
     public:
-        explicit CallbackHandler(const HandlerFunction &handler) : handler(handler) {}
+        explicit CallbackHandler(HandlerFunction &handler) : handler(handler) {}
 
         void handle(int socket, const std::string &in, std::string &out) final;
     };

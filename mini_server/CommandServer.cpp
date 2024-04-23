@@ -8,6 +8,7 @@
 #include <thread>
 #include <map>
 #include <poll.h>
+#include <iostream>
 
 using namespace mini_server;
 
@@ -47,7 +48,7 @@ void CommandServer::interact(int socket, CommandServer *server, int threadId, st
         std::string in = input;
         std::string out;
 
-        server->handler.handle(socket, in, out);
+        server->handler->handle(socket, in, out);
 
         n = write(socket, out.c_str(), out.size());
 
@@ -83,11 +84,11 @@ void CommandServer::run() {
         threads.insert({threadId, std::thread(CommandServer::interact, acceptedSocket, this, threadId, &threads)});
     }
 
+    std::cerr << "Performing graceful shutdown of CommandServer..." << std::endl;
+
     for (auto &thread : threads) {
         thread.second.join();
     }
-}
 
-void CommandServer::stop() {
-    running = false;
+    std::cerr << "Done" << std::endl;
 }

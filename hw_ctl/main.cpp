@@ -9,6 +9,7 @@
 #include <CommandServer.h>
 #include <BroadcastingServer.h>
 #include <SocketFactory.h>
+#include <csignal>
 
 using namespace mini_server;
 
@@ -21,9 +22,16 @@ std::string serializeTimePoint( const std::chrono::system_clock::time_point& tim
     return ss.str();
 }
 
+static BroadcastingServer broadcastingServer;
+static CommandServer commandServer;
+
+static std::atomic<bool> running = true;
+
 int main( int argc, char *argv[] ) {
     cpptrace::register_terminate_handler();
-    BroadcastingServer broadcastingServer(SocketFactory::createListeningSocket("hw_tm", 10));
+
+    broadcastingServer.setSocket(SocketFactory::createListeningSocket("/tmp/hw_tm", 10));
+    commandServer.setSocket(SocketFactory::createListeningSocket("/tmp/hw_ctl", 1));
 
     CallbackHandler handler = CallbackHandler(
         [](int socket, const std::string &in, std::string &out) {
@@ -37,19 +45,28 @@ int main( int argc, char *argv[] ) {
         }
     );
 
-    CommandServer commandServer(SocketFactory::createListeningSocket("hw_ctl", 1), handler);
+    commandServer.setHandler(handler);
 
-    std::thread commandServerThread = std::thread([&commandServer]() {
+    signal(SIGINT, [](int signal) {
+        running = false;
+        broadcastingServer.stop();
+        commandServer.stop();
+    });
+
+    std::thread commandServerThread = std::thread([]() {
         commandServer.run();
     });
 
-    std::thread broadcastingServerThread = std::thread([&broadcastingServer]() {
+    std::thread broadcastingServerThread = std::thread([]() {
         broadcastingServer.run();
     });
 
-    while(true) {
+    while(running) {
         sleep(2);
         auto message = serializeTimePoint(std::chrono::high_resolution_clock::now(), "%Z %Y-%m-%d %H:%M:%S.");
         broadcastingServer.broadcast(message);
     }
+
+    broadcastingServerThread.join();
+    commandServerThread.join();
 }

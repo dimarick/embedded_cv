@@ -3,16 +3,22 @@
 
 #include <mutex>
 #include <set>
+#include <atomic>
 
 namespace mini_server {
     class BroadcastingServer {
-        int socket;
+        int socket = -1;
         std::mutex acceptedSocketsMutex;
         std::set<int> acceptedSockets;
+        std::atomic<bool> running;
     public:
-        explicit BroadcastingServer(int socket) : socket(socket) {}
-
+        void setSocket(int _socket) {
+            this->socket = _socket;
+        }
         void run();
+        void stop() {
+            running = false;
+        }
 
         void broadcast(const std::string &message);
     };

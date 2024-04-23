@@ -1,3 +1,4 @@
+#include <thread>
 #include "SocketProxy.h"
 
 void SocketProxy::onData(WebSocket *connection, const char *data) {
@@ -6,6 +7,7 @@ void SocketProxy::onData(WebSocket *connection, const char *data) {
     if (n == 0) {
         perror("Unable to write to socket");
         connection->send("Unable to write to socket");
+        connection->send(strerror(errno));
         connection->close();
 
         return;
@@ -21,6 +23,7 @@ void SocketProxy::onConnect(WebSocket *connection) {
     if (status < 0) {
         perror("Unable to connect to socket");
         connection->send("Unable to connect to socket");
+        connection->send(strerror(errno));
         connection->close();
 
         return;
@@ -44,16 +47,37 @@ void SocketProxy::onConnect(WebSocket *connection) {
                 break;
             }
 
-            connection->send(buffer, n);
+            this->server.execute(std::function{[&connection, &buffer, n]() {
+                connection->send(buffer, n);
+            }});
         }
 
         exit(0);
     }
+
+    readingThread = std::thread([](Server *_server, WebSocket *connection, int _socketFd, std::atomic<bool> *_running) {
+        uint8_t buffer[256];
+        while (*_running) {
+            auto n = read(_socketFd, buffer, sizeof(buffer));
+
+            if (n == 0) {
+                perror("Unable to read socket");
+                break;
+            }
+
+            _server->execute(std::function{[&connection, &buffer, n]() {
+                connection->send(buffer, n);
+                std::cerr << "sending data" << buffer << std::endl;
+            }});
+        }
+    }, &this->server, connection, socketFd, &running);
 }
 
 void SocketProxy::onDisconnect(WebSocket *connection) {
+    running = false;
     close(socketFd);
     _connections.erase(connection);
     std::cout << "Disconnected: " << connection->getRequestUri()
               << " : " << formatAddress(connection->getRemoteAddress()) << "\n";
+    readingThread.join();
 }

@@ -13,6 +13,8 @@ extern "C++" int SocketFactory::createListeningSocket(const std::string &name, i
 
     name.copy(addr.sa_data, sizeof(addr.sa_data), 0);
 
+    unlink(name.c_str());
+
     if (bind(sock, &addr, sizeof(addr)) < 0) {
         throw std::runtime_error(strerror(errno));
     }

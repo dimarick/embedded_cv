@@ -5,10 +5,26 @@
     <script src='/app.js'></script>
   </head>
   <body>
-	<div id="message">Initializing...</div>
-	<input id="count" type="button" value="..."></input>
-	<input id="close" type="button" value="Close"></input>
-	<input id="die" type="button" value="Die"></input>
+	<div>cv_ctl <div id="message-cv_ctl">Initializing...</div></div>
+	<div>cv_tm <div id="message-cv_tm">Initializing...</div></div>
+	<div>hw_ctl <div id="message-hw_ctl">Initializing...</div></div>
+	<div>hw_tm <div id="message-hw_tm">Initializing...</div></div>
+    <table>
+        <thead>
+            <tr>
+                <td colspan="2"><input id="command-cv_ctl" type="text"/><input id="send-cv_ctl" type="button" value="cv" /></td>
+                <td colspan="2"><input id="command-hw_ctl" type="text"/><input id="send-hw_ctl" type="button" value="hw" /></td>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><div id="log-cv_ctl"></div></td>
+                <td><div id="log-cv_tm"></div></td>
+                <td><div id="log-hw_ctl"></div></td>
+                <td><div id="log-hw_tm"></div></td>
+            </tr>
+        </tbody>
+    </table>
   </body>
 </html>
 

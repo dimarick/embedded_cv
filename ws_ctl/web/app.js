@@ -4,32 +4,84 @@ document.onreadystatechange = function() {
     if (document.readyState !== 'complete') {
         return;
     }
-    ws = new WebSocket('ws://' + document.location.host + '/ws');
-    ws.onopen = function() {
+    // cvCtl = new WebSocket('ws://' + document.location.host + '/cv_ctl');
+    // cvTm = new WebSocket('ws://' + document.location.host + '/cv_tm');
+    hwCtl = new WebSocket('ws://' + document.location.host + '/hw_ctl');
+    hwTm = new WebSocket('ws://' + document.location.host + '/hw_tm');
+    //
+    // cvCtl.onopen = function() {
+    //     console.log('onopen');
+    //     document.getElementById('message-cv_ctl').textContent = 'Connected.';
+    // };
+    // cvCtl.onclose = function() {
+    //     document.getElementById('message-cv_ctl').textContent = 'Lost connection.';
+    //     console.log('onclose');
+    // };
+    // cvCtl.onmessage = function(message) {
+    //     console.log("got '" + message.data + "'");
+    //     const row = document.createElement('p');
+    //     row.textContent = '>' + message.data;
+    //     document.getElementById('log-cv_ctl').appendChild(row);
+    // };
+    // cvTm.onmessage = function(message) {
+    //     console.log("got '" + message.data + "'");
+    //     const row = document.createElement('p');
+    //     row.textContent = '>' + message.data;
+    //     document.getElementById('log-cv_tm').appendChild(row);
+    // };
+    // cvCtl.onerror = function(error) {
+    //     document.getElementById('message-cv_ctl').textContent = 'Error: ' + error;
+    //     console.log(error);
+    // };
+    // cvTm.onerror = function(error) {
+    //     document.getElementById('message-cv_tm').textContent = 'Error: ' + error;
+    //     console.log(error);
+    // };
+    // document.getElementById('send-cv_ctl').onclick = function() {
+    //     const input = document.getElementById('command-cv_ctl');
+    //     const row = document.createElement('p');
+    //     row.textContent = '<' + input.value;
+    //     document.getElementById('log-cv_ctl').appendChild(row);
+    //     cvCtl.send(input.value);
+    //     input.value = '';
+    // };
+
+    hwCtl.onopen = function() {
         console.log('onopen');
-        document.getElementById('message').textContent = 'Connected.';
+        document.getElementById('message-hw_ctl').textContent = 'Connected.';
     };
-    ws.onclose = function() {
-        document.getElementById('message').textContent = 'Lost connection.';
+    hwCtl.onclose = function() {
+        document.getElementById('message-hw_ctl').textContent = 'Lost connection.';
         console.log('onclose');
     };
-    ws.onmessage = function(message) {
+    hwCtl.onmessage = function(message) {
         console.log("got '" + message.data + "'");
-        document.getElementById('message').textContent = message.data;
-        document.getElementById('count').value = message.data;
+        const row = document.createElement('p');
+        row.textContent = '>' + message.data;
+        document.getElementById('log-hw_ctl').appendChild(row);
     };
-    ws.onerror = function(error) {
-        console.log('onerror ' + error);
+    hwTm.onmessage = async function(message) {
+        const text = await message.data.text();
+        console.log("got '" + text + "'");
+        const row = document.createElement('p');
+        row.textContent = '>' + text;
+        document.getElementById('log-hw_tm').appendChild(row);
+    };
+    hwCtl.onerror = function(error) {
+        document.getElementById('message-hw_ctl').textContent = 'Error: ' + error;
         console.log(error);
     };
-    document.getElementById('count').onclick = function() {
-    	ws.send(document.getElementById('count').value);
+    hwTm.onerror = function(error) {
+        document.getElementById('message-hw_tm').textContent = 'Error: ' + error;
+        console.log(error);
     };
-    document.getElementById('close').onclick = function() {
-      ws.send('close');
-    };
-    document.getElementById('die').onclick = function() {
-      ws.send('die');
+    document.getElementById('send-hw_ctl').onclick = function() {
+        const input = document.getElementById('command-hw_ctl');
+        const row = document.createElement('p');
+        row.textContent = '<' + input.value;
+        document.getElementById('log-hw_ctl').appendChild(row);
+        cvCtl.send(input.value);
+        input.value = '';
     };
 };
 

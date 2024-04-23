@@ -12,19 +12,47 @@
 #include <CommandServer.h>
 #include <BroadcastingServer.h>
 #include <unistd.h>
-#include <netinet/in.h>
 #include <thread>
+#include <atomic>
 #include <SocketFactory.h>
 #include <CallbackHandler.h>
+#include <csignal>
 
 using namespace mini_server;
 
 void drawText(cv::UMat &image, double fps);
 
-void runControlThreads();
+static std::atomic<bool> running = true;
+
+static BroadcastingServer broadcastingServer;
+static CommandServer commandServer;
 
 int main(int argc, const char **argv) {
-    runControlThreads();
+    cpptrace::register_terminate_handler();
+
+    broadcastingServer.setSocket(SocketFactory::createListeningSocket("cv_tm", 10));
+    commandServer.setSocket(SocketFactory::createListeningSocket("cv_ctl", 1));
+
+    auto handler = CallbackHandler([](int socket, const std::string &in, std::string &out) {
+        out = std::string("CVOK: ") + in;
+        broadcastingServer.broadcast(std::string("TM: ") + out);
+    });
+
+    commandServer.setHandler(handler);
+
+    signal(SIGINT, [](int signal) {
+        running = false;
+        broadcastingServer.stop();
+        commandServer.stop();
+    });
+
+    std::thread commandServerThread = std::thread([]() {
+        commandServer.run();
+    });
+
+    std::thread broadcastingServerThread = std::thread([]() {
+        broadcastingServer.run();
+    });
 
     cv::Mat captureFrameLeft, captureFrameRight;
     cv::UMat output, outputLeft, inputLeft, imageLeft, outputRight, inputRight, imageRight;
@@ -126,7 +154,7 @@ int main(int argc, const char **argv) {
     double fps = 0.;
     double avgTime = 0.;
 
-    for (int i = 0;; i++) {
+    for (int i = 0; running; i++) {
         captureLeft.read(captureFrameLeft);
 //        captureRight.read(captureFrameRight);
         captureFrameLeft.copyTo(inputLeft);
@@ -200,25 +228,10 @@ int main(int argc, const char **argv) {
     cv::destroyAllWindows();
 #endif
 
+    broadcastingServerThread.join();
+    commandServerThread.join();
+
     return 0;
-}
-
-void runControlThreads() {
-    BroadcastingServer broadcastingServer(SocketFactory::createListeningSocket("cv_tm", 10));
-    CallbackHandler handler([&broadcastingServer](int socket, const std::string &in, std::string &out) {
-        out = std::string("CVOK: ") + in;
-        broadcastingServer.broadcast(std::string("TM: ") + out);
-    });
-
-    CommandServer commandServer(SocketFactory::createListeningSocket("cv_ctl", 1), handler);
-
-    std::thread commandServerThread = std::thread([&commandServer]() {
-        commandServer.run();
-    });
-
-    std::thread broadcastingServerThread = std::thread([&broadcastingServer]() {
-        broadcastingServer.run();
-    });
 }
 
 void drawText(cv::UMat &image, double fps) {
