@@ -5,6 +5,7 @@
 #endif
 #include "opencv2/videoio.hpp"
 #include "ImageProcessor.h"
+#include "CvCommandHandler.h"
 #include <opencv2/core/ocl.hpp>
 #include <iostream>
 #include <chrono>
@@ -15,7 +16,6 @@
 #include <thread>
 #include <atomic>
 #include <SocketFactory.h>
-#include <CallbackHandler.h>
 #include <csignal>
 
 using namespace mini_server;
@@ -30,14 +30,9 @@ static CommandServer commandServer;
 int main(int argc, const char **argv) {
     cpptrace::register_terminate_handler();
 
-    broadcastingServer.setSocket(SocketFactory::createListeningSocket("cv_tm", 10));
-    commandServer.setSocket(SocketFactory::createListeningSocket("cv_ctl", 1));
-
-    auto handler = CallbackHandler([](int socket, const std::string &in, std::string &out) {
-        out = std::string("CVOK: ") + in;
-        broadcastingServer.broadcast(std::string("TM: ") + out);
-    });
-
+    broadcastingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
+    commandServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_ctl", 1));
+    auto handler = CvCommandHandler(broadcastingServer);
     commandServer.setHandler(handler);
 
     signal(SIGINT, [](int signal) {
@@ -203,6 +198,13 @@ int main(int argc, const char **argv) {
 
         std::cerr << "fps " << fps << " time " << time << " avg " << avgTime << " size "
                   << resultLeft.dataend - resultLeft.datastart << std::endl;
+
+        std::ostringstream tm;
+
+        tm << "fps " << fps << " time " << time << " avg " << avgTime << " size "
+               << resultLeft.dataend - resultLeft.datastart << std::endl;
+
+        broadcastingServer.broadcast(tm.str());
 
         fwrite(resultLeft.data, sizeof(char), resultLeft.dataend - resultLeft.datastart, pipe);
         fflush(pipe);

@@ -36,7 +36,7 @@ int main( int argc, char *argv[] ) {
     broadcastingServer.setSocket(SocketFactory::createListeningSocket("/tmp/hw_tm", 10));
     commandServer.setSocket(SocketFactory::createListeningSocket("/tmp/hw_ctl", 1));
 
-    CallbackHandler handler = CallbackHandler(
+    auto handler = CallbackHandler(
         [](int socket, const std::string &in, std::string &out) {
             char prefix[] = "AT+";
             if (in.rfind(prefix) == 0) {

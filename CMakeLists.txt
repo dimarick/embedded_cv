@@ -45,7 +45,7 @@ add_subdirectory(./mini_server)
 add_subdirectory(./hw_ctl)
 add_subdirectory(./ws_ctl)
 
-add_executable(embedded_cv main.cpp ImageProcessor.cpp)
+add_executable(embedded_cv main.cpp ImageProcessor.cpp CvCommandHandler.cpp)
 
 target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} mini_server)
 
