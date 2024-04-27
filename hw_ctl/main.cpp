@@ -15,10 +15,13 @@ using namespace mini_server;
 
 std::string serializeTimePoint( const std::chrono::system_clock::time_point& time, const std::string& format)
 {
+    using namespace std::chrono;
     std::time_t tt = std::chrono::system_clock::to_time_t(time);
     std::tm tm = *std::gmtime(&tt); //GMT (UTC)
     std::stringstream ss;
     ss << std::put_time( &tm, format.c_str() );
+    auto us = duration_cast<nanoseconds>(time.time_since_epoch());
+    ss << std::setfill('0') << std::setw(6) << us.count() % (int)1e9;
     return ss.str();
 }
 
@@ -38,7 +41,7 @@ int main( int argc, char *argv[] ) {
             char prefix[] = "AT+";
             if (in.rfind(prefix) == 0) {
                 out = "HWOK:";
-                out += (in.substr(sizeof(prefix), in.size()));
+                out += (in.substr(sizeof(prefix)-sizeof(""), in.size()));
             } else {
                 out = "Invalid command";
             }

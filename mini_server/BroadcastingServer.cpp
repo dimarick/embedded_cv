@@ -45,7 +45,7 @@ extern "C++" void BroadcastingServer::broadcast(const std::string &message) {
     acceptedSocketsMutex.unlock();
 
     for (auto acceptedSocket : threadSafeAcceptedSockets) {
-        auto n = write(acceptedSocket, message.c_str(), message.size());
+        auto n = send(acceptedSocket, message.c_str(), message.size(), MSG_NOSIGNAL);
 
         if (n < 0) {
             perror("ERROR writing to socket");

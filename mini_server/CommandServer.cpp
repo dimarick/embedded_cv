@@ -5,14 +5,31 @@
 #include <cstring>
 #include <unistd.h>
 #include <netinet/in.h>
+#include <future>
 #include <thread>
-#include <map>
 #include <poll.h>
 #include <iostream>
+#include <cassert>
+#include <mutex>
 
 using namespace mini_server;
 
-void CommandServer::interact(int socket, CommandServer *server, int threadId, std::map<int, std::thread> *threads) {
+void CommandServer::interact(int socket, CommandServer *server, int threadId) {
+    class Finally
+    {
+        CommandServer *server;
+        int threadId;
+    public:
+        Finally(CommandServer *server, int threadId) : server(server), threadId(threadId) {}
+        ~Finally()
+        {
+            server->deadThreadsMutex.lock();
+            server->deadThreads.insert(threadId);
+            server->deadThreadsMutex.unlock();
+        }
+    };
+
+    Finally finally(server, threadId);
 
     char input[BUFFER_SIZE];
     struct pollfd fd = { .fd = socket, .events = POLLIN };
@@ -20,7 +37,6 @@ void CommandServer::interact(int socket, CommandServer *server, int threadId, st
     while (server->running) {
         int pollStatus = poll(&fd, 1, 50);
         if (pollStatus < 0) {
-            threads->erase(threadId);
             throw std::runtime_error(strerror(errno));
         }
 
@@ -31,8 +47,11 @@ void CommandServer::interact(int socket, CommandServer *server, int threadId, st
         bzero(input,sizeof(input));
         auto n = read(socket, input, sizeof(input));
 
+        if (errno == EPIPE) {
+            break;
+        }
+
         if (n == BUFFER_SIZE) {
-            threads->erase(threadId);
             throw std::runtime_error(strerror(errno));
         }
 
@@ -41,7 +60,6 @@ void CommandServer::interact(int socket, CommandServer *server, int threadId, st
         }
 
         if (n < 0) {
-            threads->erase(threadId);
             throw std::runtime_error(strerror(errno));
         }
 
@@ -53,18 +71,16 @@ void CommandServer::interact(int socket, CommandServer *server, int threadId, st
         n = write(socket, out.c_str(), out.size());
 
         if (n < 0) {
-            threads->erase(threadId);
             throw std::runtime_error(strerror(errno));
         }
     }
-
-    threads->erase(threadId);
 }
 
 void CommandServer::run() {
     struct pollfd fd = { .fd = socket, .events = POLLIN };
-    std::map<int, std::thread> threads;
     int threadId = 0;
+
+    assert(running == false);
 
     running = true;
 
@@ -74,6 +90,17 @@ void CommandServer::run() {
             throw std::runtime_error(strerror(errno));
         }
 
+        deadThreadsMutex.lock();
+        for (const auto &deadThreadId : deadThreads) {
+            const auto &iterator = threads.find(deadThreadId);
+            iterator->second.join();
+            threads.erase(deadThreadId);
+            std::cerr << "Thread " << deadThreadId << " is dead. " << threads.size() << " is alive" << std::endl;
+        }
+
+        deadThreads.clear();
+        deadThreadsMutex.unlock();
+
         if (pollStatus == 0) {
             continue;
         }
@@ -81,13 +108,17 @@ void CommandServer::run() {
         int acceptedSocket = accept(socket, nullptr, nullptr);
         threadId++;
 
-        threads.insert({threadId, std::thread(CommandServer::interact, acceptedSocket, this, threadId, &threads)});
+        threads.insert({threadId, std::thread(CommandServer::interact, acceptedSocket, this, threadId)});
+
+        std::cerr << "New thread " << threadId << ". " << threads.size() << " is alive" << std::endl;
     }
 
     std::cerr << "Performing graceful shutdown of CommandServer..." << std::endl;
 
     for (auto &thread : threads) {
         thread.second.join();
+        threads.erase(thread.first);
+        std::cerr << "Thread " << threadId << "is dead. " << threads.size() << " is alive" << std::endl;
     }
 
     std::cerr << "Done" << std::endl;
