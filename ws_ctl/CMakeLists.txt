@@ -21,7 +21,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cpptrace)
 
-add_executable(ws_ctl main.cpp SocketProxy.cpp)
+add_executable(ws_ctl main.cpp SocketProxy.cpp ConnectionHandler.cpp)
 target_link_libraries(ws_ctl PRIVATE cpptrace::cpptrace seasocks embedded2)
 
 install(TARGETS ws_ctl DESTINATION bin)
