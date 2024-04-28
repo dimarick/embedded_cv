@@ -15,11 +15,19 @@ document.onreadystatechange = function() {
             document.getElementById('message-hw_ctl').textContent = 'Lost connection.';
             console.log('onclose');
         };
-        hwCtl.onmessage = function (message) {
-            console.log("got '" + message.data + "'");
+        hwCtl.onmessage = async function (message) {
+            const data = message.data;
+            let text;
+            if (data instanceof Blob) {
+                text = await data.text();
+            } else {
+                text = data;
+            }
+
+            console.log("got '" + text + "'");
             const row = document.createElement('p');
-            row.textContent = '>' + message.data;
-            document.getElementById('log-hw_ctl').appendChild(row);
+            row.textContent = '>' + text;
+            document.getElementById('log-hw_ctl').prepend(row);
         };
         hwCtl.onerror = function (error) {
             document.getElementById('message-hw_ctl').textContent = 'Error: ' + error;
@@ -29,8 +37,8 @@ document.onreadystatechange = function() {
             const input = document.getElementById('command-hw_ctl');
             const row = document.createElement('p');
             row.textContent = '<' + input.value;
-            document.getElementById('log-hw_ctl').appendChild(row);
-            cvCtl.send(input.value);
+            document.getElementById('log-hw_ctl').prepend(row);
+            hwCtl.send(input.value);
             input.value = '';
         };
 
@@ -47,11 +55,18 @@ document.onreadystatechange = function() {
             document.getElementById('message-hw_tm').textContent = 'Connected.';
         };
         hwTm.onmessage = async function (message) {
-            const text = await message.data.text();
+            const data = message.data;
+            let text;
+            if (data instanceof Blob) {
+                text = await data.text();
+            } else {
+                text = data;
+            }
+
             console.log("got '" + text + "'");
             const row = document.createElement('p');
             row.textContent = '>' + text;
-            document.getElementById('log-hw_tm').appendChild(row);
+            document.getElementById('log-hw_tm').prepend(row);
         };
         hwTm.onclose = function () {
             document.getElementById('message-hw_tm').textContent = 'Lost connection.';
@@ -60,63 +75,100 @@ document.onreadystatechange = function() {
 
         return hwTm;
     }
+    function connectCvCtl() {
+        const cvCtl = new WebSocket('ws://' + document.location.host + '/cv_ctl');
 
-    let hwTm;
-    let hwCtl;
+        cvCtl.onopen = function () {
+            console.log('onopen');
+            document.getElementById('message-cv_ctl').textContent = 'Connected.';
+        };
+        cvCtl.onclose = function () {
+            document.getElementById('message-cv_ctl').textContent = 'Lost connection.';
+            console.log('onclose');
+        };
+        cvCtl.onmessage = async function (message) {
+            const row = document.createElement('p');
+
+            const data = message.data;
+            let text;
+            if (data instanceof Blob) {
+                text = await data.text();
+            } else {
+                text = data;
+            }
+
+            console.log("got '" + text + "'");
+            row.textContent = '>' + text;
+            document.getElementById('log-cv_ctl').prepend(row);
+        };
+        cvCtl.onerror = function (error) {
+            document.getElementById('message-cv_ctl').textContent = 'Error: ' + error;
+            console.log(error);
+        };
+        document.getElementById('send-cv_ctl').onclick = function () {
+            const input = document.getElementById('command-cv_ctl');
+            const row = document.createElement('p');
+            row.textContent = '<' + input.value;
+            document.getElementById('log-cv_ctl').prepend(row);
+            cvCtl.send(input.value);
+            input.value = '';
+        };
+
+        return cvCtl;
+    }
+    function connectCvTm() {
+        const cvTm = new WebSocket('ws://' + document.location.host + '/cv_tm');
+        cvTm.onerror = function (error) {
+            document.getElementById('message-cv_tm').textContent = 'Error: ' + error;
+            console.log(error);
+        };
+        cvTm.onopen = function () {
+            console.log('onopen');
+            document.getElementById('message-cv_tm').textContent = 'Connected.';
+        };
+        cvTm.onmessage = async function (message) {
+            const data = message.data;
+            let text;
+            if (data instanceof Blob) {
+                text = await data.text();
+            } else {
+                text = data;
+            }
+
+            console.log("got '" + text + "'");
+            const row = document.createElement('p');
+            row.textContent = '>' + text;
+            document.getElementById('log-cv_tm').prepend(row);
+        };
+        cvTm.onclose = function () {
+            document.getElementById('message-cv_tm').textContent = 'Lost connection.';
+            console.log('onclose');
+        };
+
+        return cvTm;
+    }
+
+    window.hwTm;
+    window.hwCtl;
 
     setInterval(function () {
-        if (!hwTm || hwTm.CLOSED) {
-            hwTm = connectHwTm();
+        if (!window.hwTm || window.hwTm.readyState === window.hwTm.CLOSED) {
+            window.hwTm = connectHwTm();
+            console.log("Try to connect hwTm")
         }
-        if (!hwCtl || hwCtl.CLOSED) {
-            hwCtl = connectHwCtl();
+        if (!window.hwCtl || window.hwTm.readyState === window.hwTm.CLOSED) {
+            window.hwCtl = connectHwCtl();
+            console.log("Try to connect hwCtl")
+        }
+        if (!window.cvTm || window.cvTm.readyState === window.cvTm.CLOSED) {
+            window.cvTm = connectCvTm();
+            console.log("Try to connect cvTm")
+        }
+        if (!window.cvCtl || window.cvTm.readyState === window.cvTm.CLOSED) {
+            window.cvCtl = connectCvCtl();
+            console.log("Try to connect cvCtl")
         }
     }, 50);
-
-    // cvCtl = new WebSocket('ws://' + document.location.host + '/cv_ctl');
-    // cvTm = new WebSocket('ws://' + document.location.host + '/cv_tm');
-    //
-    // cvCtl.onopen = function() {
-    //     console.log('onopen');
-    //     document.getElementById('message-cv_ctl').textContent = 'Connected.';
-    // };
-    // cvTm.onopen = function() {
-    //     console.log('onopen');
-    //     document.getElementById('message-cv_tm').textContent = 'Connected.';
-    // };
-    // cvCtl.onclose = function() {
-    //     document.getElementById('message-cv_ctl').textContent = 'Lost connection.';
-    //     console.log('onclose');
-    // };
-    // cvCtl.onmessage = function(message) {
-    //     console.log("got '" + message.data + "'");
-    //     const row = document.createElement('p');
-    //     row.textContent = '>' + message.data;
-    //     document.getElementById('log-cv_ctl').appendChild(row);
-    // };
-    // cvTm.onmessage = function(message) {
-    //     console.log("got '" + message.data + "'");
-    //     const row = document.createElement('p');
-    //     row.textContent = '>' + message.data;
-    //     document.getElementById('log-cv_tm').appendChild(row);
-    // };
-    // cvCtl.onerror = function(error) {
-    //     document.getElementById('message-cv_ctl').textContent = 'Error: ' + error;
-    //     console.log(error);
-    // };
-    // cvTm.onerror = function(error) {
-    //     document.getElementById('message-cv_tm').textContent = 'Error: ' + error;
-    //     console.log(error);
-    // };
-    // document.getElementById('send-cv_ctl').onclick = function() {
-    //     const input = document.getElementById('command-cv_ctl');
-    //     const row = document.createElement('p');
-    //     row.textContent = '<' + input.value;
-    //     document.getElementById('log-cv_ctl').appendChild(row);
-    //     cvCtl.send(input.value);
-    //     input.value = '';
-    // };
-
 };
 
 set = function(value) {

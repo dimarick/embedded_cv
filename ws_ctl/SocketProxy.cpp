@@ -20,7 +20,10 @@ void SocketProxy::onConnect(WebSocket *connection) {
         return;
     }
 
-    connectionHandlers.insert({connection, new ConnectionHandler(connection, socketFd)});
+    auto pHandler = new ConnectionHandler(connection, socketFd);
+    connectionHandlers.insert({connection, pHandler});
+
+    pHandler->start();
 
     std::cout << "Connected: " << connection->getRequestUri()
               << " : " << formatAddress(connection->getRemoteAddress())
@@ -29,7 +32,12 @@ void SocketProxy::onConnect(WebSocket *connection) {
 }
 
 void SocketProxy::onDisconnect(WebSocket *connection) {
-    auto handler = connectionHandlers.find(connection)->second;
+    const auto &iterator = connectionHandlers.find(connection);
+    if (iterator == connectionHandlers.end()) {
+        return;
+    }
+
+    auto handler = iterator->second;
     handler->stop();
     connectionHandlers.erase(connection);
     delete handler;

@@ -1,29 +1,42 @@
 #include "ConnectionHandler.h"
 #include <unistd.h>
+#include <seasocks/StringUtil.h>
 
 void ConnectionHandler::start() {
-    readingThread = std::thread([](WebSocket *c, int _socketFd, std::atomic<bool> *_running) {
+    readingThread = std::thread([](WebSocket *c, int _socketFd, ConnectionHandler *that) {
         uint8_t buffer[256];
         auto &_server = c->server();
-        while (*_running) {
+        while (true) {
             auto n = recv(_socketFd, buffer, sizeof(buffer), MSG_NOSIGNAL);
+
+            if (!that->running) {
+                break;
+            }
 
             if (n == 0) {
                 perror("Unable to read socket");
-                c->send("Unable to read socket");
-                c->send(strerror(errno));
-                _server.execute(std::function{[&c, &buffer, n]() {
+                auto err = errno;
+                _server.execute(std::function{[&c, buffer, n, err]() {
+                    c->send("Unable to read socket");
+                    c->send(strerror(err));
                     c->close();
                     std::cerr << "closing connection" << std::endl;
                 }});
+
+                break;
             }
 
-            _server.execute(std::function{[&c, &buffer, n]() {
-                c->send(buffer, n);
+            _server.execute(std::function{[c, buffer, n, &that]() {
                 std::cerr << "sending data " << buffer << std::endl;
+                if (!that->running) {
+                    return;
+                }
+                c->send(buffer, n);
             }});
         }
-    }, connection, socketFd, &running);
+
+        std::cerr << "Performing graceful shutdown for " << formatAddress(c->getRemoteAddress()) << std::endl;
+    }, connection, socketFd, this);
 
     running = true;
 }
@@ -44,8 +57,8 @@ void ConnectionHandler::onData(const char *data) {
 void ConnectionHandler::stop() {
     if (running) {
         running = false;
-        readingThread.join();
         shutdown(socketFd, SHUT_RDWR);
         close(socketFd);
+        readingThread.join();
     }
 }
