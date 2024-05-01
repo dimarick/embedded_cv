@@ -122,7 +122,7 @@ int main(int argc, const char **argv) {
     captureLeft.read(captureFrameLeft);
     captureRight.read(captureFrameRight);
 
-    cv::Size outputSize(capWidth / 2, capHeight / 2);
+    cv::Size outputSize(capWidth, capHeight);
     cv::Size processingSize(capWidth, capHeight);
 
     const char command[] = "ffmpeg -f rawvideo -pixel_format bgr24 -s %dx%d -re  -i - %s %s";
@@ -144,7 +144,7 @@ int main(int argc, const char **argv) {
         return -1;
     }
 
-    ImageProcessor processor(processingSize.width, processingSize.height);
+    ImageProcessor processor(processingSize.width, processingSize.height, broadcastingServer);
 
     double fps = 0.;
     double avgTime = 0.;
@@ -177,8 +177,6 @@ int main(int argc, const char **argv) {
 
         processor.processFrame(imageLeft, imageRight, output);
 
-        drawText(imageLeft, fps);
-
         cv::resize(imageLeft, outputLeft, outputSize, 0, 0,
                    cv::INTER_NEAREST);
 
@@ -201,8 +199,7 @@ int main(int argc, const char **argv) {
 
         std::ostringstream tm;
 
-        tm << "fps " << fps << " time " << time << " avg " << avgTime << " size "
-               << resultLeft.dataend - resultLeft.datastart << std::endl;
+        tm << "PERF " << fps << " " << time << std::endl;
 
         broadcastingServer.broadcast(tm.str());
 

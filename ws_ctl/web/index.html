@@ -10,12 +10,16 @@
     <script type="text/javascript" src="http://192.168.1.39:8080/players/js/srs.page.js"></script>
   </head>
   <body>
-    <video id="rtc_media_player" controls autoplay></video>
+    <video id="rtc_media_player" autoplay></video>
+    <canvas id="video_canvas"></canvas>
+    <div style="border: 1px solid black; display: inline-block"><canvas id="perf_canvas" width="300px" height="200px"></canvas></div>
 
 	<div>cv_ctl <div id="message-cv_ctl">Initializing...</div></div>
 	<div>cv_tm <div id="message-cv_tm">Initializing...</div></div>
 	<div>hw_ctl <div id="message-hw_ctl">Initializing...</div></div>
 	<div>hw_tm <div id="message-hw_tm">Initializing...</div></div>
+
+    <div>Perf <span id="cv_fps"></span> fps, time <span id="cv_time"></span> ms</div>
     <table>
         <thead>
             <tr>
@@ -26,7 +30,6 @@
         <tbody>
             <tr>
                 <td style="vertical-align: top;"><div id="log-cv_ctl"></div></td>
-                <td style="vertical-align: top;"><div id="log-cv_tm"></div></td>
                 <td style="vertical-align: top;"><div id="log-hw_ctl"></div></td>
                 <td style="vertical-align: top;"><div id="log-hw_tm"></div></td>
             </tr>
@@ -71,4 +74,3 @@
     </script>
   </body>
 </html>
-

@@ -7,10 +7,11 @@
 #include "opencv2/highgui.hpp"
 #endif
 #include <opencv2/calib3d.hpp>
+#include <opencv2/photo.hpp>
 
-ImageProcessor::ImageProcessor(int capWidth, int capHeight) {
-    this->orb = cv::ORB::create(300, 2, 4, 5, 0, 2, cv::ORB::FAST_SCORE, 63, 5);
-    this->fast = cv::FastFeatureDetector::create();
+ImageProcessor::ImageProcessor(int capWidth, int capHeight, mini_server::BroadcastingServer &publisher) : publisher(publisher) {
+    this->orb = cv::ORB::create(3000, 2, 4, 25, 1, 2, cv::ORB::FAST_SCORE, 31, 18);
+    this->fast = cv::FastFeatureDetector::create(1);
     this->kaze = cv::KAZE::create();
     this->akaze = cv::AKAZE::create();
     this->mask = cv::UMat::ones(capHeight, capWidth, CV_8UC1);
@@ -105,4 +106,34 @@ void ImageProcessor::processFrame(cv::UMat &left, cv::UMat &right, cv::UMat &out
 //    }
 
 //    std::cerr << "Keypoints " << keyPointsLeft.size() << " matches " << matches.size() << std::endl;
+    if (currentFrame > 9) {
+        left.copyTo(recentFrames[currentFrame % 9]);
+    } else {
+        recentFrames.push_back(left);
+    }
+
+    cv::fastNlMeansDenoisingColored(recentFrames[currentFrame % 9], output,8);
+    currentFrame++;
+
+    output.convertTo(grayLeft, CV_8UC1);
+
+
+    orb->detectAndCompute(grayLeft, mask, keyPointsLeft, descriptorLeft);
+
+    std::stringstream frameInfo;
+
+    frameInfo << "FRAME " << left.cols << ' ' << left.rows << " POINTS ";
+
+    std::sort(keyPointsLeft.begin(), keyPointsLeft.end(), [] (auto a, auto b) {
+        return a.response - b.response > 0 ? 1 : 0;
+    });
+
+    auto i = 0;
+    for (const auto &kp : keyPointsLeft) {
+        frameInfo << kp.pt.x << ' ' << kp.pt.y << ' ' << kp.response << ' ' << kp.angle << ';';
+    }
+
+    frameInfo << std::endl;
+
+    publisher.broadcast(frameInfo.str());
 }

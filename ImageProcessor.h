@@ -5,9 +5,11 @@
 #include <opencv2/features2d.hpp>
 #include <opencv2/core/ocl.hpp>
 #include <opencv2/calib3d.hpp>
+#include <BroadcastingServer.h>
 
 class ImageProcessor {
 private:
+    mini_server::BroadcastingServer &publisher;
     cv::Ptr<cv::FastFeatureDetector> fast;
     cv::Ptr<cv::ORB> orb;
     cv::Ptr<cv::KAZE> kaze;
@@ -28,8 +30,10 @@ private:
 
     cv::Ptr<cv::StereoSGBM> stereoSGBM;
     cv::Ptr<cv::StereoBM> stereoBM;
+    std::vector<cv::UMat> recentFrames;
+    int currentFrame = 0;
 public:
-    ImageProcessor(int capWidth, int capHeight);
+    ImageProcessor(int capWidth, int capHeight, mini_server::BroadcastingServer &publisher);
     void processFrame(cv::UMat &left, cv::UMat &right, cv::UMat &output);
 };
 

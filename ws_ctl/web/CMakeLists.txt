@@ -2,7 +2,7 @@ set(SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/seasocks/scripts/gen_embedde
 
 
 set(EMBEDDED_FILES
-        "${CMAKE_CURRENT_SOURCE_DIR}/app.js"
+#        "${CMAKE_CURRENT_SOURCE_DIR}/app.js"
         "${CMAKE_CURRENT_SOURCE_DIR}/style.css"
         "${CMAKE_CURRENT_SOURCE_DIR}/_error.html"
         "${CMAKE_CURRENT_SOURCE_DIR}/error.css"

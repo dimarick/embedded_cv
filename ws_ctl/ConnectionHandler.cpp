@@ -4,7 +4,7 @@
 
 void ConnectionHandler::start() {
     readingThread = std::thread([](WebSocket *c, int _socketFd, ConnectionHandler *that) {
-        uint8_t buffer[256];
+        uint8_t buffer[(size_t)1e6];
         auto &_server = c->server();
         while (true) {
             auto n = recv(_socketFd, buffer, sizeof(buffer), MSG_NOSIGNAL);
