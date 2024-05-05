@@ -155,6 +155,19 @@ function processFrame(text) {
     }
 }
 
+function processConfig(text) {
+    let matches;
+    if (matches = text.match(/denoiseLevel\s(?<value>\S+)/)) {
+        const level = matches.groups.value;
+
+        const denoiseLevelInput = document.getElementById('denoiseLevel');
+        const denoiseLevelView = document.getElementById('denoiseLevelView');
+
+        denoiseLevelInput.value = level;
+        denoiseLevelView.textContent = level;
+    }
+}
+
 function processMessage(text) {
     let matches;
     if (text.match(/^PERF/)) {
@@ -177,6 +190,8 @@ function processMessage(text) {
         };
 
         processFrame(matches.groups.data);
+    } else if (matches = text.match(/^CONFIG (?<data>.*)$/m)) {
+        processConfig(matches.groups.data);
     }
 }
 
@@ -267,8 +282,6 @@ document.onreadystatechange = function() {
             console.log('onclose');
         };
         cvCtl.onmessage = async function (message) {
-            const row = document.createElement('p');
-
             const data = message.data;
             let text;
             if (data instanceof Blob) {
@@ -277,9 +290,7 @@ document.onreadystatechange = function() {
                 text = data;
             }
 
-            console.log("got '" + text + "'");
-            row.textContent = '>' + text;
-            document.getElementById('log-cv_ctl').prepend(row);
+            processMessage(text);
         };
         cvCtl.onerror = function (error) {
             document.getElementById('message-cv_ctl').textContent = 'Error: ' + error;
@@ -380,4 +391,14 @@ document.onreadystatechange = function() {
 
     window.requestAnimationFrame(drawVideoScene);
     window.requestAnimationFrame(drawPerfScene);
+
+    const denoiseLevelInput = document.getElementById('denoiseLevel');
+    const denoiseLevelView = document.getElementById('denoiseLevelView');
+    denoiseLevelInput.onmousemove = function (event) {
+        const level = parseFloat(denoiseLevelInput.value);
+        if (denoiseLevelInput.value !== denoiseLevelView.textContent) {
+            denoiseLevelView.textContent = level;
+            window.cvCtl.send("SETCONFIG denoiseLevel " + level);
+        }
+    }
 };

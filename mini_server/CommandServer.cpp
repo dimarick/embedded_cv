@@ -5,12 +5,10 @@
 #include <cstring>
 #include <unistd.h>
 #include <netinet/in.h>
-#include <future>
 #include <thread>
 #include <poll.h>
 #include <iostream>
 #include <cassert>
-#include <mutex>
 
 using namespace mini_server;
 
@@ -68,6 +66,10 @@ void CommandServer::interact(int socket, CommandServer *server, int threadId) {
 
         server->handler->handle(socket, in, out);
 
+        if (out.empty()) {
+            continue;
+        }
+
         n = write(socket, out.c_str(), out.size());
 
         if (n < 0) {
@@ -106,6 +108,11 @@ void CommandServer::run() {
         }
 
         int acceptedSocket = accept(socket, nullptr, nullptr);
+
+        acceptedSocketsMutex.lock();
+        acceptedSockets.insert(acceptedSocket);
+        acceptedSocketsMutex.unlock();
+
         threadId++;
 
         threads.insert({threadId, std::thread(CommandServer::interact, acceptedSocket, this, threadId)});
@@ -121,5 +128,30 @@ void CommandServer::run() {
         std::cerr << "Thread " << threadId << "is dead. " << threads.size() << " is alive" << std::endl;
     }
 
+    acceptedSocketsMutex.lock();
+    acceptedSockets.clear();
+    acceptedSocketsMutex.unlock();
+
     std::cerr << "Done" << std::endl;
+}
+
+void CommandServer::broadcast(const std::string &message) {
+    acceptedSocketsMutex.lock();
+    auto threadSafeAcceptedSockets = acceptedSockets;
+    acceptedSocketsMutex.unlock();
+
+    for (auto acceptedSocket : threadSafeAcceptedSockets) {
+        auto n = send(acceptedSocket, message.c_str(), message.size(), MSG_NOSIGNAL);
+
+        if (n < 0) {
+            perror("ERROR writing to socket");
+
+            acceptedSocketsMutex.lock();
+            acceptedSockets.erase(acceptedSocket);
+            acceptedSocketsMutex.unlock();
+
+            std::cerr << "socket released: " << acceptedSocket << ". Connections count: " << acceptedSockets.size() << std::endl;
+        }
+        std::cerr << "Message : " << message << " sent to " << acceptedSocket << std::endl;
+    }
 }

@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <mutex>
 #include "HandlerInterface.h"
+#include <set>
 
 namespace mini_server {
     static const size_t BUFFER_SIZE = 256;
@@ -18,6 +19,9 @@ namespace mini_server {
         std::mutex deadThreadsMutex;
         std::unordered_set<int> deadThreads;
 
+        std::mutex acceptedSocketsMutex;
+        std::set<int> acceptedSockets;
+
         static void interact(int socket, CommandServer *server, int threadId);
     public:
         void setSocket(int _socket) {
@@ -26,7 +30,7 @@ namespace mini_server {
         void setHandler(HandlerInterface &_handler) {
             handler = &_handler;
         }
-
+        void broadcast(const std::string &message);
         void run();
         void stop() {
             running = false;

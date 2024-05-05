@@ -32,7 +32,7 @@ int main(int argc, const char **argv) {
 
     broadcastingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
     commandServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_ctl", 1));
-    auto handler = CvCommandHandler(broadcastingServer);
+    auto handler = CvCommandHandler(commandServer);
     commandServer.setHandler(handler);
 
     signal(SIGINT, [](int signal) {
@@ -145,6 +145,8 @@ int main(int argc, const char **argv) {
     }
 
     ImageProcessor processor(processingSize.width, processingSize.height, broadcastingServer);
+
+    handler.setImageProcessor(&processor);
 
     double fps = 0.;
     double avgTime = 0.;

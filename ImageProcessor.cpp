@@ -112,11 +112,11 @@ void ImageProcessor::processFrame(cv::UMat &left, cv::UMat &right, cv::UMat &out
         recentFrames.push_back(left);
     }
 
-    cv::fastNlMeansDenoisingColored(recentFrames[currentFrame % 9], output,8);
+    cv::fastNlMeansDenoisingColored(recentFrames[currentFrame % recentFrames.size()], output,denoiseLevel);
+
     currentFrame++;
 
     output.convertTo(grayLeft, CV_8UC1);
-
 
     orb->detectAndCompute(grayLeft, mask, keyPointsLeft, descriptorLeft);
 

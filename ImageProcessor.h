@@ -33,6 +33,7 @@ private:
     std::vector<cv::UMat> recentFrames;
     int currentFrame = 0;
 public:
+    std::atomic<float> denoiseLevel = 3;
     ImageProcessor(int capWidth, int capHeight, mini_server::BroadcastingServer &publisher);
     void processFrame(cv::UMat &left, cv::UMat &right, cv::UMat &output);
 };
