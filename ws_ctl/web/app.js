@@ -133,8 +133,15 @@ function drawVideoScene() {
 
 function processFrame(text) {
     let matches;
-    if (matches = text.match(/POINTS (?<pointsData>.+?)(;[A-Z]|$)/)) {
-        const pointsData = matches.groups.pointsData;
+    if ((matches = text.match(/POINTS (?<pointsData>.+?)(;[A-Z]|$)/)) || (matches = text.match(/POINTS/))) {
+        const pointsData = matches.groups && matches.groups.pointsData;
+
+        if (!pointsData) {
+            videoScene.points = [];
+            videoScene.changed = true;
+            return;
+        }
+
         const points = pointsData.matchAll(/(?<x>[^\s]+) (?<y>[^\s]+) (?<size>[^\s]+) (?<angle>[^\s;]+)(;|$)/g);
 
         const videoPoints = [];
@@ -344,7 +351,7 @@ document.onreadystatechange = function() {
         //     window.hwTm = connectHwTm();
         //     console.log("Try to connect hwTm")
         // }
-        // if (!window.hwCtl || window.hwTm.readyState === window.hwTm.CLOSED) {
+        // if (!window.hwCtl || window.hwCtl.readyState === window.hwCtl.CLOSED) {
         //     window.hwCtl = connectHwCtl();
         //     console.log("Try to connect hwCtl")
         // }
@@ -352,7 +359,7 @@ document.onreadystatechange = function() {
             window.cvTm = connectCvTm();
             console.log("Try to connect cvTm")
         }
-        if (!window.cvCtl || window.cvTm.readyState === window.cvTm.CLOSED) {
+        if (!window.cvCtl || window.cvCtl.readyState === window.cvCtl.CLOSED) {
             window.cvCtl = connectCvCtl();
             console.log("Try to connect cvCtl")
         }
