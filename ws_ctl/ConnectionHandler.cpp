@@ -16,12 +16,22 @@ void ConnectionHandler::start() {
             if (n == 0) {
                 perror("Unable to read socket");
                 auto err = errno;
-                _server.execute(std::function{[&c, buffer, n, err]() {
+                std::mutex shudownMutex;
+
+                shudownMutex.lock();
+
+                _server.execute(std::function{[&c, buffer, n, err, &shudownMutex]() {
                     c->send("Unable to read socket");
                     c->send(strerror(err));
                     c->close();
                     std::cerr << "closing connection" << std::endl;
+                    shudownMutex.unlock();
                 }});
+
+                // Дожидаемся завершения _server.execute
+                shudownMutex.lock();
+                shudownMutex.unlock();
+
 
                 break;
             }
