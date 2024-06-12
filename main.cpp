@@ -17,12 +17,14 @@
 #include <atomic>
 #include <SocketFactory.h>
 #include <csignal>
+#include <fcntl.h>
+#include <poll.h>
 
 using namespace mini_server;
 
 void drawText(cv::UMat &image, double fps);
 
-static std::atomic<bool> running = true;
+static std::atomic running = true;
 
 static BroadcastingServer broadcastingServer;
 static CommandServer commandServer;
@@ -49,7 +51,7 @@ int main(int argc, const char **argv) {
         broadcastingServer.run();
     });
 
-    cv::Mat captureFrameLeft, captureFrameRight;
+    cv::Mat captureFrameLeft, captureFrameRight, readingLeft, readingRight, readingImLeft, readingImRight;
     cv::UMat output, outputLeft, inputLeft, imageLeft, outputRight, inputRight, imageRight;
     cv::Mat resultLeft, resultRight;
     cv::VideoCapture captureLeft, captureRight;
@@ -60,18 +62,29 @@ int main(int argc, const char **argv) {
 
     std::cerr << "Built with OpenCV " << CV_VERSION << ", cv::ocl::haveSVM(): " << cv::ocl::haveSVM() << std::endl;
 
+    std::vector<int> params = {
+        cv::VideoCaptureProperties::CAP_PROP_CONVERT_RGB, true,
+        cv::VideoCaptureProperties::CAP_PROP_FPS, 30,
+        cv::VideoCaptureProperties::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
+        cv::VideoCaptureProperties::CAP_PROP_FRAME_WIDTH, 1920,
+        cv::VideoCaptureProperties::CAP_PROP_FRAME_HEIGHT, 1080,
+        cv::VideoCaptureProperties::CAP_PROP_BUFFERSIZE, 10,
+        cv::VideoCaptureProperties::CAP_PROP_ORIENTATION_AUTO, false,
+    };
+
     if (strcmp(argv[1], argv[2]) == 0) {
-        captureLeft.open(argv[1]);
+        captureLeft.open(argv[1], cv::CAP_V4L2, params);
         captureRight = captureLeft;
     } else {
-        captureLeft.open(argv[1]);
-        captureRight.open(argv[2]);
+        captureLeft.open(argv[1], cv::CAP_V4L2, params);
+        captureRight.open(argv[2], cv::CAP_V4L2, params);
     }
 
     auto capFps = captureLeft.get(cv::CAP_PROP_FPS);
     auto capWidth = (int) captureLeft.get(cv::CAP_PROP_FRAME_WIDTH);
     auto capHeight = (int) captureLeft.get(cv::CAP_PROP_FRAME_HEIGHT);
     auto capPixFormat = (int) captureLeft.get(cv::CAP_PROP_PVAPI_PIXELFORMAT);
+    auto capBuffer = (int) captureLeft.get(cv::CAP_PROP_BUFFERSIZE);
 
     const char *humanPixelFormat;
 
@@ -105,7 +118,7 @@ int main(int argc, const char **argv) {
     }
 
     std::cerr << "Capture opened, " << capWidth << "x" << capHeight << "p" << capFps << "p, " << humanPixelFormat
-              << ", " << capPixFormat << std::endl;
+              << ", " << capPixFormat << ", buffer " << capBuffer << std::endl;
 
     auto prev = std::chrono::high_resolution_clock::now();
 
@@ -122,11 +135,14 @@ int main(int argc, const char **argv) {
     captureLeft.read(captureFrameLeft);
     captureRight.read(captureFrameRight);
 
+    captureLeft.release();
+    captureRight.release();
+
     cv::Size outputSize(capWidth, capHeight);
     cv::Size processingSize(capWidth, capHeight);
 
     const char command[] = "ffmpeg -f rawvideo -pixel_format bgr24 -s %dx%d -re  -i - %s %s";
-
+    const char inputCommand[] = "ffmpeg -loglevel fatal -f v4l2 -input_format mjpeg -s %dx%d -re  -i %s -f rawvideo -filter:v 'format=bgr24' -fflags nobuffer -avioflags direct -fflags discardcorrupt -g 15 -threads 7 -";
     size_t bufferSize = sizeof(command) + strlen(argv[3]) + strlen(argv[4]) + 50;
     char *formattedCommand = (char *) malloc(bufferSize);
     snprintf(formattedCommand, bufferSize, command, outputSize.width, outputSize.height, argv[3], argv[4]);
@@ -137,6 +153,36 @@ int main(int argc, const char **argv) {
     auto pipe = popen(formattedCommand, "w");
 
     free(formattedCommand);
+
+    size_t inputBufferSize = sizeof(inputCommand) + strlen(argv[1]) + strlen(argv[2]) + 50;
+    char *formattedInputCommand = (char *) malloc(inputBufferSize);
+    snprintf(formattedInputCommand, inputBufferSize, inputCommand, capWidth, capHeight, argv[1]);
+
+    std::cerr << formattedInputCommand << std::endl;
+    std::cerr.flush();
+
+    auto leftPipe = popen(formattedInputCommand, "r");
+
+    if (leftPipe == nullptr) {
+        std::cerr << "Failed to start " << formattedInputCommand << " errno " << strerror(errno) << std::endl;
+
+        return -1;
+    }
+
+    snprintf(formattedInputCommand, inputBufferSize, inputCommand, capWidth, capHeight, argv[2]);
+
+    std::cerr << formattedInputCommand << std::endl;
+    std::cerr.flush();
+
+    auto rightPipe = popen(formattedInputCommand, "r");
+
+    if (rightPipe == nullptr) {
+        std::cerr << "Failed to start " << formattedInputCommand << " errno " << strerror(errno) << std::endl;
+
+        return -1;
+    }
+
+    free(formattedInputCommand);
 
     if (pipe == nullptr) {
         std::cerr << "Failed to start " << formattedCommand << " errno " << strerror(errno) << std::endl;
@@ -149,15 +195,60 @@ int main(int argc, const char **argv) {
     handler.setImageProcessor(&processor);
 
     double fps = 0.;
+    double avgFps = 0.;
     double avgTime = 0.;
 
-    for (int i = 0; running; i++) {
-        captureLeft.read(captureFrameLeft);
-//        captureRight.read(captureFrameRight);
-        captureFrameLeft.copyTo(inputLeft);
-        captureFrameLeft.copyTo(inputRight);
+    captureFrameLeft.copyTo(readingLeft);
+    captureFrameRight.copyTo(readingRight);
 
-        cv::ocl::setUseOpenCL(true);
+    std::thread writer;
+    std::atomic writerIsRunning = false;
+
+    std::thread proc;
+    std::atomic procIsRunning = false;
+
+    cv::ocl::setUseOpenCL(true);
+
+    std::mutex readerLeftLock;
+    std::mutex readerRightLock;
+    std::atomic readerLeftCount = 0l;
+    std::atomic readerRightCount = 0l;
+    auto frameCount = 0l;
+
+    auto readerfunction =
+            [](cv::Mat *reading, FILE *pipe, cv::Mat *readingIm, std::mutex *lock, std::atomic<long> *count) {
+        while (running) {
+            fread(reading->data, sizeof(char), reading->dataend - reading->datastart, pipe);
+            lock->lock();
+            reading->copyTo(*readingIm);
+            (*count)++;
+            lock->unlock();
+        }
+    };
+    auto readerLeft = std::thread(readerfunction, &readingLeft, leftPipe, &readingImLeft, &readerLeftLock, &readerLeftCount);
+    auto readerRight = std::thread(readerfunction, &readingRight, rightPipe, &readingImRight, &readerRightLock, &readerRightCount);
+
+    for (int i = 0; running; i++) {
+//        fread(readingLeft.data, sizeof(char), readingLeft.dataend - readingLeft.datastart, leftPipe);
+//        readingLeft.copyTo(inputLeft);
+//        fread(readingRight.data, sizeof(char), readingRight.dataend - readingRight.datastart, rightPipe);
+//        readingRight.copyTo(inputRight);
+        long nextFrame = std::max(readerLeftCount, readerRightCount);
+        if (readerLeftCount == frameCount || readerRightCount == frameCount || readingImLeft.empty() || readingImRight.empty()) {
+            usleep(1);
+            continue;
+        }
+
+        frameCount = nextFrame;
+
+        auto start = std::chrono::high_resolution_clock::now();
+
+        readerLeftLock.lock();
+        readingImLeft.copyTo(inputLeft);
+        readerLeftLock.unlock();
+        readerRightLock.lock();
+        readingImRight.copyTo(inputRight);
+        readerRightLock.unlock();
 
         auto now = std::chrono::high_resolution_clock::now();
         auto us = (double) (now - prev).count();
@@ -169,57 +260,61 @@ int main(int argc, const char **argv) {
             break;
         }
 
-        auto start = std::chrono::high_resolution_clock::now();
+        processor.processFrame(inputLeft, inputRight, output);
 
-        cv::resize(inputLeft, imageLeft, processingSize, 0, 0,
+        cv::resize(inputLeft, outputLeft, outputSize, 0, 0,
                    cv::INTER_NEAREST);
 
-        cv::resize(inputRight, imageRight, processingSize, 0, 0,
+        cv::resize(inputRight, outputRight, outputSize, 0, 0,
                    cv::INTER_NEAREST);
-
-        processor.processFrame(imageLeft, imageRight, output);
-
-        cv::resize(imageLeft, outputLeft, outputSize, 0, 0,
-                   cv::INTER_NEAREST);
-
-        cv::resize(imageRight, outputRight, outputSize, 0, 0,
-                   cv::INTER_NEAREST);
-
-        auto end = std::chrono::high_resolution_clock::now();
-
-        cv::ocl::setUseOpenCL(false);
 
         outputLeft.copyTo(resultLeft);
         outputRight.copyTo(resultRight);
 
-        double time = ((double) (end - start).count()) / 1e6;
-        double avgA = 2. / ((i < 50 ? 50 : 500) + 1);
-        avgTime = avgTime == 0. ? time : avgA * time + (1 - avgA) * avgTime;
+        auto end = std::chrono::high_resolution_clock::now();
 
-        std::cerr << "fps " << fps << " time " << time << " avg " << avgTime << " size "
+        double time = ((double) (end - start).count()) / 1e6;
+        double avgA = 2. / ((i < 50 ? 10 : 100) + 1);
+        avgTime = avgTime == 0. ? time : avgA * time + (1 - avgA) * avgTime;
+        avgFps = avgFps == 0. ? fps : avgA * fps + (1 - avgA) * avgFps;
+
+        std::cerr << "fps " << avgFps << " time " << time << " load " << avgTime * 100 / ((double)us / 1e6) << " %, avg " << avgTime << " size "
                   << resultLeft.dataend - resultLeft.datastart << std::endl;
 
         std::ostringstream tm;
 
         tm << "PERF " << fps << " " << time << std::endl;
 
-        broadcastingServer.broadcast(tm.str());
+        if (!writerIsRunning) {
+            if (writer.joinable()) {
+                writer.join();
+            }
 
-        fwrite(resultLeft.data, sizeof(char), resultLeft.dataend - resultLeft.datastart, pipe);
-        fflush(pipe);
+            writerIsRunning = true;
+
+            writer = std::thread([](auto *resultLeft, auto *pipe, auto *isRunning, auto *tm) {
+                broadcastingServer.broadcast(tm->str());
+
+                fwrite(resultLeft->data, sizeof(char), resultLeft->dataend - resultLeft->datastart, *pipe);
+                *isRunning = false;
+            }, &resultLeft, &pipe, &writerIsRunning, &tm);
+        }
 
 #ifdef HAVE_OPENCV_HIGHGUI
         imshow("Left", resultLeft);
-//        imshow("Right", resultRight);
         if (!output.empty()) {
             imshow("Result", output);
         }
 
         if (cv::waitKey(1) >= 0) {
-            break;
+            running = false;
         }
 #endif
     }
+    writer.join();
+//    readerLeft.join();
+//    readerRight.join();
+
     std::cerr << "exiting..." << std::endl;
 
     captureLeft.release();

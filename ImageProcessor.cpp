@@ -106,34 +106,52 @@ void ImageProcessor::processFrame(cv::UMat &left, cv::UMat &right, cv::UMat &out
 //    }
 
 //    std::cerr << "Keypoints " << keyPointsLeft.size() << " matches " << matches.size() << std::endl;
-    if (currentFrame > 9) {
-        left.copyTo(recentFrames[currentFrame % 9]);
-    } else {
-        recentFrames.push_back(left);
-    }
+//    if (currentFrame > 9) {
+//        left.copyTo(recentFrames[currentFrame % 9]);
+//    } else {
+//        recentFrames.push_back(left);
+//    }
+//
+//    currentFrame++;
+//
+//    std::vector<cv::UMat> channels(3);
+//    std::vector<cv::UMat> mixedChannels(1);
+//
+//    left.copyTo(mixedChannels[0]);
+//
+//    cv::split(left, channels);
+//
+//    for (int i = 0; i < 3; ++i) {
+//        cv::equalizeHist(channels[i], channels[i]);
+//    }
+//
+//    const int fromTo[] = {0, 0, 1, 1, 2, 2};
+//
+//    cv::mixChannels(channels, mixedChannels, fromTo, 3);
+//
+//    output = mixedChannels[0];
+//
+//    cv::fastNlMeansDenoisingColored(left, left,denoiseLevel);
+//    cv::fastNlMeansDenoisingColored(right, right,denoiseLevel);
 
-    cv::fastNlMeansDenoisingColored(recentFrames[currentFrame % recentFrames.size()], output,denoiseLevel);
-
-    currentFrame++;
-
-    output.convertTo(grayLeft, CV_8UC1);
-
-    orb->detectAndCompute(grayLeft, mask, keyPointsLeft, descriptorLeft);
-
-    std::stringstream frameInfo;
-
-    frameInfo << "FRAME " << left.cols << ' ' << left.rows << " POINTS ";
-
-    std::sort(keyPointsLeft.begin(), keyPointsLeft.end(), [] (auto a, auto b) {
-        return a.response - b.response > 0 ? 1 : 0;
-    });
-
-    auto i = 0;
-    for (const auto &kp : keyPointsLeft) {
-        frameInfo << kp.pt.x << ' ' << kp.pt.y << ' ' << kp.response << ' ' << kp.angle << ';';
-    }
-
-    frameInfo << std::endl;
-
-    publisher.broadcast(frameInfo.str());
+//    output.convertTo(grayLeft, CV_8UC1);
+//
+//    orb->detectAndCompute(grayLeft, mask, keyPointsLeft, descriptorLeft);
+//
+//    std::stringstream frameInfo;
+//
+//    frameInfo << "FRAME " << left.cols << ' ' << left.rows << " POINTS ";
+//
+//    std::sort(keyPointsLeft.begin(), keyPointsLeft.end(), [] (auto a, auto b) {
+//        return a.response - b.response > 0 ? 1 : 0;
+//    });
+//
+//    auto i = 0;
+//    for (const auto &kp : keyPointsLeft) {
+//        frameInfo << kp.pt.x << ' ' << kp.pt.y << ' ' << kp.response << ' ' << kp.angle << ';';
+//    }
+//
+//    frameInfo << std::endl;
+//
+//    publisher.broadcast(frameInfo.str());
 }
