@@ -39,13 +39,20 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(cpptrace)
 
 include_directories( ${OpenCV_INCLUDE_DIRS} )
+include_directories( lib/PRiMEStereoMatch/include )
 
 include_directories(./mini_server)
 add_subdirectory(./mini_server)
 add_subdirectory(./hw_ctl)
 add_subdirectory(./ws_ctl)
 
-add_executable(embedded_cv main.cpp ImageProcessor.cpp CvCommandHandler.cpp)
+add_executable(embedded_cv
+        main.cpp
+        ImageProcessor.cpp
+        CvCommandHandler.cpp
+        Calibrate.cpp
+        lib/PRiMEStereoMatch/src/StereoCalib.cpp
+)
 
 target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} mini_server)
 

@@ -10,7 +10,7 @@
 #include <opencv2/photo.hpp>
 
 ImageProcessor::ImageProcessor(int capWidth, int capHeight, mini_server::BroadcastingServer &publisher) : publisher(publisher) {
-    this->orb = cv::ORB::create(3000, 2, 4, 25, 1, 2, cv::ORB::FAST_SCORE, 31, 18);
+    this->orb = cv::ORB::create(500, 2, 4, 25, 1, 2, cv::ORB::FAST_SCORE, 31, 18);
     this->fast = cv::FastFeatureDetector::create(1);
     this->kaze = cv::KAZE::create();
     this->akaze = cv::AKAZE::create();
@@ -134,9 +134,12 @@ void ImageProcessor::processFrame(cv::UMat &left, cv::UMat &right, cv::UMat &out
 //    cv::fastNlMeansDenoisingColored(left, left,denoiseLevel);
 //    cv::fastNlMeansDenoisingColored(right, right,denoiseLevel);
 
-//    output.convertTo(grayLeft, CV_8UC1);
+//    cv::medianBlur(left,left, 7);
+    cv::bilateralFilter(left,output, 9, 75, 75);
+    cv::bilateralFilter(right,output, 9, 75, 75);
 //
 //    orb->detectAndCompute(grayLeft, mask, keyPointsLeft, descriptorLeft);
+//    orb->detectAndCompute(grayRight, mask, keyPointsRight, descriptorRight);
 //
 //    std::stringstream frameInfo;
 //

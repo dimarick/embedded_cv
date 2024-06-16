@@ -6,6 +6,7 @@
 #include "opencv2/videoio.hpp"
 #include "ImageProcessor.h"
 #include "CvCommandHandler.h"
+#include "Calibrate.h"
 #include <opencv2/core/ocl.hpp>
 #include <iostream>
 #include <chrono>
@@ -17,8 +18,7 @@
 #include <atomic>
 #include <SocketFactory.h>
 #include <csignal>
-#include <fcntl.h>
-#include <poll.h>
+#include <core/opencl/ocl_defs.hpp>
 
 using namespace mini_server;
 
@@ -31,25 +31,6 @@ static CommandServer commandServer;
 
 int main(int argc, const char **argv) {
     cpptrace::register_terminate_handler();
-
-    broadcastingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
-    commandServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_ctl", 1));
-    auto handler = CvCommandHandler(commandServer);
-    commandServer.setHandler(handler);
-
-    signal(SIGINT, [](int signal) {
-        running = false;
-        broadcastingServer.stop();
-        commandServer.stop();
-    });
-
-    std::thread commandServerThread = std::thread([]() {
-        commandServer.run();
-    });
-
-    std::thread broadcastingServerThread = std::thread([]() {
-        broadcastingServer.run();
-    });
 
     cv::Mat captureFrameLeft, captureFrameRight, readingLeft, readingRight, readingImLeft, readingImRight;
     cv::UMat output, outputLeft, inputLeft, imageLeft, outputRight, inputRight, imageRight;
@@ -72,6 +53,12 @@ int main(int argc, const char **argv) {
         cv::VideoCaptureProperties::CAP_PROP_ORIENTATION_AUTO, false,
     };
 
+    if (argc < 3) {
+        std::cout << "too less command arguments";
+
+        return -1;
+    }
+
     if (strcmp(argv[1], argv[2]) == 0) {
         captureLeft.open(argv[1], cv::CAP_V4L2, params);
         captureRight = captureLeft;
@@ -79,6 +66,51 @@ int main(int argc, const char **argv) {
         captureLeft.open(argv[1], cv::CAP_V4L2, params);
         captureRight.open(argv[2], cv::CAP_V4L2, params);
     }
+
+    StereoCameraProperties props;
+    if (strcmp(argv[3], "--recapture-chessboard") == 0) {
+        Calibrate::capture(captureLeft, captureRight);
+        Calibrate::calibrate(12, 8, props);
+        return 0;
+    } else if (strcmp(argv[3], "--recalibrate") == 0) {
+        Calibrate::calibrate(12, 8, props);
+        return 0;
+    } else {
+        Calibrate::readCalibrationData(props);
+        captureLeft.read(captureFrameLeft);
+        props.imgSize = captureFrameLeft.size();
+    }
+    //stereoRectify performed inside calibration function atm but not necessary in finding extrinsics that can be loaded
+    stereoRectify(props.cameraMatrix[0], props.distCoeffs[0], props.cameraMatrix[1], props.distCoeffs[1],
+                  props.imgSize, props.R, props.T, props.R1, props.R2, props.P1, props.P2, props.Q,
+                  CALIB_ZERO_DISPARITY, 1, props.imgSize, &props.roi[0], &props.roi[1]);
+
+    cv::Mat mapl[2], mapr[2];
+    ///Computes the undistortion and rectification transformation map.
+    ///http://docs.opencv.org/2.4/modules/imgproc/doc/geometric_transformations.html#initundistortrectifymap
+    //Left
+    initUndistortRectifyMap(props.cameraMatrix[0], props.distCoeffs[0], props.R1, props.P1, props.imgSize, CV_16SC2, mapl[0], mapl[1]);
+    //Right
+    initUndistortRectifyMap(props.cameraMatrix[1], props.distCoeffs[1], props.R2, props.P2, props.imgSize, CV_16SC2, mapr[0], mapr[1]);
+
+    broadcastingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
+    commandServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_ctl", 1));
+    auto handler = CvCommandHandler(commandServer);
+    commandServer.setHandler(handler);
+
+    signal(SIGINT, [](int signal) {
+        running = false;
+        broadcastingServer.stop();
+        commandServer.stop();
+    });
+
+    std::thread commandServerThread = std::thread([]() {
+        commandServer.run();
+    });
+
+    std::thread broadcastingServerThread = std::thread([]() {
+        broadcastingServer.run();
+    });
 
     auto capFps = captureLeft.get(cv::CAP_PROP_FPS);
     auto capWidth = (int) captureLeft.get(cv::CAP_PROP_FRAME_WIDTH);
@@ -138,7 +170,7 @@ int main(int argc, const char **argv) {
     captureLeft.release();
     captureRight.release();
 
-    cv::Size outputSize(capWidth, capHeight);
+    cv::Size outputSize(capWidth / 2, capHeight / 2);
     cv::Size processingSize(capWidth, capHeight);
 
     const char command[] = "ffmpeg -f rawvideo -pixel_format bgr24 -s %dx%d -re  -i - %s %s";
@@ -204,9 +236,6 @@ int main(int argc, const char **argv) {
     std::thread writer;
     std::atomic writerIsRunning = false;
 
-    std::thread proc;
-    std::atomic procIsRunning = false;
-
     cv::ocl::setUseOpenCL(true);
 
     std::mutex readerLeftLock;
@@ -228,6 +257,10 @@ int main(int argc, const char **argv) {
     auto readerLeft = std::thread(readerfunction, &readingLeft, leftPipe, &readingImLeft, &readerLeftLock, &readerLeftCount);
     auto readerRight = std::thread(readerfunction, &readingRight, rightPipe, &readingImRight, &readerRightLock, &readerRightCount);
 
+    if (!cv::ocl::isOpenCLActivated()) {
+        throw std::runtime_error("OpenCL is not available");
+    }
+
     for (int i = 0; running; i++) {
 //        fread(readingLeft.data, sizeof(char), readingLeft.dataend - readingLeft.datastart, leftPipe);
 //        readingLeft.copyTo(inputLeft);
@@ -244,10 +277,10 @@ int main(int argc, const char **argv) {
         auto start = std::chrono::high_resolution_clock::now();
 
         readerLeftLock.lock();
-        readingImLeft.copyTo(inputLeft);
+        readingImLeft.copyTo(imageLeft);
         readerLeftLock.unlock();
         readerRightLock.lock();
-        readingImRight.copyTo(inputRight);
+        readingImRight.copyTo(imageRight);
         readerRightLock.unlock();
 
         auto now = std::chrono::high_resolution_clock::now();
@@ -256,9 +289,22 @@ int main(int argc, const char **argv) {
 
         fps = 1e9 / us;
 
-        if (inputLeft.empty()) {
+        if (imageLeft.empty()) {
             break;
         }
+
+        remap(imageLeft, inputLeft, mapl[0], mapl[1], INTER_LINEAR);
+        remap(imageRight, inputRight, mapr[0], mapr[1], INTER_LINEAR);
+
+        //Use create ROI which is valid in both left and right ROIs
+        int tl_x = MAX(props.roi[0].x, props.roi[1].x);
+        int tl_y = MAX(props.roi[0].y, props.roi[1].y);
+        int br_x = MIN(props.roi[0].width + props.roi[0].x, props.roi[1].width + props.roi[1].x);
+        int br_y = MIN(props.roi[0].height + props.roi[0].y, props.roi[1].height + props.roi[1].y);
+        auto cropBox = Rect(Point(tl_x, tl_y), Point(br_x, br_y));
+
+        inputLeft = inputLeft(cropBox);
+        inputRight = inputRight(cropBox);
 
         processor.processFrame(inputLeft, inputRight, output);
 
@@ -302,8 +348,8 @@ int main(int argc, const char **argv) {
 
 #ifdef HAVE_OPENCV_HIGHGUI
         imshow("Left", resultLeft);
-        if (!output.empty()) {
-            imshow("Result", output);
+        if (!resultRight.empty()) {
+            imshow("Right", resultRight);
         }
 
         if (cv::waitKey(1) >= 0) {
@@ -311,9 +357,12 @@ int main(int argc, const char **argv) {
         }
 #endif
     }
-    writer.join();
-//    readerLeft.join();
-//    readerRight.join();
+    if (writer.joinable()) {
+        writer.join();
+    }
+
+    readerLeft.join();
+    readerRight.join();
 
     std::cerr << "exiting..." << std::endl;
 
