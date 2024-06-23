@@ -8,6 +8,14 @@ else()
     message("arch is ${ARCH}")
 endif()
 
+#OpenCL libraries
+find_package(OpenCL REQUIRED)
+if(OpenCL_FOUND)
+    include_directories(${OpenCL_INCLUDE_DIRS})
+else(OpenCL_FOUND)
+    message(">> OpenCL not found. OpenCL is required for GPGPU/FPGA/Accelerator use.")
+endif(OpenCL_FOUND)
+
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH};release/${ARCH}/${CMAKE_BUILD_TYPE}/OpenCV)
 
 include_directories("release/${ARCH}/Debug/OpenCV/include/opencv5")
@@ -16,6 +24,7 @@ include_directories("release/${ARCH}/Debug/OpenCV/include/opencv5/opencv2")
 # only for ide analizer
 add_definitions(-include /home/dima/embedded_cv/release/${ARCH}/Debug/OpenCV/include/opencv5/opencv2/cvconfig.h)
 add_definitions(-DCL_TARGET_OPENCL_VERSION=220)
+add_definitions(-DBASE_DIR="lib/PRiMEStereoMatch/")
 
 set(CMAKE_CXX_STANDARD 17)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")
@@ -52,9 +61,18 @@ add_executable(embedded_cv
         ImageProcessor.cpp
         CvCommandHandler.cpp
         OnlineCalibration.cpp
-        OnlineCalibration.h
+        lib/PRiMEStereoMatch/src/CVC.cpp
+        lib/PRiMEStereoMatch/src/CVC_cl.cpp
+        lib/PRiMEStereoMatch/src/CVF.cpp
+        lib/PRiMEStereoMatch/src/CVF_cl.cpp
+        lib/PRiMEStereoMatch/src/DispEst.cpp
+        lib/PRiMEStereoMatch/src/DispSel.cpp
+        lib/PRiMEStereoMatch/src/DispSel_cl.cpp
+        lib/PRiMEStereoMatch/src/fastguidedfilter.cpp
+        lib/PRiMEStereoMatch/src/oclUtil.cpp
+        lib/PRiMEStereoMatch/src/PP.cpp
 )
 
-target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} mini_server)
+target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} ${OpenCL_LIBRARIES} mini_server)
 
 install(TARGETS embedded_cv DESTINATION bin)

@@ -20,6 +20,8 @@
 #include <csignal>
 #include <core/opencl/ocl_defs.hpp>
 
+#include <DispEst.h>
+
 using namespace mini_server;
 
 void drawText(UMat &image, double rms, unsigned long i);
@@ -283,6 +285,18 @@ int main(int argc, const char **argv) {
         onlineCalibration.rectify();
     }
 
+    DispEst *SMDE = nullptr;
+
+    // Use create ROI which is valid in both left and right ROIs
+    int tl_x = MAX(props.roi[0].x, props.roi[1].x);
+    int tl_y = MAX(props.roi[0].y, props.roi[1].y);
+    int br_x = MIN(props.roi[0].width + props.roi[0].x, props.roi[1].width + props.roi[1].x);
+    int br_y = MIN(props.roi[0].height + props.roi[0].y, props.roi[1].height + props.roi[1].y);
+    auto cropBox = Rect(Point(tl_x, tl_y), Point(br_x, br_y));
+
+    UMat lFrame, rFrame;
+    UMat lDispMap, rDispMap, leftDispMap, rightDispMap;
+
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
         if (readerLeftCount == frameCount || readerRightCount == frameCount || readingImLeft.empty() || readingImRight.empty()) {
@@ -366,18 +380,43 @@ int main(int argc, const char **argv) {
             remap(imageLeft, inputLeft, onlineCalibration.rmapL[0], onlineCalibration.rmapL[1], INTER_LINEAR);
             remap(imageRight, inputRight, onlineCalibration.rmapR[0], onlineCalibration.rmapR[1], INTER_LINEAR);
 
-            // Use create ROI which is valid in both left and right ROIs
-            int tl_x = MAX(props.roi[0].x, props.roi[1].x);
-            int tl_y = MAX(props.roi[0].y, props.roi[1].y);
-            int br_x = MIN(props.roi[0].width + props.roi[0].x, props.roi[1].width + props.roi[1].x);
-            int br_y = MIN(props.roi[0].height + props.roi[0].y, props.roi[1].height + props.roi[1].y);
-            auto cropBox = Rect(Point(tl_x, tl_y), Point(br_x, br_y));
-
             inputLeft = inputLeft(cropBox);
             inputRight = inputRight(cropBox);
 
-//            imageLeft.copyTo(inputLeft);
-//            imageRight.copyTo(inputRight);
+            cv::rotate(inputLeft, inputLeft, ROTATE_90_CLOCKWISE);
+            cv::rotate(inputRight, inputRight, ROTATE_90_CLOCKWISE);
+
+            if (SMDE == nullptr) {
+                SMDE = new DispEst(inputLeft, inputRight, 50, 20, true);
+            }
+
+            inputLeft.convertTo(lFrame, CV_32F, 1 / 255.0f);
+            inputRight.convertTo(rFrame, CV_32F,  1 / 255.0f);
+
+            SMDE->setInputImages(lFrame, lFrame);
+            SMDE->setSubsampleRate(3);
+
+            SMDE->CostConst_GPU();
+//            cv::waitKey(1);
+            SMDE->CostFilter_GPU();
+//            cv::waitKey(1);
+            SMDE->DispSelect_GPU();
+//            cv::waitKey(1);
+//            SMDE->PostProcess_GPU();
+//            cv::waitKey(1);
+
+            // ******** Display Disparity Maps  ******** //
+            SMDE->lDisMap.copyTo(lDispMap); //scale factor used to compare error with ground truth
+            SMDE->rDisMap.copyTo(rDispMap); //scale factor used to compare error with ground truth
+
+            cv::cvtColor(lDispMap, leftDispMap, cv::COLOR_GRAY2RGB);
+            cv::cvtColor(lDispMap, rightDispMap, cv::COLOR_GRAY2RGB);
+
+            imshow("Left DispMap", lDispMap);
+            imshow("Right DispMap", rDispMap);
+
+            imageLeft.copyTo(inputLeft);
+            imageRight.copyTo(inputRight);
         } else {
             imageLeft.copyTo(inputLeft);
             imageRight.copyTo(inputRight);
