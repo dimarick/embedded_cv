@@ -15,6 +15,7 @@ include_directories("release/${ARCH}/Debug/OpenCV/include/opencv5/opencv2")
 
 # only for ide analizer
 add_definitions(-include /home/dima/embedded_cv/release/${ARCH}/Debug/OpenCV/include/opencv5/opencv2/cvconfig.h)
+add_definitions(-DCL_TARGET_OPENCL_VERSION=220)
 
 set(CMAKE_CXX_STANDARD 17)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")
@@ -50,8 +51,8 @@ add_executable(embedded_cv
         main.cpp
         ImageProcessor.cpp
         CvCommandHandler.cpp
-        Calibrate.cpp
-        lib/PRiMEStereoMatch/src/StereoCalib.cpp
+        OnlineCalibration.cpp
+        OnlineCalibration.h
 )
 
 target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} mini_server)

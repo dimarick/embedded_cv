@@ -6,7 +6,7 @@
 #include "opencv2/videoio.hpp"
 #include "ImageProcessor.h"
 #include "CvCommandHandler.h"
-#include "Calibrate.h"
+#include "OnlineCalibration.h"
 #include <opencv2/core/ocl.hpp>
 #include <iostream>
 #include <chrono>
@@ -22,7 +22,9 @@
 
 using namespace mini_server;
 
-void drawText(cv::UMat &image, double fps);
+void drawText(UMat &image, double rms, unsigned long i);
+
+bool isCalibrationComplete(const UMat *mat1, const UMat *mat2, const StereoCameraProperties &props);
 
 static std::atomic running = true;
 
@@ -66,32 +68,32 @@ int main(int argc, const char **argv) {
         captureLeft.open(argv[1], cv::CAP_V4L2, params);
         captureRight.open(argv[2], cv::CAP_V4L2, params);
     }
-
-    StereoCameraProperties props;
-    if (strcmp(argv[3], "--recapture-chessboard") == 0) {
-        Calibrate::capture(captureLeft, captureRight);
-        Calibrate::calibrate(12, 8, props);
-        return 0;
-    } else if (strcmp(argv[3], "--recalibrate") == 0) {
-        Calibrate::calibrate(12, 8, props);
-        return 0;
-    } else {
-        Calibrate::readCalibrationData(props);
-        captureLeft.read(captureFrameLeft);
-        props.imgSize = captureFrameLeft.size();
-    }
-    //stereoRectify performed inside calibration function atm but not necessary in finding extrinsics that can be loaded
-    stereoRectify(props.cameraMatrix[0], props.distCoeffs[0], props.cameraMatrix[1], props.distCoeffs[1],
-                  props.imgSize, props.R, props.T, props.R1, props.R2, props.P1, props.P2, props.Q,
-                  CALIB_ZERO_DISPARITY, 1, props.imgSize, &props.roi[0], &props.roi[1]);
-
-    cv::Mat mapl[2], mapr[2];
-    ///Computes the undistortion and rectification transformation map.
-    ///http://docs.opencv.org/2.4/modules/imgproc/doc/geometric_transformations.html#initundistortrectifymap
-    //Left
-    initUndistortRectifyMap(props.cameraMatrix[0], props.distCoeffs[0], props.R1, props.P1, props.imgSize, CV_16SC2, mapl[0], mapl[1]);
-    //Right
-    initUndistortRectifyMap(props.cameraMatrix[1], props.distCoeffs[1], props.R2, props.P2, props.imgSize, CV_16SC2, mapr[0], mapr[1]);
+//
+//    StereoCameraProperties props;
+//    if (strcmp(argv[3], "--recapture-chessboard") == 0) {
+//        Calibrate::capture(captureLeft, captureRight);
+//        Calibrate::calibrate(12, 8, props);
+//        return 0;
+//    } else if (strcmp(argv[3], "--recalibrate") == 0) {
+//        Calibrate::calibrate(12, 8, props);
+//        return 0;
+//    } else {
+//        Calibrate::readCalibrationData(props);
+//        captureLeft.read(captureFrameLeft);
+//        props.imgSize = captureFrameLeft.size();
+//    }
+//    //stereoRectify performed inside calibration function atm but not necessary in finding extrinsics that can be loaded
+//    stereoRectify(props.cameraMatrix[0], props.distCoeffs[0], props.cameraMatrix[1], props.distCoeffs[1],
+//                  props.imgSize, props.R, props.T, props.R1, props.R2, props.P1, props.P2, props.Q,
+//                  CALIB_ZERO_DISPARITY, 1, props.imgSize, &props.roi[0], &props.roi[1]);
+//
+//    cv::Mat mapl[2], mapr[2];
+//    ///Computes the undistortion and rectification transformation map.
+//    ///http://docs.opencv.org/2.4/modules/imgproc/doc/geometric_transformations.html#initundistortrectifymap
+//    //Left
+//    initUndistortRectifyMap(props.cameraMatrix[0], props.distCoeffs[0], props.R1, props.P1, props.imgSize, CV_16SC2, mapl[0], mapl[1]);
+//    //Right
+//    initUndistortRectifyMap(props.cameraMatrix[1], props.distCoeffs[1], props.R2, props.P2, props.imgSize, CV_16SC2, mapr[0], mapr[1]);
 
     broadcastingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
     commandServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_ctl", 1));
@@ -261,11 +263,27 @@ int main(int argc, const char **argv) {
         throw std::runtime_error("OpenCL is not available");
     }
 
+    OnlineCalibration onlineCalibration;
+
+    auto needsCalibration = !onlineCalibration.loadCalibrationResult();
+
+    std::atomic calibrating = false;
+    std::atomic<double> calibrationRMS = INFINITY;
+    std::thread calibration;
+
+    UMat calibLeft, calibRight;
+
+    StereoCameraProperties &props = onlineCalibration.props;
+
+    onlineCalibration.setHighPrecision();
+
+    if (needsCalibration) {
+        onlineCalibration.loadCalibrationImages();
+        calibrationRMS = onlineCalibration.updateCalibrationResult();
+        onlineCalibration.rectify();
+    }
+
     for (int i = 0; running; i++) {
-//        fread(readingLeft.data, sizeof(char), readingLeft.dataend - readingLeft.datastart, leftPipe);
-//        readingLeft.copyTo(inputLeft);
-//        fread(readingRight.data, sizeof(char), readingRight.dataend - readingRight.datastart, rightPipe);
-//        readingRight.copyTo(inputRight);
         long nextFrame = std::max(readerLeftCount, readerRightCount);
         if (readerLeftCount == frameCount || readerRightCount == frameCount || readingImLeft.empty() || readingImRight.empty()) {
             usleep(1);
@@ -293,26 +311,87 @@ int main(int argc, const char **argv) {
             break;
         }
 
-        remap(imageLeft, inputLeft, mapl[0], mapl[1], INTER_LINEAR);
-        remap(imageRight, inputRight, mapr[0], mapr[1], INTER_LINEAR);
+        if (needsCalibration && i % 30 == 0 && !calibrating) {
+            if (onlineCalibration.autoDetectBoard(imageLeft, imageRight)) {
+                calibrating = true;
 
-        //Use create ROI which is valid in both left and right ROIs
-        int tl_x = MAX(props.roi[0].x, props.roi[1].x);
-        int tl_y = MAX(props.roi[0].y, props.roi[1].y);
-        int br_x = MIN(props.roi[0].width + props.roi[0].x, props.roi[1].width + props.roi[1].x);
-        int br_y = MIN(props.roi[0].height + props.roi[0].y, props.roi[1].height + props.roi[1].y);
-        auto cropBox = Rect(Point(tl_x, tl_y), Point(br_x, br_y));
+                imageLeft.copyTo(calibLeft);
+                imageRight.copyTo(calibRight);
 
-        inputLeft = inputLeft(cropBox);
-        inputRight = inputRight(cropBox);
+                if (calibration.joinable()) {
+                    calibration.join();
+                }
 
-        processor.processFrame(inputLeft, inputRight, output);
+                calibration = std::thread([](OnlineCalibration *onlineCalibration, auto *calibrating, UMat *imageLeft, UMat *imageRight, StereoCameraProperties *props, auto *calibrationRMS) {
+                    onlineCalibration->drawChessboardCorners(*imageLeft, *imageRight);
+
+                    cv::UMat left, right;
+
+                    cv::rectangle(*imageLeft, props->roi[0], cv::Scalar(94, 206, 165), 8);
+                    cv::rectangle(*imageRight, props->roi[1], cv::Scalar(94, 206, 165), 8);
+
+                    cv::resize(*imageLeft, left, cv::Size(0, 0), 0.25, 0.25);
+                    cv::resize(*imageRight, right, cv::Size(0, 0), 0.25, 0.25);
+
+                    cv::imshow("Calibration Left", left);
+                    cv::imshow("Calibration Right", right);
+                    cv::waitKey(1);
+                    auto rms = onlineCalibration->updateCalibrationResult();
+                    if (rms > 10) {
+                        onlineCalibration->rejectLastBoard();
+                    } else {
+                        *calibrationRMS = rms;
+
+                        if (onlineCalibration->imagePointsL.size() > 10) {
+                            onlineCalibration->rectify();
+                            onlineCalibration->storeCalibrationResult();
+                        }
+                    }
+
+                    cv::rectangle(*imageLeft, props->roi[0], cv::Scalar(94, 206, 165), 8);
+                    cv::rectangle(*imageRight, props->roi[1], cv::Scalar(94, 206, 165), 8);
+
+                    cv::resize(*imageLeft, left, cv::Size(0, 0), 0.25, 0.25);
+                    cv::resize(*imageRight, right, cv::Size(0, 0), 0.25, 0.25);
+
+                    cv::imshow("Calibration Left", left);
+                    cv::imshow("Calibration Right", right);
+                    cv::waitKey(1);
+                    *calibrating = false;
+                }, &onlineCalibration, &calibrating, &calibLeft, &calibRight, &props, &calibrationRMS);
+            }
+        }
+
+        if (onlineCalibration.isCalibrated) {
+            remap(imageLeft, inputLeft, onlineCalibration.rmapL[0], onlineCalibration.rmapL[1], INTER_LINEAR);
+            remap(imageRight, inputRight, onlineCalibration.rmapR[0], onlineCalibration.rmapR[1], INTER_LINEAR);
+
+            // Use create ROI which is valid in both left and right ROIs
+            int tl_x = MAX(props.roi[0].x, props.roi[1].x);
+            int tl_y = MAX(props.roi[0].y, props.roi[1].y);
+            int br_x = MIN(props.roi[0].width + props.roi[0].x, props.roi[1].width + props.roi[1].x);
+            int br_y = MIN(props.roi[0].height + props.roi[0].y, props.roi[1].height + props.roi[1].y);
+            auto cropBox = Rect(Point(tl_x, tl_y), Point(br_x, br_y));
+
+            inputLeft = inputLeft(cropBox);
+            inputRight = inputRight(cropBox);
+
+//            imageLeft.copyTo(inputLeft);
+//            imageRight.copyTo(inputRight);
+        } else {
+            imageLeft.copyTo(inputLeft);
+            imageRight.copyTo(inputRight);
+        }
+
+//        processor.processFrame(inputLeft, inputRight, output);
 
         cv::resize(inputLeft, outputLeft, outputSize, 0, 0,
                    cv::INTER_NEAREST);
 
         cv::resize(inputRight, outputRight, outputSize, 0, 0,
                    cv::INTER_NEAREST);
+
+        drawText(outputLeft, calibrationRMS, onlineCalibration.imagePointsL.size());
 
         outputLeft.copyTo(resultLeft);
         outputRight.copyTo(resultRight);
@@ -330,21 +409,21 @@ int main(int argc, const char **argv) {
         std::ostringstream tm;
 
         tm << "PERF " << fps << " " << time << std::endl;
-
-        if (!writerIsRunning) {
-            if (writer.joinable()) {
-                writer.join();
-            }
-
-            writerIsRunning = true;
-
-            writer = std::thread([](auto *resultLeft, auto *pipe, auto *isRunning, auto *tm) {
-                broadcastingServer.broadcast(tm->str());
-
-                fwrite(resultLeft->data, sizeof(char), resultLeft->dataend - resultLeft->datastart, *pipe);
-                *isRunning = false;
-            }, &resultLeft, &pipe, &writerIsRunning, &tm);
-        }
+//
+//        if (!writerIsRunning) {
+//            if (writer.joinable()) {
+//                writer.join();
+//            }
+//
+//            writerIsRunning = true;
+//
+//            writer = std::thread([](auto *resultLeft, auto *pipe, auto *isRunning, auto *tm) {
+//                broadcastingServer.broadcast(tm->str());
+//
+//                fwrite(resultLeft->data, sizeof(char), resultLeft->dataend - resultLeft->datastart, *pipe);
+//                *isRunning = false;
+//            }, &resultLeft, &pipe, &writerIsRunning, &tm);
+//        }
 
 #ifdef HAVE_OPENCV_HIGHGUI
         imshow("Left", resultLeft);
@@ -357,12 +436,19 @@ int main(int argc, const char **argv) {
         }
 #endif
     }
+
+    onlineCalibration.storeCalibrationImages();
+    onlineCalibration.storeCalibrationResult();
+
     if (writer.joinable()) {
         writer.join();
     }
 
     readerLeft.join();
     readerRight.join();
+    if (calibration.joinable()) {
+        calibration.join();
+    }
 
     std::cerr << "exiting..." << std::endl;
 
@@ -379,10 +465,15 @@ int main(int argc, const char **argv) {
     return 0;
 }
 
-void drawText(cv::UMat &image, double fps) {
+bool isCalibrationComplete(const UMat *mat1, const UMat *mat2, const StereoCameraProperties &props) {
+    return props.roi[0].height > 0.8 * mat1->rows && props.roi[0].width > 0.8 * mat1->cols
+        && props.roi[1].height > 0.8 * mat2->rows && props.roi[1].width > 0.8 * mat2->cols;
+}
+
+void drawText(UMat &image, double rms, unsigned long i) {
     char text[100];
 
-    snprintf(text, 100, "Hello, Opencv. FPS %f", fps);
+    snprintf(text, 100, "Hello, Opencv. RMS %f. N %lu", rms, i);
 
     cv::putText(image, text,
                 cv::Point(20, 50),
