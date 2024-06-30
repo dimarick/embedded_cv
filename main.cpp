@@ -382,41 +382,42 @@ int main(int argc, const char **argv) {
 
             inputLeft = inputLeft(cropBox);
             inputRight = inputRight(cropBox);
+//            fastGuidedFilter(inputLeft, inputLeft, 32, 0.0001f, 8);
 
-            cv::rotate(inputLeft, inputLeft, ROTATE_90_CLOCKWISE);
-            cv::rotate(inputRight, inputRight, ROTATE_90_CLOCKWISE);
+//            cv::rotate(inputLeft, inputLeft, ROTATE_90_CLOCKWISE);
+//            cv::rotate(inputRight, inputRight, ROTATE_90_CLOCKWISE);
 
-            if (SMDE == nullptr) {
-                SMDE = new DispEst(inputLeft, inputRight, 50, 20, true);
-            }
+//            if (SMDE == nullptr) {
+//                SMDE = new DispEst(inputLeft, inputRight, 50, 20, true);
+//            }
+//
+//            inputLeft.convertTo(lFrame, CV_32F, 1 / 255.0f);
+//            inputRight.convertTo(rFrame, CV_32F,  1 / 255.0f);
+//
+//            SMDE->setInputImages(lFrame, lFrame);
+//            SMDE->setSubsampleRate(3);
 
-            inputLeft.convertTo(lFrame, CV_32F, 1 / 255.0f);
-            inputRight.convertTo(rFrame, CV_32F,  1 / 255.0f);
-
-            SMDE->setInputImages(lFrame, lFrame);
-            SMDE->setSubsampleRate(3);
-
-            SMDE->CostConst_GPU();
+//            SMDE->CostConst_GPU();
 //            cv::waitKey(1);
-            SMDE->CostFilter_GPU();
+//            SMDE->CostFilter_FGF();
 //            cv::waitKey(1);
-            SMDE->DispSelect_GPU();
+//            SMDE->DispSelect_GPU();
 //            cv::waitKey(1);
 //            SMDE->PostProcess_GPU();
 //            cv::waitKey(1);
 
-            // ******** Display Disparity Maps  ******** //
-            SMDE->lDisMap.copyTo(lDispMap); //scale factor used to compare error with ground truth
-            SMDE->rDisMap.copyTo(rDispMap); //scale factor used to compare error with ground truth
+//            // ******** Display Disparity Maps  ******** //
+//            SMDE->lDisMap.copyTo(lDispMap); //scale factor used to compare error with ground truth
+//            SMDE->rDisMap.copyTo(rDispMap); //scale factor used to compare error with ground truth
+//
+//            cv::cvtColor(lDispMap, leftDispMap, cv::COLOR_GRAY2RGB);
+//            cv::cvtColor(lDispMap, rightDispMap, cv::COLOR_GRAY2RGB);
+//
+//            imshow("Left DispMap", lDispMap);
+//            imshow("Right DispMap", rDispMap);
 
-            cv::cvtColor(lDispMap, leftDispMap, cv::COLOR_GRAY2RGB);
-            cv::cvtColor(lDispMap, rightDispMap, cv::COLOR_GRAY2RGB);
-
-            imshow("Left DispMap", lDispMap);
-            imshow("Right DispMap", rDispMap);
-
-            imageLeft.copyTo(inputLeft);
-            imageRight.copyTo(inputRight);
+//            imageLeft.copyTo(inputLeft);
+//            imageRight.copyTo(inputRight);
         } else {
             imageLeft.copyTo(inputLeft);
             imageRight.copyTo(inputRight);
