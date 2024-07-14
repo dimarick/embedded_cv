@@ -299,6 +299,16 @@ int main(int argc, const char **argv) {
     UMat lDispMap, rDispMap, leftDispMap, rightDispMap;
 
     QuickStereoMatch sm;
+//
+//    Mat ltest = (Mat_<unsigned char>({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, })).reshape(1);
+//    Mat rtest = (Mat_<unsigned char>({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, })).reshape(1);
+//    Mat ldtest;
+//    Mat rdtest;
+//
+//    sm.computeDisparityMap(ltest, rtest, ldtest, rdtest, 5, 6, 5);
+//
+//    std::cout << ldtest.rowRange(5, 6) << std::endl << std::endl;
+//    std::cout << rdtest.rowRange(5, 6) << std::endl << std::endl;
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -403,8 +413,8 @@ int main(int argc, const char **argv) {
             cv::rotate(inputLeft, inputLeft, ROTATE_180);
             cv::rotate(inputRight, inputRight, ROTATE_180);
 
-            cv::rotate(inputLeft, outputLeft, ROTATE_90_COUNTERCLOCKWISE);
-            cv::rotate(inputRight, outputRight, ROTATE_90_COUNTERCLOCKWISE);
+            cv::rotate(inputLeft, outputLeft, ROTATE_90_CLOCKWISE);
+            cv::rotate(inputRight, outputRight, ROTATE_90_CLOCKWISE);
 //            cv::resize(outputLeft, outputLeft, Size(0, 0), 0.25, 0.25);
 //            cv::resize(outputRight, outputRight, Size(0, 0), 0.25, 0.25);
 //
@@ -437,7 +447,7 @@ int main(int argc, const char **argv) {
             }
 
             int borderSize = 10;
-            sm.computeDisparityMap(leftPyramid[3], rightPyramid[3], lmap[3], rmap[3], (int)max, 5, borderSize);
+            sm.computeDisparityMap(leftPyramid[3], rightPyramid[3], lmap[3], rmap[3], (int)max, 10, borderSize);
 
             int scale = 3;
 
@@ -458,7 +468,7 @@ int main(int argc, const char **argv) {
             double min = -max;
             map2.convertTo(m, CV_8UC1, 255 / (max-min), -min);
 //            cv::resize(m, m, Size(0, 0), 2, 2);
-            cv::rotate(m, m, ROTATE_90_CLOCKWISE);
+            cv::rotate(m, m, ROTATE_90_COUNTERCLOCKWISE);
 
             cv::Mat falseColorsMap;
             applyColorMap(m, falseColorsMap, cv::COLORMAP_TURBO);
@@ -473,7 +483,7 @@ int main(int argc, const char **argv) {
 
             map2.convertTo(m, CV_8UC1, 255 / (max-min), -min);
 //            cv::resize(m, m, Size(0, 0), 2, 2);
-            cv::rotate(m, m, ROTATE_90_CLOCKWISE);
+            cv::rotate(m, m, ROTATE_90_COUNTERCLOCKWISE);
             cv::Mat falseColorsMap2;
             applyColorMap(m, falseColorsMap2, cv::COLORMAP_TURBO);
 
