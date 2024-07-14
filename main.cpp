@@ -21,6 +21,7 @@
 #include <core/opencl/ocl_defs.hpp>
 
 #include <DispEst.h>
+#include "QuickStereoMatch.h"
 
 using namespace mini_server;
 
@@ -262,7 +263,7 @@ int main(int argc, const char **argv) {
     auto readerRight = std::thread(readerfunction, &readingRight, rightPipe, &readingImRight, &readerRightLock, &readerRightCount);
 
     if (!cv::ocl::isOpenCLActivated()) {
-        throw std::runtime_error("OpenCL is not available");
+//        throw std::runtime_error("OpenCL is not available");
     }
 
     OnlineCalibration onlineCalibration;
@@ -296,6 +297,8 @@ int main(int argc, const char **argv) {
 
     UMat lFrame, rFrame;
     UMat lDispMap, rDispMap, leftDispMap, rightDispMap;
+
+    QuickStereoMatch sm;
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -381,11 +384,102 @@ int main(int argc, const char **argv) {
             remap(imageRight, inputRight, onlineCalibration.rmapR[0], onlineCalibration.rmapR[1], INTER_LINEAR);
 
             inputLeft = inputLeft(cropBox);
-            inputRight = inputRight(cropBox);
-//            fastGuidedFilter(inputLeft, inputLeft, 32, 0.0001f, 8);
+            auto cropBox2 = Rect(Point(tl_x + 4, tl_y), Point(br_x + 4, br_y));
+            inputRight = inputRight(cropBox2);
 
-//            cv::rotate(inputLeft, inputLeft, ROTATE_90_CLOCKWISE);
-//            cv::rotate(inputRight, inputRight, ROTATE_90_CLOCKWISE);
+            UMat inputLeft2, inputRight2;
+
+//            cv::edgePreservingFilter(inputLeft, inputLeft2);
+//            cv::edgePreservingFilter(inputRight, inputRight2);
+//            cv::bilateralFilter(inputLeft, inputLeft2, 15, 75, 75);
+//            cv::bilateralFilter(inputRight, inputRight2, 15, 75, 75);
+//            fastGuidedFilter(inputLeft, inputLeft, 70, 0.001);
+//            fastGuidedFilter(inputRight, inputRight, 70, 0.001);
+//            inputLeft2.copyTo(inputLeft);
+//            inputRight2.copyTo(inputRight);
+//            inputLeft.copyTo(inputLeft2);
+//            inputRight.copyTo(inputRight2);
+
+            cv::rotate(inputLeft, inputLeft, ROTATE_180);
+            cv::rotate(inputRight, inputRight, ROTATE_180);
+
+            cv::rotate(inputLeft, outputLeft, ROTATE_90_COUNTERCLOCKWISE);
+            cv::rotate(inputRight, outputRight, ROTATE_90_COUNTERCLOCKWISE);
+//            cv::resize(outputLeft, outputLeft, Size(0, 0), 0.25, 0.25);
+//            cv::resize(outputRight, outputRight, Size(0, 0), 0.25, 0.25);
+//
+//            auto kernel = (Mat_<float>(5, 5) <<
+//                    0, 2,  30,  2,  0,
+//                    0, 5,  70, 5,  0,
+//                    1, 10, 100, 10, 1,
+//                    0, 5,  70, 5,  0,
+//                    0, 2,  30,  2,  0
+//                          ) / 1000;
+//
+//            cv::filter2D(outputLeft, outputLeft, kernel);
+//            cv::filter2D(outputRight, outputRight, kernel);
+
+            UMat map2, map3;
+
+            std::vector<Mat> leftPyramid, rightPyramid, lmap, rmap;
+
+            cv::buildPyramid(outputLeft, leftPyramid, 4);
+            cv::buildPyramid(outputRight, rightPyramid, 4);
+
+            double max = leftPyramid[3].cols * 0.45;
+
+            lmap.resize(5);
+            rmap.resize(5);
+
+            for (int j = 0; j < 4; ++j) {
+                lmap[j] = Mat::zeros(lmap[j].size(), CV_32FC1);
+                rmap[j] = Mat::zeros(rmap[j].size(), CV_32FC1);
+            }
+
+            int borderSize = 10;
+            sm.computeDisparityMap(leftPyramid[3], rightPyramid[3], lmap[3], rmap[3], (int)max, 5, borderSize);
+
+            int scale = 3;
+
+            for (int j = 2; j >= scale; --j) {
+                cv::medianBlur(lmap[j + 1], lmap[j + 1], 3);
+                cv::resize(lmap[j + 1], lmap[j], Size(0, 0), 2, 2);
+                cv::resize(rmap[j + 1], rmap[j], Size(0, 0), 2, 2);
+                lmap[j] *= 2;
+                rmap[j] *= 2;
+                max *= 2;
+                borderSize *= 2;
+                sm.computeDisparityMap(leftPyramid[j], rightPyramid[j], lmap[j], rmap[j], 10, 15, borderSize);
+            }
+
+            rmap[scale].copyTo(map2);
+
+            Mat m;
+            double min = -max;
+            map2.convertTo(m, CV_8UC1, 255 / (max-min), -min);
+//            cv::resize(m, m, Size(0, 0), 2, 2);
+            cv::rotate(m, m, ROTATE_90_CLOCKWISE);
+
+            cv::Mat falseColorsMap;
+            applyColorMap(m, falseColorsMap, cv::COLORMAP_TURBO);
+
+            imshow("DispMap R", falseColorsMap);
+
+            lmap[scale].copyTo(map2);
+//            cv::medianBlur(lmap, map2, 3);
+//            cv::medianBlur(map2, map2, 3);
+//            cv::medianBlur(map2, map2, 3);
+//            cv::medianBlur(map2, map2, 3);
+
+            map2.convertTo(m, CV_8UC1, 255 / (max-min), -min);
+//            cv::resize(m, m, Size(0, 0), 2, 2);
+            cv::rotate(m, m, ROTATE_90_CLOCKWISE);
+            cv::Mat falseColorsMap2;
+            applyColorMap(m, falseColorsMap2, cv::COLORMAP_TURBO);
+
+            imshow("DispMap L", falseColorsMap2);
+
+//            fastGuidedFilter(inputLeft, inputLeft, 32, 0.0001f, 8);
 
 //            if (SMDE == nullptr) {
 //                SMDE = new DispEst(inputLeft, inputRight, 50, 20, true);

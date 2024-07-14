@@ -30,6 +30,16 @@ set(CMAKE_CXX_STANDARD 17)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")
 find_package(OpenCV 5.0.0 REQUIRED)
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
+
+find_package(OpenMP)
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+endif()
+
 # If the package has been found, several variables will
 # be set, you can find the full list with descriptions
 # in the OpenCVConfig.cmake file.
@@ -71,6 +81,7 @@ add_executable(embedded_cv
         lib/PRiMEStereoMatch/src/fastguidedfilter.cpp
         lib/PRiMEStereoMatch/src/oclUtil.cpp
         lib/PRiMEStereoMatch/src/PP.cpp
+        QuickStereoMatch.cpp
 )
 
 target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} ${OpenCL_LIBRARIES} mini_server)
