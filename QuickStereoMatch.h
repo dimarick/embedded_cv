@@ -18,6 +18,8 @@ public:
     void computeDisparityMap(const Mat &left, const Mat &right, Mat &lmap, Mat &rmap, int maxDisparity = 150, int windowSize = 5, int borderSize = 10);
 
     float getCost(int channels, int windowSize, float cost, const uchar *si, const float *sg, const uchar *ti, const float *tg, const int rowWidth) const;
+
+    void ridgeFilter(UMat img, UMat &out);
 };
 
 

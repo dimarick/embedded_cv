@@ -298,17 +298,29 @@ int main(int argc, const char **argv) {
     UMat lFrame, rFrame;
     UMat lDispMap, rDispMap, leftDispMap, rightDispMap;
 
-    QuickStereoMatch sm;
+    QuickStereoMatch sm0, sm1, sm;
 //
-//    Mat ltest = (Mat_<unsigned char>({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, })).reshape(1);
-//    Mat rtest = (Mat_<unsigned char>({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, })).reshape(1);
+//    Mat ltest = (Mat_<unsigned char>({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, })).reshape(1);
+//    Mat rtest = (Mat_<unsigned char>({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, })).reshape(1);
 //    Mat ldtest;
 //    Mat rdtest;
 //
-//    sm.computeDisparityMap(ltest, rtest, ldtest, rdtest, 5, 6, 5);
+//    sm0.computeDisparityMap(ltest, rtest, ldtest, rdtest, 5, 6, 5);
 //
-//    std::cout << ldtest.rowRange(5, 6) << std::endl << std::endl;
+//    std::cout << ldtest.rowRange(5, 6) << std::endl;
 //    std::cout << rdtest.rowRange(5, 6) << std::endl << std::endl;
+//
+//    ltest = (Mat_<unsigned char>({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, })).reshape(1);
+//    rtest = (Mat_<unsigned char>({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, })).reshape(1);
+//    ldtest.release();
+//    rdtest.release();
+//
+//    sm1.computeDisparityMap(ltest, rtest, ldtest, rdtest, 5, 6, 5);
+//
+//    std::cout << ldtest.rowRange(5, 6) << std::endl;
+//    std::cout << rdtest.rowRange(5, 6) << std::endl << std::endl;
+
+//    running = false;
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -436,7 +448,8 @@ int main(int argc, const char **argv) {
             cv::buildPyramid(outputLeft, leftPyramid, 4);
             cv::buildPyramid(outputRight, rightPyramid, 4);
 
-            double max = leftPyramid[3].cols * 0.45;
+            int scale = 1;
+            double max = leftPyramid[scale].cols * 0.35;
 
             lmap.resize(5);
             rmap.resize(5);
@@ -447,20 +460,19 @@ int main(int argc, const char **argv) {
             }
 
             int borderSize = 10;
-            sm.computeDisparityMap(leftPyramid[3], rightPyramid[3], lmap[3], rmap[3], (int)max, 10, borderSize);
 
-            int scale = 3;
-
-            for (int j = 2; j >= scale; --j) {
-                cv::medianBlur(lmap[j + 1], lmap[j + 1], 3);
-                cv::resize(lmap[j + 1], lmap[j], Size(0, 0), 2, 2);
-                cv::resize(rmap[j + 1], rmap[j], Size(0, 0), 2, 2);
-                lmap[j] *= 2;
-                rmap[j] *= 2;
-                max *= 2;
-                borderSize *= 2;
-                sm.computeDisparityMap(leftPyramid[j], rightPyramid[j], lmap[j], rmap[j], 10, 15, borderSize);
-            }
+            sm.computeDisparityMap(leftPyramid[scale], rightPyramid[scale], lmap[scale], rmap[scale], (int)max, 10, borderSize);
+//
+//            for (int j = scale + 1; j >= scale; --j) {
+//                cv::medianBlur(lmap[j + 1], lmap[j + 1], 3);
+//                cv::resize(lmap[j + 1], lmap[j], Size(0, 0), 2, 2);
+//                cv::resize(rmap[j + 1], rmap[j], Size(0, 0), 2, 2);
+//                lmap[j] *= 2;
+//                rmap[j] *= 2;
+//                max *= 2;
+//                borderSize *= 2;
+//                sm.computeDisparityMap(leftPyramid[j], rightPyramid[j], lmap[j], rmap[j], 10, 15, borderSize);
+//            }
 
             rmap[scale].copyTo(map2);
 
