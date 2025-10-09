@@ -20,14 +20,17 @@
 #include <csignal>
 #include <core/opencl/ocl_defs.hpp>
 
-#include <DispEst.h>
 #include "QuickStereoMatch.h"
 
 using namespace mini_server;
 
 void drawText(UMat &image, double rms, unsigned long i);
 
-bool isCalibrationComplete(const UMat *mat1, const UMat *mat2, const StereoCameraProperties &props);
+void findPeaks(const Mat &mat, std::vector<cv::Point3f> &points, size_t *size, int kernel, int noiseTolerance = 2);
+
+void createCheckboadPatterns(Mat &t1);
+
+cv::Point3f findMassCenter(const Mat &mat, int x, int y, int searchRadius);
 
 static std::atomic running = true;
 
@@ -55,7 +58,6 @@ int main(int argc, const char **argv) {
         cv::VideoCaptureProperties::CAP_PROP_FRAME_WIDTH, 1920,
         cv::VideoCaptureProperties::CAP_PROP_FRAME_HEIGHT, 1080,
         cv::VideoCaptureProperties::CAP_PROP_BUFFERSIZE, 10,
-        cv::VideoCaptureProperties::CAP_PROP_ORIENTATION_AUTO, false,
     };
 
     if (argc < 3) {
@@ -285,8 +287,8 @@ int main(int argc, const char **argv) {
         calibrationRMS = onlineCalibration.updateCalibrationResult();
         onlineCalibration.rectify();
     }
-
-    DispEst *SMDE = nullptr;
+//
+//    DispEst *SMDE = nullptr;
 
     // Use create ROI which is valid in both left and right ROIs
     int tl_x = MAX(props.roi[0].x, props.roi[1].x);
@@ -322,6 +324,11 @@ int main(int argc, const char **argv) {
 
 //    running = false;
 
+    auto t1 = Mat(Size(64 + 1, 64 + 1), CV_8U);
+    createCheckboadPatterns(t1);
+    auto t2 = 1 - t1;
+    std::vector<cv::Point3f> points(1000);
+
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
         if (readerLeftCount == frameCount || readerRightCount == frameCount || readingImLeft.empty() || readingImRight.empty()) {
@@ -338,6 +345,7 @@ int main(int argc, const char **argv) {
         readerLeftLock.unlock();
         readerRightLock.lock();
         readingImRight.copyTo(imageRight);
+        cv::rotate(readingImRight, imageRight, ROTATE_180);
         readerRightLock.unlock();
 
         auto now = std::chrono::high_resolution_clock::now();
@@ -401,151 +409,59 @@ int main(int argc, const char **argv) {
             }
         }
 
-        if (onlineCalibration.isCalibrated) {
-            remap(imageLeft, inputLeft, onlineCalibration.rmapL[0], onlineCalibration.rmapL[1], INTER_LINEAR);
-            remap(imageRight, inputRight, onlineCalibration.rmapR[0], onlineCalibration.rmapR[1], INTER_LINEAR);
+        if (true) {
+            Mat grayLeft;
+            cv::cvtColor(imageLeft, grayLeft, COLOR_BGR2GRAY);
+            cv::equalizeHist(grayLeft, grayLeft);
+            auto leftMatches1 = Mat(grayLeft.size(), CV_32F);
+            auto leftMatches2 = Mat(grayLeft.size(), CV_32F);
+            cv::matchTemplate(grayLeft, t1, leftMatches1, TemplateMatchModes::TM_CCOEFF_NORMED, noArray());
+            cv::multiply(leftMatches1, leftMatches1, leftMatches1);
+            cv::copyMakeBorder(leftMatches1,leftMatches1, 32, 32, 32, 32, BorderTypes::BORDER_REPLICATE);
 
-            inputLeft = inputLeft(cropBox);
-            auto cropBox2 = Rect(Point(tl_x + 4, tl_y), Point(br_x + 4, br_y));
-            inputRight = inputRight(cropBox2);
 
-            UMat inputLeft2, inputRight2;
+            Mat colorLeft = imageLeft.getMat(AccessFlag::ACCESS_RW);
+            size_t size = points.size();
 
-//            cv::edgePreservingFilter(inputLeft, inputLeft2);
-//            cv::edgePreservingFilter(inputRight, inputRight2);
-//            cv::bilateralFilter(inputLeft, inputLeft2, 15, 75, 75);
-//            cv::bilateralFilter(inputRight, inputRight2, 15, 75, 75);
-//            fastGuidedFilter(inputLeft, inputLeft, 70, 0.001);
-//            fastGuidedFilter(inputRight, inputRight, 70, 0.001);
-//            inputLeft2.copyTo(inputLeft);
-//            inputRight2.copyTo(inputRight);
-//            inputLeft.copyTo(inputLeft2);
-//            inputRight.copyTo(inputRight2);
+//            cv::GaussianBlur(leftMatches1, leftMatches1, Size(17, 17), 0);
+            findPeaks(leftMatches1, points, &size, 32, 2);
 
-            cv::rotate(inputLeft, inputLeft, ROTATE_180);
-            cv::rotate(inputRight, inputRight, ROTATE_180);
+            std::sort(points.begin(), points.begin() + (int)size - 1, [](Point3f a, Point3f b) {
+                return a.z > b.z;
+            });
 
-            cv::rotate(inputLeft, outputLeft, ROTATE_90_CLOCKWISE);
-            cv::rotate(inputRight, outputRight, ROTATE_90_CLOCKWISE);
-//            cv::resize(outputLeft, outputLeft, Size(0, 0), 0.25, 0.25);
-//            cv::resize(outputRight, outputRight, Size(0, 0), 0.25, 0.25);
-//
-//            auto kernel = (Mat_<float>(5, 5) <<
-//                    0, 2,  30,  2,  0,
-//                    0, 5,  70, 5,  0,
-//                    1, 10, 100, 10, 1,
-//                    0, 5,  70, 5,  0,
-//                    0, 2,  30,  2,  0
-//                          ) / 1000;
-//
-//            cv::filter2D(outputLeft, outputLeft, kernel);
-//            cv::filter2D(outputRight, outputRight, kernel);
-
-            UMat map2, map3;
-
-            std::vector<Mat> leftPyramid, rightPyramid, lmap, rmap;
-
-            cv::buildPyramid(outputLeft, leftPyramid, 4);
-            cv::buildPyramid(outputRight, rightPyramid, 4);
-
-            int scale = 1;
-            double max = leftPyramid[scale].cols * 0.35;
-
-            lmap.resize(5);
-            rmap.resize(5);
-
-            for (int j = 0; j < 4; ++j) {
-                lmap[j] = Mat::zeros(lmap[j].size(), CV_32FC1);
-                rmap[j] = Mat::zeros(rmap[j].size(), CV_32FC1);
+            for (int j = 0; j < size; ++j) {
+                auto p = points[j];
+                if (p.z <= 0) {
+                    continue;
+                }
+                cv::drawMarker(leftMatches1, Point((int)p.x, (int)p.y), cv::Scalar(0, 255, 0), MARKER_TILTED_CROSS, 50 * p.z, 2);
+                cv::drawMarker(colorLeft, Point((int)p.x, (int)p.y), cv::Scalar(0, 255, 0), MARKER_TILTED_CROSS, 50 * p.z, 2);
             }
 
-            int borderSize = 10;
+            std::cerr << "Peaks " << size << std::endl;
 
-            sm.computeDisparityMap(leftPyramid[scale], rightPyramid[scale], lmap[scale], rmap[scale], (int)max, 10, borderSize);
-//
-//            for (int j = scale + 1; j >= scale; --j) {
-//                cv::medianBlur(lmap[j + 1], lmap[j + 1], 3);
-//                cv::resize(lmap[j + 1], lmap[j], Size(0, 0), 2, 2);
-//                cv::resize(rmap[j + 1], rmap[j], Size(0, 0), 2, 2);
-//                lmap[j] *= 2;
-//                rmap[j] *= 2;
-//                max *= 2;
-//                borderSize *= 2;
-//                sm.computeDisparityMap(leftPyramid[j], rightPyramid[j], lmap[j], rmap[j], 10, 15, borderSize);
-//            }
+            imshow("GL1", leftMatches1);
+            imshow("GL2", colorLeft);
 
-            rmap[scale].copyTo(map2);
-
-            Mat m;
-            double min = -max;
-            map2.convertTo(m, CV_8UC1, 255 / (max-min), -min);
-//            cv::resize(m, m, Size(0, 0), 2, 2);
-            cv::rotate(m, m, ROTATE_90_COUNTERCLOCKWISE);
-
-            cv::Mat falseColorsMap;
-            applyColorMap(m, falseColorsMap, cv::COLORMAP_TURBO);
-
-            imshow("DispMap R", falseColorsMap);
-
-            lmap[scale].copyTo(map2);
-//            cv::medianBlur(lmap, map2, 3);
-//            cv::medianBlur(map2, map2, 3);
-//            cv::medianBlur(map2, map2, 3);
-//            cv::medianBlur(map2, map2, 3);
-
-            map2.convertTo(m, CV_8UC1, 255 / (max-min), -min);
-//            cv::resize(m, m, Size(0, 0), 2, 2);
-            cv::rotate(m, m, ROTATE_90_COUNTERCLOCKWISE);
-            cv::Mat falseColorsMap2;
-            applyColorMap(m, falseColorsMap2, cv::COLORMAP_TURBO);
-
-            imshow("DispMap L", falseColorsMap2);
-
-//            fastGuidedFilter(inputLeft, inputLeft, 32, 0.0001f, 8);
-
-//            if (SMDE == nullptr) {
-//                SMDE = new DispEst(inputLeft, inputRight, 50, 20, true);
-//            }
-//
-//            inputLeft.convertTo(lFrame, CV_32F, 1 / 255.0f);
-//            inputRight.convertTo(rFrame, CV_32F,  1 / 255.0f);
-//
-//            SMDE->setInputImages(lFrame, lFrame);
-//            SMDE->setSubsampleRate(3);
-
-//            SMDE->CostConst_GPU();
-//            cv::waitKey(1);
-//            SMDE->CostFilter_FGF();
-//            cv::waitKey(1);
-//            SMDE->DispSelect_GPU();
-//            cv::waitKey(1);
-//            SMDE->PostProcess_GPU();
-//            cv::waitKey(1);
-
-//            // ******** Display Disparity Maps  ******** //
-//            SMDE->lDisMap.copyTo(lDispMap); //scale factor used to compare error with ground truth
-//            SMDE->rDisMap.copyTo(rDispMap); //scale factor used to compare error with ground truth
-//
-//            cv::cvtColor(lDispMap, leftDispMap, cv::COLOR_GRAY2RGB);
-//            cv::cvtColor(lDispMap, rightDispMap, cv::COLOR_GRAY2RGB);
-//
-//            imshow("Left DispMap", lDispMap);
-//            imshow("Right DispMap", rDispMap);
-
-//            imageLeft.copyTo(inputLeft);
-//            imageRight.copyTo(inputRight);
+            imageLeft.copyTo(inputLeft);
+            imageRight.copyTo(inputRight);
+            imageLeft.copyTo(outputLeft);
+            imageRight.copyTo(outputRight);
         } else {
             imageLeft.copyTo(inputLeft);
             imageRight.copyTo(inputRight);
+            imageLeft.copyTo(outputLeft);
+            imageRight.copyTo(outputRight);
         }
 
 //        processor.processFrame(inputLeft, inputRight, output);
-
-        cv::resize(inputLeft, outputLeft, outputSize, 0, 0,
-                   cv::INTER_NEAREST);
-
-        cv::resize(inputRight, outputRight, outputSize, 0, 0,
-                   cv::INTER_NEAREST);
+//
+//        cv::resize(inputLeft, outputLeft, outputSize, 0, 0,
+//                   cv::INTER_NEAREST);
+//
+//        cv::resize(inputRight, outputRight, outputSize, 0, 0,
+//                   cv::INTER_NEAREST);
 
         drawText(outputLeft, calibrationRMS, onlineCalibration.imagePointsL.size());
 
@@ -582,10 +498,10 @@ int main(int argc, const char **argv) {
 //        }
 
 #ifdef HAVE_OPENCV_HIGHGUI
-        imshow("Left", resultLeft);
-        if (!resultRight.empty()) {
-            imshow("Right", resultRight);
-        }
+//        imshow("Left", resultLeft);
+//        if (!resultRight.empty()) {
+//            imshow("Right", resultRight);
+//        }
 
         if (cv::waitKey(1) >= 0) {
             running = false;
@@ -593,8 +509,8 @@ int main(int argc, const char **argv) {
 #endif
     }
 
-    onlineCalibration.storeCalibrationImages();
-    onlineCalibration.storeCalibrationResult();
+//    onlineCalibration.storeCalibrationImages();
+//    onlineCalibration.storeCalibrationResult();
 
     if (writer.joinable()) {
         writer.join();
@@ -620,6 +536,142 @@ int main(int argc, const char **argv) {
 
     return 0;
 }
+
+void createCheckboadPatterns(Mat &t1) {
+    CV_Assert(t1.cols == t1.rows);
+    t1.setTo(Scalar(0));
+
+    auto size = t1.cols / 2;
+
+    auto t1tl = Mat(t1, Rect(0, 0, size, size));
+    auto t1br = Mat(t1, Rect(size, size, size, size));
+    t1tl.setTo(Scalar(255));
+    t1br.setTo(Scalar(255));
+}
+
+/**
+ * kernel size = 3
+ *   1 1 1
+ *   1 2 1
+ *   1 1 1
+ * kernel size = 5
+ *   0 0 0 0 0
+ *   0 1 1 1 0
+ *   0 1 2 1 0
+ *   0 1 1 1 0
+ *   0 0 0 0 0
+ */
+
+void findPeaks(const Mat &mat, std::vector<cv::Point3f> &points, size_t *size, int kernel, int noiseTolerance) {
+    auto data = (float *)mat.data;
+    auto p = 0;
+
+    Mat mask = Mat::zeros(mat.size(), CV_8SC1);
+
+    int kernelRadius = (kernel - 1) / 2;
+    int w = mat.cols;
+    for (int i = kernelRadius; i < mat.rows - kernel; ++i) {
+        for (int j = kernelRadius; j < w - kernel; ++j) {
+            if (mask.at<char>(i, j) == 1) {
+                continue;
+            }
+            auto found = true;
+            for (int k = 1; k <= kernelRadius; ++k) {
+                auto diagonals = (data[(i + (k - 1)) * w + (j + (k - 1))] < data[(i + k) * w + (j + k)])
+                        + (data[(i + (k - 1)) * w + (j - (k - 1))] < data[(i + k) * w + (j - k)])
+                        + (data[(i - (k - 1)) * w + (j + (k - 1))] < data[(i - k) * w + (j + k)])
+                        + (data[(i - (k - 1)) * w + (j - (k - 1))] < data[(i - k) * w + (j - k)]);
+
+                auto sideWidth = (k - 1) * 2;
+
+                auto top = 0;
+                for (int s = 0; s < sideWidth; ++s) {
+                    top += data[(i - (k - 1)) * w + j - (k - 1) + s] < data[(i - k) * w + j - (k - 1) + s];
+                }
+
+                auto bottom = 0;
+                for (int s = 0; s < sideWidth; ++s) {
+                    bottom += data[(i + (k - 1)) * w + j - (k - 1) + s] < data[(i + k) * w + j - (k - 1) + s];
+                }
+
+                auto left = 0;
+                for (int s = 0; s < sideWidth; ++s) {
+                    left += data[(i - (k - 1) + s) * w + j - (k - 1)] < data[(i - (k - 1) + s) * w + j - k];
+                }
+
+                auto right = 0;
+                for (int s = 0; s < sideWidth; ++s) {
+                    right += data[(i - (k - 1) + s) * w + j + (k - 1)] < data[(i - (k - 1) + s) * w + j + k];
+                }
+
+                auto r = diagonals + top + bottom + left + right;
+
+                if (r > noiseTolerance) {
+                    found = false;
+                    break;
+                }
+            }
+
+            if (found) {
+                const Rect2i &roi = cv::Rect(j - kernelRadius, i - kernelRadius, kernel, kernel);
+                auto processed = Mat(mask, roi);
+                processed.setTo(1);
+                auto point = findMassCenter(mat, j, i, 48);
+                j+=kernel;
+                points[p] = point;
+                p++;
+                if (p > *size) {
+                    return;
+                }
+            }
+        }
+    }
+
+    *size = p;
+}
+
+cv::Point3f findMassCenter(const Mat &mat, int x, int y, int searchRadius) {
+    auto data = (float *)mat.data;
+    auto w = mat.cols;
+    auto mass = 0.0f;
+    auto sumX = 0.0f;
+    auto sumY = 0.0f;
+    auto count = 0;
+
+    for (int i = -searchRadius; i <= searchRadius; ++i) {
+        for (int j = -searchRadius; j <= searchRadius; ++j) {
+            int offset = (y + i) * w + x + j;
+
+            if (offset < 0) {
+                continue;
+            }
+
+            if ((uchar *)(data + offset) >= mat.dataend) {
+                continue;
+            }
+
+            auto pixelValue = data[offset];
+            if (pixelValue <= 0) {
+                continue;
+            }
+             mass += pixelValue;
+            sumX += pixelValue * (float)j;
+            sumY += pixelValue * (float)i;
+            count++;
+        }
+    }
+
+    auto cX = (float)x + (sumX / mass);
+    auto cY = (float)y + (sumY / mass);
+
+    auto height = 0.0f;
+    if (mass > 0) {
+        height = data[(int)cY * w + (int)cX];
+    }
+
+    return {cX, cY, height};
+}
+
 
 bool isCalibrationComplete(const UMat *mat1, const UMat *mat2, const StereoCameraProperties &props) {
     return props.roi[0].height > 0.8 * mat1->rows && props.roi[0].width > 0.8 * mat1->cols

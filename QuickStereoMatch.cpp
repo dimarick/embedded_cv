@@ -42,8 +42,14 @@ void QuickStereoMatch::computeDisparityMap(const Mat &left, const Mat &right, Ma
 
     cv::Sobel(leftF32, lGrad, CV_32F, 1, 0, 3);
     cv::Sobel(rightF32, rGrad, CV_32F, 1, 0, 3);
+    cv::Sobel(leftF32, lGrad2, CV_32F, 0, 1, 3);
+    cv::Sobel(rightF32, rGrad2, CV_32F, 0, 1, 3);
     cv::multiply(lGrad, lGrad, lGrad, 1. / 256);
     cv::multiply(rGrad, rGrad, rGrad, 1. / 256);
+    cv::multiply(lGrad2, lGrad2, lGrad2, 1. / 256);
+    cv::multiply(rGrad2, rGrad2, rGrad2, 1. / 256);
+    cv::multiply(lGrad, lGrad2, lGrad);
+    cv::multiply(rGrad, rGrad2, rGrad);
 
     Mat hist;
     double lgMax;
@@ -51,8 +57,8 @@ void QuickStereoMatch::computeDisparityMap(const Mat &left, const Mat &right, Ma
     cv::minMaxLoc(lGrad, nullptr, &lgMax, nullptr, nullptr, noArray());
     cv::minMaxLoc(rGrad, nullptr, &rgMax, nullptr, nullptr, noArray());
 
-    cv::threshold(lGrad, lGrad, 1, lgMax, cv::THRESH_TOZERO);
-    cv::threshold(rGrad, rGrad, 1, rgMax, cv::THRESH_TOZERO);
+    cv::threshold(lGrad, lGrad, 4.5, lgMax, cv::THRESH_TOZERO);
+    cv::threshold(rGrad, rGrad, 4.5, rgMax, cv::THRESH_TOZERO);
 
 
 //    this->ridgeFilter(leftF32, lGrad);
@@ -109,49 +115,46 @@ void QuickStereoMatch::computeDisparityMap(const Mat &left, const Mat &right, Ma
             int o = r * width + c;
             for (int ch = 0; ch < gchannels; ++ch) {
                 int og = o * gchannels + ch;
-                float sign;
-
-                sign = (lg[og] + 0.1f) / std::abs(lg[og] + 0.1f);
 
                 bool peakV = true, peakH = true;
                 for (int v = 1; v <= 2 && peakV; ++v) {
                     auto z = std::max(0, v - 1);
                     for (int dv = -1; dv <= 1 && peakV; dv += 2) {
                         peakV = peakV
-                            && sign * lg[og + (dv * z * width) * gchannels]
-                             > sign * lg[og + (dv * v * width) * gchannels] * (float)!lSegmentsMask[o + dv * v * width];
+                            && lg[og + (dv * z * width) * gchannels]
+                             > lg[og + (dv * v * width) * gchannels];
                     }
                 }
 
-                for (int h = 1; h <= 2; ++h) {
+                for (int h = 1; h <= 2 && peakH; ++h) {
                     auto zh = std::max(0, h - 1);
-                    for (int dh = -1; dh <= 1; dh += 2) {
+                    for (int dh = -1; dh <= 1 && peakH; dh += 2) {
                         peakH = peakH
-                            && sign * lg[og + (dh * zh) * gchannels]
-                             > sign * lg[og + (dh * h) * gchannels] * (float)!lSegmentsMask[o + dh * h];
+                            && lg[og + (dh * zh) * gchannels]
+                             > lg[og + (dh * h) * gchannels];
                     }
                 }
 
                 lPeak = lPeak || peakV || peakH;
 
-                sign = (rg[og] + 0.1f) / std::abs(rg[og] + 0.1f);
+//                sign = (rg[og] + 0.1f) / std::abs(rg[og] + 0.1f);
 
                 peakV = true, peakH = true;
                 for (int v = 1; v <= 2 && peakV; ++v) {
-                    auto z = std::max(0, v - 1);
-                    for (int dv = -1; dv <= 1 && peakV; dv += 2) {
+                    auto z = v - 1;
+                    for (int dv = -1; dv <= 1; dv += 2) {
                         peakV = peakV
-                            && sign * rg[og + (dv * z * width) * gchannels]
-                             > sign * rg[og + (dv * v * width) * gchannels] * (float)!rSegmentsMask[o + dv * v * width];
+                            && rg[og + (dv * z * width) * gchannels]
+                             > rg[og + (dv * v * width) * gchannels];
                     }
                 }
 
                 for (int h = 1; h <= 2; ++h) {
-                    auto zh = std::max(0, h - 1);
-                    for (int dh = -1; dh <= 1; dh += 2) {
+                    auto zh = h - 1;
+                    for (int dh = -1; dh <= 1 && peakH; dh += 2) {
                         peakH = peakH
-                            && sign * rg[og + (dh * zh) * gchannels]
-                             > sign * rg[og + (dh * h) * gchannels] * (float)!rSegmentsMask[o + dh * h];
+                            && rg[og + (dh * zh) * gchannels]
+                             > rg[og + (dh * h) * gchannels];
                     }
                 }
 
@@ -168,19 +171,29 @@ void QuickStereoMatch::computeDisparityMap(const Mat &left, const Mat &right, Ma
 //    lSegmentsMaskMat *= 255;
 //    rSegmentsMaskMat *= 255;
 
-    Mat kernel = Mat::ones( 3, 3, CV_32F );
+    Mat kernel = Mat::ones( 5, 5, CV_32F );
 
-    Mat lSegmentsMaskMat2, rSegmentsMaskMat2;
+    UMat lSegmentsMaskMat2, rSegmentsMaskMat2;
+    lSegmentsMaskMat.copyTo(lSegmentsMaskMat2);
+    rSegmentsMaskMat.copyTo(rSegmentsMaskMat2);
 
-    cv::filter2D(lSegmentsMaskMat, lSegmentsMaskMat2, kernel);
-    cv::filter2D(rSegmentsMaskMat, rSegmentsMaskMat2, kernel);
-    cv::threshold(lSegmentsMaskMat2, lSegmentsMaskMat2, 2, 25, cv::THRESH_BINARY);
-    cv::threshold(rSegmentsMaskMat2, rSegmentsMaskMat2, 2, 25, cv::THRESH_BINARY);
-    cv::bitwise_and(lSegmentsMaskMat, lSegmentsMaskMat2, lSegmentsMaskMat);
-    cv::bitwise_and(rSegmentsMaskMat, rSegmentsMaskMat2, rSegmentsMaskMat);
+    cv::filter2D(lSegmentsMaskMat2, lSegmentsMaskMat2, kernel);
+    cv::filter2D(rSegmentsMaskMat2, rSegmentsMaskMat2, kernel);
+    cv::threshold(lSegmentsMaskMat2, lSegmentsMaskMat2, 3.5, 25, cv::THRESH_BINARY);
+    cv::threshold(rSegmentsMaskMat2, rSegmentsMaskMat2, 3.5, 25, cv::THRESH_BINARY);
+    cv::bitwise_and(lSegmentsMaskMat, lSegmentsMaskMat2, lSegmentsMaskMat2);
+    cv::bitwise_and(rSegmentsMaskMat, rSegmentsMaskMat2, rSegmentsMaskMat2);
+
+//    Mat mk = cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(2, 2));
+//    cv::morphologyEx(lSegmentsMaskMat2, lSegmentsMaskMat2, cv::MORPH_CLOSE, mk, Point(-1, -1), 4);
+//    cv::morphologyEx(rSegmentsMaskMat2, rSegmentsMaskMat2, cv::MORPH_CLOSE, mk, Point(-1, -1), 4);
+
+    lSegmentsMaskMat2.copyTo(lSegmentsMaskMat);
+    rSegmentsMaskMat2.copyTo(rSegmentsMaskMat);
 
     imshow("Left Mask", lSegmentsMaskMat * 255);
     imshow("Right Mask", rSegmentsMaskMat * 255);
+    imshow("rGrad", rGrad);
 
 #pragma omp parallel for
     for (int r = 0; r < left.rows; r++) {

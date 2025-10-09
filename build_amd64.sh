@@ -41,6 +41,7 @@ cmake \
   -DWITH_UEYE=OFF \
   -DWITH_V4L=ON \
   -DWITH_WEBP=OFF \
+  -DWITH_EIGEN=OFF \
   -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
   ${OPEN_CV_PATH} \
   && make -j 20 && make install || exit -1

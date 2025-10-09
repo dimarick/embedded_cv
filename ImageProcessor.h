@@ -12,8 +12,6 @@ private:
     mini_server::BroadcastingServer &publisher;
     cv::Ptr<cv::FastFeatureDetector> fast;
     cv::Ptr<cv::ORB> orb;
-    cv::Ptr<cv::KAZE> kaze;
-    cv::Ptr<cv::AKAZE> akaze;
     std::vector<cv::KeyPoint> keyPointsLeft;
     std::vector<cv::KeyPoint> keyPointsRight;
     cv::UMat mask;

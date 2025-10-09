@@ -30,8 +30,8 @@ set(CMAKE_CXX_STANDARD 17)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")
 find_package(OpenCV 5.0.0 REQUIRED)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -msse3 -mtune=native")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -msse3 -mtune=native")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -msse3 -mtune=native")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -msse3 -mtune=native")
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
@@ -54,12 +54,11 @@ include(FetchContent)
 FetchContent_Declare(
         cpptrace
         GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
-        GIT_TAG        v0.5.2 # <HASH or TAG>
+        GIT_TAG        v1.0.4 # <HASH or TAG>
 )
 FetchContent_MakeAvailable(cpptrace)
 
 include_directories( ${OpenCV_INCLUDE_DIRS} )
-include_directories( lib/PRiMEStereoMatch/include )
 
 include_directories(./mini_server)
 add_subdirectory(./mini_server)
@@ -71,16 +70,6 @@ add_executable(embedded_cv
         ImageProcessor.cpp
         CvCommandHandler.cpp
         OnlineCalibration.cpp
-        lib/PRiMEStereoMatch/src/CVC.cpp
-        lib/PRiMEStereoMatch/src/CVC_cl.cpp
-        lib/PRiMEStereoMatch/src/CVF.cpp
-        lib/PRiMEStereoMatch/src/CVF_cl.cpp
-        lib/PRiMEStereoMatch/src/DispEst.cpp
-        lib/PRiMEStereoMatch/src/DispSel.cpp
-        lib/PRiMEStereoMatch/src/DispSel_cl.cpp
-        lib/PRiMEStereoMatch/src/fastguidedfilter.cpp
-        lib/PRiMEStereoMatch/src/oclUtil.cpp
-        lib/PRiMEStereoMatch/src/PP.cpp
         QuickStereoMatch.cpp
 )
 

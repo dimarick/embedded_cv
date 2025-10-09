@@ -1,5 +1,4 @@
 #include "ImageProcessor.h"
-#include <iostream>
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
@@ -12,8 +11,6 @@
 ImageProcessor::ImageProcessor(int capWidth, int capHeight, mini_server::BroadcastingServer &publisher) : publisher(publisher) {
     this->orb = cv::ORB::create(500, 2, 4, 25, 1, 2, cv::ORB::FAST_SCORE, 31, 18);
     this->fast = cv::FastFeatureDetector::create(1);
-    this->kaze = cv::KAZE::create();
-    this->akaze = cv::AKAZE::create();
     this->mask = cv::UMat::ones(capHeight, capWidth, CV_8UC1);
     this->matcher = cv::BFMatcher(cv::NORM_HAMMING, true);
     this->fmatcher = cv::FlannBasedMatcher();

@@ -1,9 +1,13 @@
 #ifndef EMBEDDED_CV_ONLINECALIBRATION_H
 #define EMBEDDED_CV_ONLINECALIBRATION_H
 
-#include <StereoCalib.h>
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
+#include "opencv2/calib.hpp"
+#include "opencv2/highgui.hpp"
+#include "opencv2/stereo.hpp"
+#include "opencv2/3d.hpp"
+#include <iostream>
 
 using namespace cv;
 
@@ -14,6 +18,15 @@ using namespace cv;
 #define ONLINE_CALIBRATION_FILE_EXTRINSICS 	ONLINE_CALIBRATION_BASE_DIR "data/extrinsics.yml"
 #define ONLINE_CALIBRATION_FILE_CH_BOARD_L 	ONLINE_CALIBRATION_BASE_DIR "data/chbL%0d.png"
 #define ONLINE_CALIBRATION_FILE_CH_BOARD_R 	ONLINE_CALIBRATION_BASE_DIR "data/chbR%0d.png"
+
+struct StereoCameraProperties{
+    Mat cameraMatrix[2];
+    Mat distCoeffs[2];
+    Mat R, T, E, F; //rotation matrix, translation vector, essential matrix E=[T*R], fundamental matrix
+    Mat R1, R2, P1, P2, Q;
+    Size imgSize;
+    Rect roi[2]; //region of interest
+};
 
 class OnlineCalibration {
 public:
