@@ -37,9 +37,22 @@ struct CenterQuad {
     cv::Point3f bottomLeft;
     cv::Point3f bottomRight;
 };
-float quadQualityNorm(CenterQuad quad);
-float quadQuality(CenterQuad quad);
+float quadQualityNormRms(CenterQuad quad);
+float quadQualityRms(CenterQuad quad);
 float findCenterQuad(Size size, const std::vector<cv::Point3f> &points, CenterQuad &result);
+
+float findGrid(
+        const Size &size,
+        const CenterQuad &quad,
+        std::vector<cv::Point3f> &points,
+        std::vector<Point3f> &grid,
+        size_t *gridWidth,
+        size_t *gridHeight
+);
+
+Point3f findNearestPoint(const Point3f &point3, std::vector<cv::Point3f> &vector, float d);
+
+void fillGridRow(size_t w, int cH, int cW, int j, std::vector<cv::Point3f> &points, std::vector<Point3f> &grid);
 
 static std::atomic running = true;
 
@@ -438,7 +451,15 @@ int main(int argc, const char **argv) {
             });
 
             CenterQuad quad;
-            auto quadValid = findCenterQuad(leftMatches1.size(), points, quad);
+            auto quadRms = findCenterQuad(leftMatches1.size(), points, quad);
+
+            float gridRms = 0.0;
+            std::vector<Point3f> grid(points.size());
+            size_t gridWidth;
+            size_t gridHeight;
+            if (quadRms < 0.1) {
+                gridRms = findGrid(leftMatches1.size(), quad, points, grid, &gridWidth, &gridHeight);
+            }
 
             auto center = Point((int)colorLeft.size().width / 2, (int)colorLeft.size().height / 2);
             cv::drawMarker(colorLeft, center, cv::Scalar(255, 0, 0), MARKER_DIAMOND, 20, 2);
@@ -464,7 +485,7 @@ int main(int argc, const char **argv) {
                 cv::putText(colorLeft, info, Point((int)p.x, (int)p.y), FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255));
             }
 
-            auto color = quadValid < 0.05f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255);
+            auto color = quadRms < 0.1f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255);
             cv::line(colorLeft, Point((int) quad.topLeft.x, (int) quad.topLeft.y),
                      Point((int) quad.topRight.x, (int) quad.topRight.y), color, 3);
             cv::line(colorLeft, Point((int) quad.topLeft.x, (int) quad.topLeft.y),
@@ -478,7 +499,29 @@ int main(int argc, const char **argv) {
             cv::line(colorLeft, Point((int) quad.bottomLeft.x, (int) quad.bottomLeft.y),
                      Point((int) quad.bottomRight.x, (int) quad.bottomRight.y), color, 3);
 
-            std::cerr << "Peaks " << size << "; square q " << quadValid << std::endl;
+            for (int x = 0; x < gridWidth - 1; ++x) {
+                for (int y = 0; y < gridHeight - 1; ++y) {
+                    auto p = grid[y * gridWidth + x];
+                    auto right = grid[y * gridWidth + x + 1];
+                    auto bottom = grid[(y + 1) * gridWidth + x];
+
+                    if (p.z < 0) {
+                        continue;
+                    }
+
+                    if (right.z > 0) {
+                        cv::line(colorLeft, Point((int) p.x, (int) p.y), Point((int) right.x, (int) right.y),
+                                 cv::Scalar(255, 0, 0), 5);
+                    }
+
+                    if (bottom.z > 0) {
+                        cv::line(colorLeft, Point((int) p.x, (int) p.y), Point((int) bottom.x, (int) bottom.y),
+                                 cv::Scalar(255, 0, 0), 5);
+                    }
+                }
+            }
+
+            std::cerr << "Peaks " << size << "; square q " << quadRms << std::endl;
 
             imshow("GL1", leftMatches1);
             imshow("GL2", colorLeft);
@@ -580,6 +623,130 @@ float distance(Point3f p1, Point3f p2) {
     return (float)std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
 }
 
+Point3f approximate(Point3f current, Point3f prev) {
+    return {current.x + (current.x - prev.x), current.y + (current.y - prev.y), (current.z + prev.z) / 2};
+}
+
+/**
+ * Находит вероятное расположение следующей (слева-сверху) точки, по текущей, точке слева и точке сверху,
+ * такое что. Эта точка есть сумма векторов current + (left - current) + (top - current)
+ *
+ *
+ * @param current
+ * @param prev
+ * @param prevVertical
+ * @return
+ */
+Point3f approximate2(Point3f current, Point3f left, Point3f top) {
+    auto x = current.x + (left.x - current.x) + (top.x - current.x);
+    auto y = current.y + (left.y - current.y) + (top.y - current.y);
+
+    return {x, y, (current.z + left.z + top.z) / 3};
+}
+
+float findGrid(
+        const Size &size,
+        const CenterQuad &quad,
+        std::vector<cv::Point3f> &points,
+        std::vector<Point3f> &grid,
+        size_t *gridWidth,
+        size_t *gridHeight
+) {
+    auto pointsCount = points.size();
+    auto imageArea = size.width * size.height;
+    auto pixelsPerPoint = std::sqrt(imageArea / pointsCount);
+    auto w = (size_t)(size.width / pixelsPerPoint);
+    auto h = (size_t)(size.height / pixelsPerPoint);
+    *gridWidth = w;
+    *gridHeight = h;
+
+    CV_Assert(w * h <= grid.size());
+
+    for (int i = 0; i < grid.size(); ++i) {
+        grid[i] = Point3f(0,0,-1);
+    }
+
+    auto cH = (int)(h / 2);
+    auto cW = (int)(w / 2);
+
+    grid[cH * w + cW] = quad.topLeft;
+    grid[cH * w + cW + 1] = quad.topRight;
+    grid[(cH + 1) * w + cW] = quad.bottomLeft;
+    grid[(cH + 1) * w + cW + 1] = quad.bottomRight;
+
+    // заполним 2 строки сетки влево и вправо от центрального квадрата
+    for (auto j = 0; j < 2; j++) {
+        fillGridRow(w, cH, cW, j, points, grid);
+    }
+
+    auto err = 0.0f;
+
+    // заполним 2 столбца сетки вверх и вниз от центрального квадрата
+    for (auto i = 0; i < cH; i++) {
+        for (auto s = -1; s <= 1; s += 2) {
+            for (auto j = 0; j < 2; j++) {
+                auto current = grid[(cH + s * i) * w + cW + j];
+                auto prev = grid[(cH + s * (i - 1)) * w + cW + j];
+                auto next = &grid[(cH + s * (i + 1)) * w + cW + j];
+                auto searchRadius = distance(current, prev) / 4;
+                auto nextApproximated = approximate(current, prev);
+                *next = findNearestPoint(nextApproximated, points, searchRadius);
+                err += (float)std::pow(distance(*next, nextApproximated), 2);
+            }
+            for (auto k = 0; k < cW; k++) {
+                for (auto ks = -1; ks <= 1; ks += 2) {
+                    auto current = grid[(cH + s * i) * w + cW + ks * k];
+                    auto left = grid[(cH + s * (i + 1)) * w + cW + ks * k];
+                    auto top = grid[(cH + s * i) * w + cW + ks * (k + 1)];
+                    auto next = &grid[(cH + s * (i + 1)) * w + cW + ks * (k + 1)];
+                    auto searchRadius = distance(current, left) / 4;
+                    auto nextApproximated = approximate2(current, left, top);
+                    *next = findNearestPoint(nextApproximated, points, searchRadius);
+                    err += (float)std::pow(distance(*next, nextApproximated), 2);
+                }
+            }
+        }
+    }
+
+    return std::sqrt(err / (float)(w * h));
+}
+
+void fillGridRow(size_t w, int cH, int cW, int j, std::vector<cv::Point3f> &points, std::vector<Point3f> &grid) {
+    for (auto i = 0; i < cW; i++) {
+        for (auto s = -1; s <= 1; s += 2) {
+            auto current = grid[(cH + j) * w + cW + s * i];
+            auto prev = grid[(cH + j) * w + cW + s * (i - 1)];
+            auto next = &grid[(cH + j) * w + cW + s * (i + 1)];
+            auto searchRadius = distance(current, prev) / 3;
+            auto nextApproximated = approximate(current, prev);
+            *next = findNearestPoint(nextApproximated, points, searchRadius);
+        }
+    }
+}
+
+Point3f findNearestPoint(const Point3f &point, std::vector<cv::Point3f> &points, float searchRadius) {
+    auto found = Point3f(0, 0, -1);
+    auto foundDistance = 1e6;
+    for (auto p : points) {
+        if (std::abs(p.x - point.x) > searchRadius || std::abs(p.y - point.y) > searchRadius) {
+            continue;
+        }
+
+        auto d = distance(p, point);
+
+        if (d < foundDistance) {
+            foundDistance = d;
+            found = p;
+        }
+    }
+
+    if (found.z < 0) {
+        return Point3f(point.x, point.y, -1);
+    }
+
+    return found;
+}
+
 float findQuadBy3Points(const std::vector<cv::Point3f> &points, size_t size, CenterQuad &result) {
     auto q = 1.0f / 0.0f;
     for (int i = 0; i < size; ++i) {
@@ -590,7 +757,7 @@ float findQuadBy3Points(const std::vector<cv::Point3f> &points, size_t size, Cen
             quad.topRight = result.topRight;
             quad.bottomLeft = result.bottomLeft;
             quad.bottomRight = p;
-            auto q2 = quadQuality(quad) / p.z;
+            auto q2 = quadQualityRms(quad) / p.z;
 
             if (q2 < q) {
                 q = q2;
@@ -643,6 +810,30 @@ float findQuadByTopLeft(const std::vector<cv::Point3f> &points, size_t size, Cen
     return q;
 }
 
+/**
+ * Алгоритм:
+ * 1. Выбрать область в центре, содержащую 10-15 точек. Предполагается что на 4 истинных точки приходится не более 6 шумовых
+ * 2. Перебрать все комбинации, (худший случай не более 15^4, ожидаемо в среднем не более 3000)
+ *    и найти ту, которая дает наиболее правильный квадрат, наиболее близко к центру.
+ *
+ * Допущения принятые при разработке:
+ * - точки расположены преимущественно квадратно-гнездовым
+ * - все клетки шахматной доски в центре поля распознаны без пропусков (нет ложноотрицательных срабатываний)
+ * - среди точек присутствуют лишние, обусловленные шумом точки, их количество в худшем случае не более чем в полтора раза превышает истинные
+ * - угол наклона доски вокруг любой оси не более 30 градусов в любую сторону.
+ * - Весовой коэффициент (z-координата) истинной точки, как правило, выше веса ложной.
+ *
+ * Что остается неизвестным:
+ * - размер клеток
+ * - цвет клеток
+ * - наклоны доски по трем осям
+ * - четкий порог веса между истинными и ложными (шумовыми) точками. Также не известно можно ли достоверно разграничить таким порогом.
+ *
+ * @param size размер фрейма
+ * @param points список найденных точек, преимущественно расположенных квадратно-гнездовым
+ * @param result возвращаемое значение, 4 точки угла опорного квадрата
+ * @return нормированная оценка качества полученного квадрата. Квадрат считается идеальным, если его стороны и диагонали / sqrt(2) равны.
+ */
 float findCenterQuad(Size size, const std::vector<cv::Point3f> &points, CenterQuad &result) {
     auto center = Point3f((float)size.width / 2, (float)size.height / 2, 0);
 
@@ -671,9 +862,9 @@ float findCenterQuad(Size size, const std::vector<cv::Point3f> &points, CenterQu
                 centralPoints[nextSize++] = p;
             }
         }
-        roiSize *= std::sqrt(15 / (float)nextSize);
+        roiSize *= std::sqrt(10 / (float)nextSize);
         currentSize = nextSize;
-    } while (nextSize >= 20);
+    } while (nextSize >= 15);
 
     auto q = 1.0f / 0.0f;
 
@@ -691,10 +882,10 @@ float findCenterQuad(Size size, const std::vector<cv::Point3f> &points, CenterQu
         }
     }
 
-    return quadQualityNorm(result);
+    return quadQualityNormRms(result);
 }
 
-float quadQualityNorm(CenterQuad quad) {
+float quadQualityNormRms(CenterQuad quad) {
     auto left = distance(quad.topLeft, quad.bottomLeft);
     auto right = distance(quad.topRight, quad.bottomRight);
     auto top = distance(quad.topLeft, quad.topRight);
@@ -702,20 +893,22 @@ float quadQualityNorm(CenterQuad quad) {
     auto d1 = (float)(distance(quad.topLeft, quad.bottomRight) / sqrt(2));
     auto d2 = (float)(distance(quad.bottomLeft, quad.topRight) / sqrt(2));
 
-    float d = (std::abs(left - top) / top
-               + std::abs(left - right) / right
-               + std::abs(right - bottom) / bottom
-               + std::abs(top - bottom) / bottom
-               + std::abs(d1 - d2) / d2) / 5;
+    float d = (float)(
+            std::abs(left - top) / std::sqrt(left * top)
+               + std::abs(left - right) / std::sqrt(left * right)
+               + std::abs(right - bottom) / std::sqrt(right * bottom)
+               + std::abs(top - bottom) / std::sqrt(top * bottom)
+               + std::abs(d1 - d2) / std::sqrt(d1 * d2)
+           ) / 5;
 
     return d;
 }
 
-float quadQuality(CenterQuad quad) {
+float quadQualityRms(CenterQuad quad) {
     auto d1 = (float)(distance(quad.topLeft, quad.bottomRight) / sqrt(2));
     auto d2 = (float)(distance(quad.bottomLeft, quad.topRight) / sqrt(2));
 
-    return quadQualityNorm(quad) * (d1 + d2) / 2;
+    return quadQualityNormRms(quad) * (d1 + d2) / 2;
 }
 
 void createCheckboadPatterns(Mat &t1) {
