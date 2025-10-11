@@ -27,10 +27,19 @@ using namespace mini_server;
 void drawText(UMat &image, double rms, unsigned long i);
 
 void findPeaks(const Mat &mat, std::vector<cv::Point3f> &points, size_t *size, int kernel, int noiseTolerance = 2);
-
 void createCheckboadPatterns(Mat &t1);
 
 cv::Point3f findMassCenter(const Mat &mat, int x, int y, int searchRadius);
+
+struct CenterQuad {
+    cv::Point3f topLeft;
+    cv::Point3f topRight;
+    cv::Point3f bottomLeft;
+    cv::Point3f bottomRight;
+};
+float quadQualityNorm(CenterQuad quad);
+float quadQuality(CenterQuad quad);
+float findCenterQuad(Size size, const std::vector<cv::Point3f> &points, CenterQuad &result);
 
 static std::atomic running = true;
 
@@ -324,7 +333,8 @@ int main(int argc, const char **argv) {
 
 //    running = false;
 
-    auto t1 = Mat(Size(64 + 1, 64 + 1), CV_8U);
+    int patternSize = 64;
+    auto t1 = Mat(Size(patternSize + 1, patternSize + 1), CV_8U);
     createCheckboadPatterns(t1);
     auto t2 = 1 - t1;
     std::vector<cv::Point3f> points(1000);
@@ -411,35 +421,64 @@ int main(int argc, const char **argv) {
 
         if (true) {
             Mat grayLeft;
+            Mat colorLeft = imageLeft.getMat(AccessFlag::ACCESS_RW);
             cv::cvtColor(imageLeft, grayLeft, COLOR_BGR2GRAY);
             cv::equalizeHist(grayLeft, grayLeft);
             auto leftMatches1 = Mat(grayLeft.size(), CV_32F);
             auto leftMatches2 = Mat(grayLeft.size(), CV_32F);
             cv::matchTemplate(grayLeft, t1, leftMatches1, TemplateMatchModes::TM_CCOEFF_NORMED, noArray());
             cv::multiply(leftMatches1, leftMatches1, leftMatches1);
-            cv::copyMakeBorder(leftMatches1,leftMatches1, 32, 32, 32, 32, BorderTypes::BORDER_REPLICATE);
-
-
-            Mat colorLeft = imageLeft.getMat(AccessFlag::ACCESS_RW);
+            cv::copyMakeBorder(leftMatches1,leftMatches1, patternSize/2, patternSize/2, patternSize/2, patternSize/2, BorderTypes::BORDER_REPLICATE);
             size_t size = points.size();
 
-//            cv::GaussianBlur(leftMatches1, leftMatches1, Size(17, 17), 0);
-            findPeaks(leftMatches1, points, &size, 32, 2);
+            findPeaks(leftMatches1, points, &size, patternSize / 2, 2);
 
             std::sort(points.begin(), points.begin() + (int)size - 1, [](Point3f a, Point3f b) {
                 return a.z > b.z;
             });
+
+            CenterQuad quad;
+            auto quadValid = findCenterQuad(leftMatches1.size(), points, quad);
+
+            auto center = Point((int)colorLeft.size().width / 2, (int)colorLeft.size().height / 2);
+            cv::drawMarker(colorLeft, center, cv::Scalar(255, 0, 0), MARKER_DIAMOND, 20, 2);
 
             for (int j = 0; j < size; ++j) {
                 auto p = points[j];
                 if (p.z <= 0) {
                     continue;
                 }
+                if (p.x <= 0) {
+                    continue;
+                }
+
+                if (p.y <= 0) {
+                    continue;
+                }
+
+                char info[256];
+                snprintf(info, sizeof info - sizeof("\0"), "%d", j);
+
                 cv::drawMarker(leftMatches1, Point((int)p.x, (int)p.y), cv::Scalar(0, 255, 0), MARKER_TILTED_CROSS, 50 * p.z, 2);
                 cv::drawMarker(colorLeft, Point((int)p.x, (int)p.y), cv::Scalar(0, 255, 0), MARKER_TILTED_CROSS, 50 * p.z, 2);
+                cv::putText(colorLeft, info, Point((int)p.x, (int)p.y), FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255));
             }
 
-            std::cerr << "Peaks " << size << std::endl;
+            auto color = quadValid < 0.05f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255);
+            cv::line(colorLeft, Point((int) quad.topLeft.x, (int) quad.topLeft.y),
+                     Point((int) quad.topRight.x, (int) quad.topRight.y), color, 3);
+            cv::line(colorLeft, Point((int) quad.topLeft.x, (int) quad.topLeft.y),
+                     Point((int) quad.bottomLeft.x, (int) quad.bottomLeft.y), color, 3);
+            cv::line(colorLeft, Point((int) quad.topLeft.x, (int) quad.topLeft.y),
+                     Point((int) quad.bottomRight.x, (int) quad.bottomRight.y), color, 3);
+            cv::line(colorLeft, Point((int) quad.topRight.x, (int) quad.topRight.y),
+                     Point((int) quad.bottomLeft.x, (int) quad.bottomLeft.y), color, 3);
+            cv::line(colorLeft, Point((int) quad.topRight.x, (int) quad.topRight.y),
+                     Point((int) quad.bottomRight.x, (int) quad.bottomRight.y), color, 3);
+            cv::line(colorLeft, Point((int) quad.bottomLeft.x, (int) quad.bottomLeft.y),
+                     Point((int) quad.bottomRight.x, (int) quad.bottomRight.y), color, 3);
+
+            std::cerr << "Peaks " << size << "; square q " << quadValid << std::endl;
 
             imshow("GL1", leftMatches1);
             imshow("GL2", colorLeft);
@@ -535,6 +574,148 @@ int main(int argc, const char **argv) {
     commandServerThread.join();
 
     return 0;
+}
+
+float distance(Point3f p1, Point3f p2) {
+    return (float)std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
+}
+
+float findQuadBy3Points(const std::vector<cv::Point3f> &points, size_t size, CenterQuad &result) {
+    auto q = 1.0f / 0.0f;
+    for (int i = 0; i < size; ++i) {
+        auto p = points[i];
+        if (p.x > result.topLeft.x && p.y > result.topLeft.y) {
+            CenterQuad quad;
+            quad.topLeft = result.topLeft;
+            quad.topRight = result.topRight;
+            quad.bottomLeft = result.bottomLeft;
+            quad.bottomRight = p;
+            auto q2 = quadQuality(quad) / p.z;
+
+            if (q2 < q) {
+                q = q2;
+                result = quad;
+            }
+        }
+    }
+
+    return q;
+}
+
+float findQuadByTop(const std::vector<cv::Point3f> &points, size_t size, CenterQuad &result) {
+    auto q = 1.0f / 0.0f;
+    for (int i = 0; i < size; ++i) {
+        auto p = points[i];
+        if (p.y > result.topLeft.y && p.y > result.topRight.y) {
+            CenterQuad quad;
+            quad.topLeft = result.topLeft;
+            quad.topRight = result.topRight;
+            quad.bottomLeft = p;
+            auto q2 = findQuadBy3Points(points, size, quad) / p.z;
+
+            if (q2 < q) {
+                q = q2;
+                result = quad;
+            }
+        }
+    }
+
+    return q;
+}
+
+float findQuadByTopLeft(const std::vector<cv::Point3f> &points, size_t size, CenterQuad &result) {
+    auto q = 1.0f / 0.0f;
+    for (int i = 0; i < size; ++i) {
+        auto p = points[i];
+        if (p.x > result.topLeft.x) {
+            CenterQuad quad;
+            quad.topLeft = result.topLeft;
+            quad.topRight = p;
+            auto q2 = std::sqrt(distance(p, result.topLeft)) * findQuadByTop(points, size, quad) / p.z;
+
+            if (q2 < q) {
+                q = q2;
+                result = quad;
+            }
+        }
+    }
+
+    return q;
+}
+
+float findCenterQuad(Size size, const std::vector<cv::Point3f> &points, CenterQuad &result) {
+    auto center = Point3f((float)size.width / 2, (float)size.height / 2, 0);
+
+    result = {Point3f(0, 0, -1), Point3f(0, 0, -1), Point3f(0, 0, -1), Point3f(0, 0, -1)};
+
+    std::vector<cv::Point3f> centralPoints = points;
+
+    auto roiSize = (float)std::min(size.width, size.height) / 4;
+
+    struct Rect {
+        float x;
+        float y;
+        float x2;
+        float y2;
+    };
+
+    size_t nextSize, currentSize;
+    currentSize = points.size();
+
+    do {
+        auto roi = Rect{center.x - roiSize, center.y - roiSize, center.x + roiSize, center.y + roiSize};
+        nextSize = 0;
+        for (auto i = 0; i < currentSize; i++) {
+            auto p = centralPoints[i];
+            if (p.x > roi.x && p.x < roi.x2 && p.y > roi.y && p.y < roi.y2) {
+                centralPoints[nextSize++] = p;
+            }
+        }
+        roiSize *= std::sqrt(15 / (float)nextSize);
+        currentSize = nextSize;
+    } while (nextSize >= 20);
+
+    auto q = 1.0f / 0.0f;
+
+    for (auto i = 0; i < currentSize; i++) {
+        auto p = centralPoints[i];
+        if (p.x <= center.x && p.y <= center.y) {
+            CenterQuad quad;
+            quad.topLeft = p;
+            auto q2 = std::sqrt(distance(p, center)) * findQuadByTopLeft(centralPoints, currentSize, quad) / p.z / p.z;
+
+            if (q2 < q) {
+                q = q2;
+                result = quad;
+            }
+        }
+    }
+
+    return quadQualityNorm(result);
+}
+
+float quadQualityNorm(CenterQuad quad) {
+    auto left = distance(quad.topLeft, quad.bottomLeft);
+    auto right = distance(quad.topRight, quad.bottomRight);
+    auto top = distance(quad.topLeft, quad.topRight);
+    auto bottom = distance(quad.bottomLeft, quad.bottomRight);
+    auto d1 = (float)(distance(quad.topLeft, quad.bottomRight) / sqrt(2));
+    auto d2 = (float)(distance(quad.bottomLeft, quad.topRight) / sqrt(2));
+
+    float d = (std::abs(left - top) / top
+               + std::abs(left - right) / right
+               + std::abs(right - bottom) / bottom
+               + std::abs(top - bottom) / bottom
+               + std::abs(d1 - d2) / d2) / 5;
+
+    return d;
+}
+
+float quadQuality(CenterQuad quad) {
+    auto d1 = (float)(distance(quad.topLeft, quad.bottomRight) / sqrt(2));
+    auto d2 = (float)(distance(quad.bottomLeft, quad.topRight) / sqrt(2));
+
+    return quadQualityNorm(quad) * (d1 + d2) / 2;
 }
 
 void createCheckboadPatterns(Mat &t1) {
@@ -670,12 +851,6 @@ cv::Point3f findMassCenter(const Mat &mat, int x, int y, int searchRadius) {
     }
 
     return {cX, cY, height};
-}
-
-
-bool isCalibrationComplete(const UMat *mat1, const UMat *mat2, const StereoCameraProperties &props) {
-    return props.roi[0].height > 0.8 * mat1->rows && props.roi[0].width > 0.8 * mat1->cols
-        && props.roi[1].height > 0.8 * mat2->rows && props.roi[1].width > 0.8 * mat2->cols;
 }
 
 void drawText(UMat &image, double rms, unsigned long i) {
