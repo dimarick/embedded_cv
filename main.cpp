@@ -54,6 +54,8 @@ Point3f findNearestPoint(const Point3f &point3, std::vector<cv::Point3f> &vector
 
 void fillGridRow(size_t w, int cH, int cW, int j, std::vector<cv::Point3f> &points, std::vector<Point3f> &grid);
 
+void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h);
+
 static std::atomic running = true;
 
 static BroadcastingServer broadcastingServer;
@@ -499,8 +501,8 @@ int main(int argc, const char **argv) {
             cv::line(colorLeft, Point((int) quad.bottomLeft.x, (int) quad.bottomLeft.y),
                      Point((int) quad.bottomRight.x, (int) quad.bottomRight.y), color, 3);
 
-            for (int x = 0; x < gridWidth - 1; ++x) {
-                for (int y = 0; y < gridHeight - 1; ++y) {
+            for (int x = 0; x < gridWidth; ++x) {
+                for (int y = 0; y < gridHeight; ++y) {
                     auto p = grid[y * gridWidth + x];
                     auto right = grid[y * gridWidth + x + 1];
                     auto bottom = grid[(y + 1) * gridWidth + x];
@@ -509,12 +511,12 @@ int main(int argc, const char **argv) {
                         continue;
                     }
 
-                    if (right.z > 0) {
+                    if (right.z > 0 && x < gridWidth - 1) {
                         cv::line(colorLeft, Point((int) p.x, (int) p.y), Point((int) right.x, (int) right.y),
                                  cv::Scalar(255, 0, 0), 5);
                     }
 
-                    if (bottom.z > 0) {
+                    if (bottom.z > 0 && y < gridHeight - 1) {
                         cv::line(colorLeft, Point((int) p.x, (int) p.y), Point((int) bottom.x, (int) bottom.y),
                                  cv::Scalar(255, 0, 0), 5);
                     }
@@ -708,7 +710,75 @@ float findGrid(
         }
     }
 
+    cropGrid(grid, gridWidth, gridHeight);
+
     return std::sqrt(err / (float)(w * h));
+}
+
+void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
+    int top = 0, left = 0, right = 0, bottom = 0;
+
+    for (int y = 0; y < *h; ++y) {
+        top = y;
+        int count = 0;
+        for (int x = 0; x < *w; ++x) {
+            count += grid[y * *w + x].z > 0;
+        }
+
+        if (count > 2) {
+            break;
+        }
+
+    }
+
+    for (int y = (int)*h; y > 0; --y) {
+        bottom = y;
+        int count = 0;
+        for (int x = 0; x < *w; ++x) {
+            count += grid[(y - 1) * *w + x].z > 0;
+        }
+
+        if (count > 2) {
+            break;
+        }
+
+    }
+
+    for (int x = 0; x < *w; ++x) {
+        left = x;
+        int count = 0;
+        for (int y = 0; y < *h; ++y) {
+            count += grid[y * *w + x].z > 0;
+        }
+
+        if (count > 2) {
+            break;
+        }
+
+    }
+
+    for (int x = (int)*w; x > 0; --x) {
+        right = x;
+        int count = 0;
+        for (int y = 0; y < *h; ++y) {
+            count += grid[y * *w + x - 1].z > 0;
+        }
+
+        if (count > 2) {
+            break;
+        }
+
+    }
+
+    auto w0 = *w;
+    *w = right - left;
+    *h = bottom - top;
+
+    for (int y = 0; y < *h; ++y) {
+        for (int x = 0; x < *w; ++x) {
+            grid[y * *w + x] = grid[(y + top) * w0 + x + left];
+        }
+    }
 }
 
 void fillGridRow(size_t w, int cH, int cW, int j, std::vector<cv::Point3f> &points, std::vector<Point3f> &grid) {
@@ -728,7 +798,7 @@ Point3f findNearestPoint(const Point3f &point, std::vector<cv::Point3f> &points,
     auto found = Point3f(0, 0, -1);
     auto foundDistance = 1e6;
     for (auto p : points) {
-        if (std::abs(p.x - point.x) > searchRadius || std::abs(p.y - point.y) > searchRadius) {
+        if (std::abs(p.x - point.x) > searchRadius || std::abs(p.y - point.y) > searchRadius || p.z < point.z * 0.6) {
             continue;
         }
 
