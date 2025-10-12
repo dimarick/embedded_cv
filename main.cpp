@@ -19,6 +19,7 @@
 #include <SocketFactory.h>
 #include <csignal>
 #include <core/opencl/ocl_defs.hpp>
+#include <Eigen/Geometry>
 
 #include "QuickStereoMatch.h"
 
@@ -55,6 +56,8 @@ Point3f findNearestPoint(const Point3f &point3, std::vector<cv::Point3f> &vector
 void fillGridRow(size_t w, int cH, int cW, int j, std::vector<cv::Point3f> &points, std::vector<Point3f> &grid);
 
 void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h);
+
+void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &idealGrid, size_t width, size_t height);
 
 static std::atomic running = true;
 
@@ -455,13 +458,17 @@ int main(int argc, const char **argv) {
             CenterQuad quad;
             auto quadRms = findCenterQuad(leftMatches1.size(), points, quad);
 
-            float gridRms = 0.0;
+            float gridRmse = 1e6;
             std::vector<Point3f> grid(points.size());
-            size_t gridWidth;
-            size_t gridHeight;
-            if (quadRms < 0.1) {
-                gridRms = findGrid(leftMatches1.size(), quad, points, grid, &gridWidth, &gridHeight);
+            size_t gridWidth = 0;
+            size_t gridHeight = 0;
+            if (quadRms < 0.1f) {
+                gridRmse = findGrid(leftMatches1.size(), quad, points, grid, &gridWidth, &gridHeight);
             }
+
+            std::vector<Point3f> idealGrid(gridWidth * gridHeight);
+
+            createIdealGrid(grid, idealGrid, gridWidth, gridHeight);
 
             auto center = Point((int)colorLeft.size().width / 2, (int)colorLeft.size().height / 2);
             cv::drawMarker(colorLeft, center, cv::Scalar(255, 0, 0), MARKER_DIAMOND, 20, 2);
@@ -484,7 +491,6 @@ int main(int argc, const char **argv) {
 
                 cv::drawMarker(leftMatches1, Point((int)p.x, (int)p.y), cv::Scalar(0, 255, 0), MARKER_TILTED_CROSS, 50 * p.z, 2);
                 cv::drawMarker(colorLeft, Point((int)p.x, (int)p.y), cv::Scalar(0, 255, 0), MARKER_TILTED_CROSS, 50 * p.z, 2);
-                cv::putText(colorLeft, info, Point((int)p.x, (int)p.y), FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255));
             }
 
             auto color = quadRms < 0.1f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255);
@@ -519,6 +525,28 @@ int main(int argc, const char **argv) {
                     if (bottom.z > 0 && y < gridHeight - 1) {
                         cv::line(colorLeft, Point((int) p.x, (int) p.y), Point((int) bottom.x, (int) bottom.y),
                                  cv::Scalar(255, 0, 0), 5);
+                    }
+                }
+            }
+
+            for (int x = 0; x < gridWidth; ++x) {
+                for (int y = 0; y < gridHeight; ++y) {
+                    auto p = idealGrid[y * gridWidth + x];
+                    auto right = idealGrid[y * gridWidth + x + 1];
+                    auto bottom = idealGrid[(y + 1) * gridWidth + x];
+
+                    if (p.z < 0) {
+                        continue;
+                    }
+
+                    if (right.z > 0 && x < gridWidth - 1) {
+                        cv::line(colorLeft, Point((int) p.x, (int) p.y), Point((int) right.x, (int) right.y),
+                                 cv::Scalar(255, 255, 0), 3);
+                    }
+
+                    if (bottom.z > 0 && y < gridHeight - 1) {
+                        cv::line(colorLeft, Point((int) p.x, (int) p.y), Point((int) bottom.x, (int) bottom.y),
+                                 cv::Scalar(255, 255, 0), 3);
                     }
                 }
             }
@@ -621,8 +649,69 @@ int main(int argc, const char **argv) {
     return 0;
 }
 
+auto lineLineIntersection(const Point3f &a1, const Point3f &a2, const Point3f &b1, const Point3f &b2) {
+    Eigen::Vector2f av1 (a1.x, a1.y);
+    Eigen::Vector2f av2 (a2.x, a2.y);
+    Eigen::Vector2f bv1 (b1.x, b1.y);
+    Eigen::Vector2f bv2 (b2.x, b2.y);
+    auto a = Eigen::Hyperplane<float,2>::Through(av1, av2);
+    auto b = Eigen::Hyperplane<float,2>::Through(bv1, bv2);
+    auto v = a.intersection(b);
+
+    return Point3f(v.x(), v.y(), 1);
+}
+
 float distance(Point3f p1, Point3f p2) {
     return (float)std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
+}
+
+void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &idealGrid, size_t w, size_t h) {
+    const auto cW = (int)w / 2;
+    const auto cH = (int)h / 2;
+
+    if (idealGrid.size() <= (cH * w + cW)) {
+        return;
+    }
+
+    const auto c = grid[cH * w + cW];
+    idealGrid[cH * w + cW] = c;
+    auto r = (int)(std::min(cH, cW) * 0.7);
+
+    const auto topLeft = grid[(cH - r) * w + cW - r];
+    const auto topRight = grid[(cH - r) * w + cW + r];
+    const auto bottomLeft = grid[(cH + r) * w + cW - r];
+    const auto bottomRight = grid[(cH + r) * w + cW + r];
+    const auto top = grid[(cH - r) * w + cW];
+    const auto left = grid[cH * w + cW - r];
+    const auto bottom = grid[(cH + r) * w + cW];
+    const auto right = grid[cH * w + cW + r];
+
+    const auto gridWx = (right.x - left.x) / 2;
+    const auto gridWy = (right.y - left.y) / 2;
+    const auto gridHx = (bottom.x - top.x) / 2;
+    const auto gridHy = (bottom.y - top.y) / 2;
+
+    const auto w0 = lineLineIntersection(topLeft, topRight, bottomLeft, bottomRight);
+    const auto h0 = lineLineIntersection(topLeft, bottomLeft, topRight, bottomRight);
+    const auto gridWscale = distance(c, w0) / (distance(c, w0) + distance(left, right) / 2);
+    const auto gridHscale =  distance(c, h0) / (distance(c, h0) - distance(top, bottom) / 2);
+
+    for (auto x0 = 0; x0 < w; ++x0) {
+        for (auto y0 = 0; y0 < h; ++y0) {
+            auto dx = (float) (x0 - cW) / (float)r;
+            auto wScale = std::pow(gridWscale, dx);
+            auto xw = c.x + dx * gridWx * wScale;
+            auto xh = c.y + dx * gridWy * wScale;
+
+            auto dy = (float) (y0 - cH) / (float)r;
+            auto hScale = std::pow(gridHscale, dy);
+            auto yw = c.x + dy * gridHx * hScale;
+            auto yh = c.y + dy * gridHy * hScale;
+
+            auto p = lineLineIntersection(Point3f(xw, xh, 0), h0, Point3f(yw, yh, 0), w0);
+            idealGrid[y0 * w + x0] = p;
+        }
+    }
 }
 
 Point3f approximate(Point3f current, Point3f prev) {
@@ -710,6 +799,7 @@ float findGrid(
         }
     }
 
+    size_t top, left;
     cropGrid(grid, gridWidth, gridHeight);
 
     return std::sqrt(err / (float)(w * h));
@@ -725,7 +815,7 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
             count += grid[y * *w + x].z > 0;
         }
 
-        if (count > 2) {
+        if (count > (*w / 3)) {
             break;
         }
 
@@ -738,7 +828,7 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
             count += grid[(y - 1) * *w + x].z > 0;
         }
 
-        if (count > 2) {
+        if (count > (*w / 3)) {
             break;
         }
 
@@ -751,7 +841,7 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
             count += grid[y * *w + x].z > 0;
         }
 
-        if (count > 2) {
+        if (count > (*h / 3)) {
             break;
         }
 
@@ -764,15 +854,15 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
             count += grid[y * *w + x - 1].z > 0;
         }
 
-        if (count > 2) {
+        if (count > (*h / 3)) {
             break;
         }
 
     }
 
     auto w0 = *w;
-    *w = right - left;
-    *h = bottom - top;
+    *w = right > left ? right - left : 0;
+    *h = bottom > top ? bottom - top : 0;
 
     for (int y = 0; y < *h; ++y) {
         for (int x = 0; x < *w; ++x) {

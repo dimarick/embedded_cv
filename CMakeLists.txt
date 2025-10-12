@@ -40,6 +40,9 @@ if (OPENMP_FOUND)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
 
+find_package( Eigen3 REQUIRED )
+include_directories( EIGEN3_INCLUDE_DIR )
+
 # If the package has been found, several variables will
 # be set, you can find the full list with descriptions
 # in the OpenCVConfig.cmake file.
@@ -73,6 +76,6 @@ add_executable(embedded_cv
         QuickStereoMatch.cpp
 )
 
-target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} ${OpenCL_LIBRARIES} mini_server)
+target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} ${OpenCL_LIBRARIES} mini_server Eigen3::Eigen)
 
 install(TARGETS embedded_cv DESTINATION bin)
