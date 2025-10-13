@@ -59,6 +59,8 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h);
 
 void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &idealGrid, size_t width, size_t height);
 
+void autoFitGrid(std::vector<Point3f> &grid, const std::vector<Point3f> &fitTo, size_t w, size_t h);
+
 static std::atomic running = true;
 
 static BroadcastingServer broadcastingServer;
@@ -479,6 +481,8 @@ int main(int argc, const char **argv) {
 
             createIdealGrid(grid, idealGrid, gridWidth, gridHeight);
 
+            autoFitGrid(idealGrid, grid, gridWidth, gridHeight);
+
             auto center = Point((int)colorLeft.size().width / 2, (int)colorLeft.size().height / 2);
             cv::drawMarker(colorLeft, center, cv::Scalar(255, 0, 0), MARKER_DIAMOND, 20, 2);
 
@@ -628,13 +632,13 @@ int main(int argc, const char **argv) {
                         CALIB_TILTED_MODEL|
                         CALIB_FIX_TAUX_TAUY|
                         CALIB_FIX_TANGENT_DIST|
-                        CALIB_FIX_S1_S2_S3_S4|
+//                        CALIB_FIX_S1_S2_S3_S4|
                         CALIB_FIX_K1|
-                        // CALIB_FIX_K2|
-                        // CALIB_FIX_K3|
-                        // CALIB_FIX_K4|
-                        CALIB_FIX_K5|
-                        CALIB_FIX_K6|
+                        CALIB_FIX_K2|
+//                        CALIB_FIX_K3|
+//                        CALIB_FIX_K4|
+//                        CALIB_FIX_K5|
+//                        CALIB_FIX_K6|
                         CALIB_FIX_ASPECT_RATIO,
                     };
 
@@ -647,17 +651,17 @@ int main(int argc, const char **argv) {
                     );
                 }
 
-//                if (rms < prevRms) {
-                    cv::initUndistortRectifyMap(cameraMatrix, distCoeff, noArray(), cameraMatrix, colorLeft.size(),
-                                                CV_32FC2,
-                                                map1, map2);
-                    Mat plainLeft;
-                    cv::remap(readingImLeft, plainLeft, map1, map2, INTER_LINEAR);
-                    imshow("Plain", plainLeft);
-//                }
+                cv::initUndistortRectifyMap(cameraMatrix, distCoeff, noArray(), cameraMatrix, colorLeft.size(),
+                                            CV_32FC2,
+                                            map1, map2);
                 prevRms = rms;
             }
 
+            if (!map1.empty()) {
+                Mat plainLeft;
+                cv::remap(readingImLeft, plainLeft, map1, map2, INTER_LINEAR);
+                imshow("Plain", plainLeft);
+            }
             imshow("GL2", colorLeft);
 
             imageLeft.copyTo(inputLeft);
@@ -752,6 +756,30 @@ int main(int argc, const char **argv) {
     commandServerThread.join();
 
     return 0;
+}
+
+void autoFitGrid(std::vector<Point3f> &grid, const std::vector<Point3f> &fitTo, size_t w, size_t h) {
+    if (grid.size() == 0) {
+        return;
+    }
+
+    auto topLeft1 = grid[0];
+    auto topLeft2 = fitTo[0];
+    auto topRight1 = grid[w - 1];
+    auto topRight2 = fitTo[w - 1];
+    auto bottomLeft1 = grid[(h - 1) * w];
+    auto bottomLeft2 = grid[(h - 1) * w];
+
+    auto scaleX = (topRight2.x - topLeft2.x) / (topRight1.x - topLeft1.x);
+    auto scaleY = (bottomLeft2.y - topLeft2.y) / (bottomLeft1.y - topLeft1.y);
+
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            auto p = &grid[y * w + x];
+            p->x = (p->x - topLeft1.x) * scaleX + topLeft2.x;
+            p->y = (p->y - topLeft1.y) * scaleY + topLeft2.y;
+        }
+    }
 }
 
 auto lineLineIntersection(const Point3f &a1, const Point3f &a2, const Point3f &b1, const Point3f &b2) {
