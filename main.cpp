@@ -60,7 +60,7 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h);
 void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &idealGrid, size_t width, size_t height);
 
 void autoFitGrid(std::vector<Point3f> &grid, const std::vector<Point3f> &fitTo, size_t w, size_t h);
-
+auto line3AvgIntersection(const Point3f &a1, const Point3f &a2, const Point3f &b1, const Point3f &b2, const Point3f &c1, const Point3f &c2);
 static std::atomic running = true;
 
 static BroadcastingServer broadcastingServer;
@@ -354,10 +354,6 @@ int main(int argc, const char **argv) {
 //    running = false;
 
     int patternSize = 64;
-    auto t1 = Mat(Size(patternSize + 1, patternSize + 1), CV_8U);
-    createCheckboadPatterns(t1);
-    auto t2 = 1 - t1;
-    std::vector<cv::Point3f> points(1000);
     cv::Mat map1, map2;
 
     bool needsCalibration1 = true;
@@ -446,9 +442,11 @@ int main(int argc, const char **argv) {
             }
         }
 
-        needsCalibration1 = map1.empty();
+        if (needsCalibration1) {
+            auto t1 = Mat(Size(patternSize + 1, patternSize + 1), CV_8U);
+            createCheckboadPatterns(t1);
+            std::vector<cv::Point3f> points(1000);
 
-        if (true) {
             Mat grayLeft;
             Mat colorLeft = imageLeft.getMat(AccessFlag::ACCESS_RW);
             cv::cvtColor(imageLeft, grayLeft, COLOR_BGR2GRAY);
@@ -475,6 +473,10 @@ int main(int argc, const char **argv) {
             size_t gridHeight = 0;
             if (quadRms < 0.05f) {
                 gridRmse = findGrid(leftMatches1.size(), quad, points, grid, &gridWidth, &gridHeight);
+
+                patternSize = (int)((quad.topRight.x - quad.topLeft.x) * 0.9);
+                patternSize -= patternSize % 2;
+                patternSize = std::min(256, std::max(24, patternSize));
             }
 
             std::vector<Point3f> idealGrid(gridWidth * gridHeight);
@@ -605,19 +607,19 @@ int main(int argc, const char **argv) {
                 map2.setTo(Scalar::all(0));
 
                 std::vector<int> flagsChain = {
-                        // CALIB_USE_INTRINSIC_GUESS|
+//                        CALIB_USE_INTRINSIC_GUESS|
                         CALIB_USE_EXTRINSIC_GUESS|
                         CALIB_FIX_PRINCIPAL_POINT|
-                        // CALIB_FIX_FOCAL_LENGTH|
+//                        CALIB_FIX_FOCAL_LENGTH|
                         CALIB_RATIONAL_MODEL|
                         CALIB_THIN_PRISM_MODEL|
                         CALIB_TILTED_MODEL|
                         CALIB_FIX_TAUX_TAUY|
                         CALIB_FIX_TANGENT_DIST|
                         CALIB_FIX_S1_S2_S3_S4|
-                        // CALIB_FIX_K1|
-                        // CALIB_FIX_K2|
-                        CALIB_FIX_K3|
+//                        CALIB_FIX_K1|
+//                        CALIB_FIX_K2|
+//                        CALIB_FIX_K3|
                         CALIB_FIX_K4|
                         CALIB_FIX_K5|
                         CALIB_FIX_K6|
@@ -725,7 +727,7 @@ int main(int argc, const char **argv) {
 //        }
 
         if (cv::waitKey(1) >= 0) {
-            running = false;
+            needsCalibration1 = !needsCalibration1;
         }
 #endif
     }
@@ -794,6 +796,14 @@ auto lineLineIntersection(const Point3f &a1, const Point3f &a2, const Point3f &b
     return Point3f(v.x(), v.y(), 1);
 }
 
+auto line3AvgIntersection(const Point3f &a1, const Point3f &a2, const Point3f &b1, const Point3f &b2, const Point3f &c1, const Point3f &c2) {
+    auto v1 = lineLineIntersection(a1, a2, b1, b2);
+    auto v2 = lineLineIntersection(a1, a2, c1, c2);
+    auto v3 = lineLineIntersection(b1, b2, c1, c2);
+
+    return (v1 + v2 + v3) / 3;
+}
+
 float distance(Point3f p1, Point3f p2) {
     return (float)std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
 }
@@ -814,6 +824,10 @@ void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &ide
     const auto topRight = grid[(cH - r) * w + cW + r];
     const auto bottomLeft = grid[(cH + r) * w + cW - r];
     const auto bottomRight = grid[(cH + r) * w + cW + r];
+    const auto topCenter = grid[(cH - r) * w + cW];
+    const auto leftCenter = grid[(cH) * w + cW - r];
+    const auto rightCenter = grid[(cH) * w + cW + r];
+    const auto bottomCenter = grid[(cH + r) * w + cW];
     const auto top = grid[(cH - r) * w + cW];
     const auto left = grid[cH * w + cW - r];
     const auto bottom = grid[(cH + r) * w + cW];
@@ -824,8 +838,8 @@ void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &ide
     const auto gridHx = (bottom.x - top.x) / 2;
     const auto gridHy = (bottom.y - top.y) / 2;
 
-    const auto w0 = lineLineIntersection(topLeft, topRight, bottomLeft, bottomRight);
-    const auto h0 = lineLineIntersection(topLeft, bottomLeft, topRight, bottomRight);
+    const auto w0 = line3AvgIntersection(topLeft, topRight, bottomLeft, bottomRight, leftCenter, rightCenter);
+    const auto h0 = line3AvgIntersection(topLeft, bottomLeft, topRight, bottomRight, topCenter, bottomCenter);
     const auto gridWscale = distance(c, w0) / (distance(c, w0) + distance(left, right) / 2);
     const auto gridHscale =  distance(c, h0) / (distance(c, h0) - distance(top, bottom) / 2);
 
@@ -1253,8 +1267,9 @@ void findPeaks(const Mat &mat, std::vector<cv::Point3f> &points, size_t *size, i
 
     int kernelRadius = (kernel - 1) / 2;
     int w = mat.cols;
-    for (int i = kernelRadius; i < mat.rows - kernel; ++i) {
-        for (int j = kernelRadius; j < w - kernel; ++j) {
+    auto step = 1;
+    for (int i = kernelRadius; i < mat.rows - kernel; i += step) {
+        for (int j = kernelRadius; j < w - kernel; j += step) {
             if (mask.at<char>(i, j) == 1) {
                 continue;
             }
