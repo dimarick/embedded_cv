@@ -356,6 +356,13 @@ int main(int argc, const char **argv) {
     createCheckboadPatterns(t1);
     auto t2 = 1 - t1;
     std::vector<cv::Point3f> points(1000);
+    cv::Mat map1, map2;
+
+    bool needsCalibration1 = true;
+
+    std::vector<double> avgDistCoeff(14);
+    bool avgDistCoeffInitialized = false;
+    double prevRms = 1000;
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -386,7 +393,7 @@ int main(int argc, const char **argv) {
             break;
         }
 
-        if (needsCalibration && i % 30 == 0 && !calibrating) {
+        if (false) {
             if (onlineCalibration.autoDetectBoard(imageLeft, imageRight)) {
                 calibrating = true;
 
@@ -437,6 +444,8 @@ int main(int argc, const char **argv) {
             }
         }
 
+        needsCalibration1 = map1.empty();
+
         if (true) {
             Mat grayLeft;
             Mat colorLeft = imageLeft.getMat(AccessFlag::ACCESS_RW);
@@ -462,7 +471,7 @@ int main(int argc, const char **argv) {
             std::vector<Point3f> grid(points.size());
             size_t gridWidth = 0;
             size_t gridHeight = 0;
-            if (quadRms < 0.1f) {
+            if (quadRms < 0.05f) {
                 gridRmse = findGrid(leftMatches1.size(), quad, points, grid, &gridWidth, &gridHeight);
             }
 
@@ -534,6 +543,7 @@ int main(int argc, const char **argv) {
                     auto p = idealGrid[y * gridWidth + x];
                     auto right = idealGrid[y * gridWidth + x + 1];
                     auto bottom = idealGrid[(y + 1) * gridWidth + x];
+                    auto p2 = grid[y * gridWidth + x];
 
                     if (p.z < 0) {
                         continue;
@@ -548,12 +558,106 @@ int main(int argc, const char **argv) {
                         cv::line(colorLeft, Point((int) p.x, (int) p.y), Point((int) bottom.x, (int) bottom.y),
                                  cv::Scalar(255, 255, 0), 3);
                     }
+
+                    cv::line(colorLeft, Point((int) p.x, (int) p.y), Point((int) p2.x, (int) p2.y),
+                             cv::Scalar(255, 0, 255), 1);
                 }
             }
 
             std::cerr << "Peaks " << size << "; square q " << quadRms << std::endl;
 
-            imshow("GL1", leftMatches1);
+            if (idealGrid.size() > 30 && gridRmse < 100) {
+                grid.resize(gridWidth * gridHeight);
+                idealGrid.resize(gridWidth * gridHeight);
+
+                std::vector<Point2f> imageGrid(grid.size());
+                for (int j = 0; j < grid.size(); ++j) {
+                    imageGrid[j] = Point2f(grid[j].x, grid[j].y);
+                }
+
+                std::vector<Point3f> objectGrid(idealGrid.size());
+                for (int j = 0; j < idealGrid.size(); ++j) {
+                    objectGrid[j] = Point3f(idealGrid[j].x, idealGrid[j].y, 0);
+                }
+
+                Mat cameraMatrix = Mat::zeros(3, 3, CV_64F);
+                std::vector<double> distCoeff(14);
+                Mat rvecs = Mat::zeros(3, 3, CV_64F);
+                Mat tvecs = Mat::zeros(3, 3, CV_64F);
+
+                std::vector<std::vector<Point3f>> objectPoints(1);
+                std::vector<std::vector<Point2f>> imagePoints(1);
+                objectPoints[0] = objectGrid;
+                imagePoints[0] = imageGrid;
+
+                cameraMatrix.setTo(Scalar::all(0));
+                auto cameraData = (double *)cameraMatrix.data;
+
+                cameraData[0] = 8000.;
+                cameraData[4] = 8000.;
+                cameraData[8] = 1.;
+
+                map1.setTo(Scalar::all(0));
+                map2.setTo(Scalar::all(0));
+
+                std::vector<int> flagsChain = {
+                        // CALIB_USE_INTRINSIC_GUESS|
+                        CALIB_USE_EXTRINSIC_GUESS|
+                        CALIB_FIX_PRINCIPAL_POINT|
+                        // CALIB_FIX_FOCAL_LENGTH|
+                        CALIB_RATIONAL_MODEL|
+                        CALIB_THIN_PRISM_MODEL|
+                        CALIB_TILTED_MODEL|
+                        CALIB_FIX_TAUX_TAUY|
+                        CALIB_FIX_TANGENT_DIST|
+                        CALIB_FIX_S1_S2_S3_S4|
+                        // CALIB_FIX_K1|
+                        // CALIB_FIX_K2|
+                        CALIB_FIX_K3|
+                        CALIB_FIX_K4|
+                        CALIB_FIX_K5|
+                        CALIB_FIX_K6|
+                        CALIB_FIX_ASPECT_RATIO,
+
+                        CALIB_USE_INTRINSIC_GUESS|
+                        CALIB_USE_EXTRINSIC_GUESS|
+                        CALIB_FIX_PRINCIPAL_POINT|
+                        CALIB_FIX_FOCAL_LENGTH|
+                        CALIB_RATIONAL_MODEL|
+                        CALIB_THIN_PRISM_MODEL|
+                        CALIB_TILTED_MODEL|
+                        CALIB_FIX_TAUX_TAUY|
+                        CALIB_FIX_TANGENT_DIST|
+                        CALIB_FIX_S1_S2_S3_S4|
+                        CALIB_FIX_K1|
+                        // CALIB_FIX_K2|
+                        // CALIB_FIX_K3|
+                        // CALIB_FIX_K4|
+                        CALIB_FIX_K5|
+                        CALIB_FIX_K6|
+                        CALIB_FIX_ASPECT_RATIO,
+                    };
+
+                auto rms = 0.0;
+
+                for(auto flags : flagsChain) {
+                    rms = cv::calibrateCamera(objectPoints, imagePoints, colorLeft.size(), cameraMatrix,
+                                                   distCoeff, rvecs, tvecs, flags,
+                                                   TermCriteria(10000, 0.01)
+                    );
+                }
+
+//                if (rms < prevRms) {
+                    cv::initUndistortRectifyMap(cameraMatrix, distCoeff, noArray(), cameraMatrix, colorLeft.size(),
+                                                CV_32FC2,
+                                                map1, map2);
+                    Mat plainLeft;
+                    cv::remap(readingImLeft, plainLeft, map1, map2, INTER_LINEAR);
+                    imshow("Plain", plainLeft);
+//                }
+                prevRms = rms;
+            }
+
             imshow("GL2", colorLeft);
 
             imageLeft.copyTo(inputLeft);
@@ -561,10 +665,11 @@ int main(int argc, const char **argv) {
             imageLeft.copyTo(outputLeft);
             imageRight.copyTo(outputRight);
         } else {
-            imageLeft.copyTo(inputLeft);
+            cv::remap(imageLeft, resultLeft, map1, map2, INTER_LINEAR);
             imageRight.copyTo(inputRight);
             imageLeft.copyTo(outputLeft);
             imageRight.copyTo(outputRight);
+            imshow("Plain", resultLeft);
         }
 
 //        processor.processFrame(inputLeft, inputRight, output);
@@ -709,6 +814,11 @@ void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &ide
             auto yh = c.y + dy * gridHy * hScale;
 
             auto p = lineLineIntersection(Point3f(xw, xh, 0), h0, Point3f(yw, yh, 0), w0);
+
+            if (std::isnan(p.x) || std::isnan(p.x)) {
+                continue;
+            }
+
             idealGrid[y0 * w + x0] = p;
         }
     }
@@ -807,41 +917,52 @@ float findGrid(
 
 void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
     int top = 0, left = 0, right = 0, bottom = 0;
+    size_t cW = *w / 2;
+    size_t cH = *h / 2;
+
+    auto wScore = 0.0, hScore = 0.0;
+    auto threshold = 0.3;
+
+    for (int x = 0; x < *w; ++x) {
+        wScore += grid[cH * *w + x].z;
+    }
+
+    for (int y = 0; y < *h; ++y) {
+        hScore += grid[y * *w + cW].z;
+    }
 
     for (int y = 0; y < *h; ++y) {
         top = y;
-        int count = 0;
+        auto rowScore = 0.0;
         for (int x = 0; x < *w; ++x) {
-            count += grid[y * *w + x].z > 0;
+            rowScore += grid[y * *w + x].z;
         }
 
-        if (count > (*w / 3)) {
+        if (rowScore > wScore * threshold) {
             break;
         }
-
     }
 
     for (int y = (int)*h; y > 0; --y) {
         bottom = y;
-        int count = 0;
+        auto rowScore = 0.0;
         for (int x = 0; x < *w; ++x) {
-            count += grid[(y - 1) * *w + x].z > 0;
+            rowScore += grid[(y - 1) * *w + x].z;
         }
 
-        if (count > (*w / 3)) {
+        if (rowScore > wScore * threshold) {
             break;
         }
-
     }
 
     for (int x = 0; x < *w; ++x) {
         left = x;
-        int count = 0;
+        auto rowScore = 0.0;
         for (int y = 0; y < *h; ++y) {
-            count += grid[y * *w + x].z > 0;
+            rowScore += grid[y * *w + x].z;
         }
 
-        if (count > (*h / 3)) {
+        if (rowScore > wScore * threshold) {
             break;
         }
 
@@ -849,12 +970,12 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
 
     for (int x = (int)*w; x > 0; --x) {
         right = x;
-        int count = 0;
+        auto rowScore = 0.0;
         for (int y = 0; y < *h; ++y) {
-            count += grid[y * *w + x - 1].z > 0;
+            rowScore += grid[y * *w + x - 1].z;
         }
 
-        if (count > (*h / 3)) {
+        if (rowScore > wScore * threshold) {
             break;
         }
 
@@ -901,7 +1022,7 @@ Point3f findNearestPoint(const Point3f &point, std::vector<cv::Point3f> &points,
     }
 
     if (found.z < 0) {
-        return Point3f(point.x, point.y, -1);
+        return Point3f(point.x, point.y, 0);
     }
 
     return found;
@@ -1061,7 +1182,7 @@ float quadQualityNormRms(CenterQuad quad) {
                + std::abs(d1 - d2) / std::sqrt(d1 * d2)
            ) / 5;
 
-    return d;
+    return d * (quad.topLeft.y / quad.topLeft.x);
 }
 
 float quadQualityRms(CenterQuad quad) {
