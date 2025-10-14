@@ -460,10 +460,6 @@ int main(int argc, const char **argv) {
 
             findPeaks(leftMatches1, points, &size, patternSize / 2, 2);
 
-            std::sort(points.begin(), points.begin() + (int)size - 1, [](Point3f a, Point3f b) {
-                return a.z > b.z;
-            });
-
             CenterQuad quad;
             auto quadRms = findCenterQuad(leftMatches1.size(), points, quad);
 
@@ -477,6 +473,9 @@ int main(int argc, const char **argv) {
                 patternSize = (int)((quad.topRight.x - quad.topLeft.x) * 0.9);
                 patternSize -= patternSize % 2;
                 patternSize = std::min(256, std::max(24, patternSize));
+            } else {
+                patternSize = random() % (65 - 24) + 24;
+                patternSize -= patternSize % 2;
             }
 
             std::vector<Point3f> idealGrid(gridWidth * gridHeight);
@@ -509,6 +508,7 @@ int main(int argc, const char **argv) {
             }
 
             auto color = quadRms < 0.1f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255);
+            cv::drawMarker(colorLeft, Point((int) quad.topLeft.x, (int) quad.topLeft.y), color, MARKER_TRIANGLE_UP, 50, 6);
             cv::line(colorLeft, Point((int) quad.topLeft.x, (int) quad.topLeft.y),
                      Point((int) quad.topRight.x, (int) quad.topRight.y), color, 3);
             cv::line(colorLeft, Point((int) quad.topLeft.x, (int) quad.topLeft.y),
@@ -646,11 +646,15 @@ int main(int argc, const char **argv) {
 
                 auto rms = 0.0;
 
-                for(auto flags : flagsChain) {
-                    rms = cv::calibrateCamera(objectPoints, imagePoints, colorLeft.size(), cameraMatrix,
-                                                   distCoeff, rvecs, tvecs, flags,
-                                                   TermCriteria(10000, 0.01)
-                    );
+                try {
+                    for (auto flags: flagsChain) {
+                        rms = cv::calibrateCamera(objectPoints, imagePoints, colorLeft.size(), cameraMatrix,
+                                                  distCoeff, rvecs, tvecs, flags,
+                                                  TermCriteria(10000, 0.01)
+                        );
+                    }
+                } catch (const std::exception &e) {
+                    std::cerr << "cv::calibrateCamera failed" << std::endl;
                 }
 
                 cv::initUndistortRectifyMap(cameraMatrix, distCoeff, noArray(), cameraMatrix, colorLeft.size(),
@@ -909,6 +913,8 @@ float findGrid(
         grid[i] = Point3f(0,0,-1);
     }
 
+    auto gridMaxOffset = &grid[grid.size() - 1];
+
     auto cH = (int)(h / 2);
     auto cW = (int)(w / 2);
 
@@ -931,6 +937,8 @@ float findGrid(
                 auto current = grid[(cH + s * i) * w + cW + j];
                 auto prev = grid[(cH + s * (i - 1)) * w + cW + j];
                 auto next = &grid[(cH + s * (i + 1)) * w + cW + j];
+                CV_Assert(next < gridMaxOffset);
+
                 auto searchRadius = distance(current, prev) / 4;
                 auto nextApproximated = approximate(current, prev);
                 *next = findNearestPoint(nextApproximated, points, searchRadius);
@@ -942,6 +950,7 @@ float findGrid(
                     auto left = grid[(cH + s * (i + 1)) * w + cW + ks * k];
                     auto top = grid[(cH + s * i) * w + cW + ks * (k + 1)];
                     auto next = &grid[(cH + s * (i + 1)) * w + cW + ks * (k + 1)];
+                    CV_Assert(next < gridMaxOffset);
                     auto searchRadius = distance(current, left) / 4;
                     auto nextApproximated = approximate2(current, left, top);
                     *next = findNearestPoint(nextApproximated, points, searchRadius);
@@ -1082,7 +1091,7 @@ float findQuadBy3Points(const std::vector<cv::Point3f> &points, size_t size, Cen
             quad.bottomRight = p;
             auto q2 = quadQualityRms(quad) / p.z;
 
-            if (q2 < q) {
+            if (!std::isnan(q2) && q2 < q) {
                 q = q2;
                 result = quad;
             }
@@ -1096,14 +1105,15 @@ float findQuadByTop(const std::vector<cv::Point3f> &points, size_t size, CenterQ
     auto q = 1.0f / 0.0f;
     for (int i = 0; i < size; ++i) {
         auto p = points[i];
-        if (p.y > result.topLeft.y && p.y > result.topRight.y) {
+        if (p.y > result.topLeft.y && p.y > result.topRight.y && p.x < result.topRight.x && p.x > result.topLeft.x - (result.topRight.x - result.topLeft.x)) {
             CenterQuad quad;
             quad.topLeft = result.topLeft;
             quad.topRight = result.topRight;
             quad.bottomLeft = p;
+
             auto q2 = findQuadBy3Points(points, size, quad) / p.z;
 
-            if (q2 < q) {
+            if (!std::isnan(q2) && q2 < q) {
                 q = q2;
                 result = quad;
             }
@@ -1117,13 +1127,14 @@ float findQuadByTopLeft(const std::vector<cv::Point3f> &points, size_t size, Cen
     auto q = 1.0f / 0.0f;
     for (int i = 0; i < size; ++i) {
         auto p = points[i];
-        if (p.x > result.topLeft.x) {
+        auto dp = p - result.topLeft;
+        if (dp.x > 0 && std::abs(dp.x / dp.y) > 1.5f) {
             CenterQuad quad;
             quad.topLeft = result.topLeft;
             quad.topRight = p;
             auto q2 = std::sqrt(distance(p, result.topLeft)) * findQuadByTop(points, size, quad) / p.z;
 
-            if (q2 < q) {
+            if (!std::isnan(q2) && q2 < q) {
                 q = q2;
                 result = quad;
             }
@@ -1185,9 +1196,9 @@ float findCenterQuad(Size size, const std::vector<cv::Point3f> &points, CenterQu
                 centralPoints[nextSize++] = p;
             }
         }
-        roiSize *= std::sqrt(10 / (float)nextSize);
+        roiSize *= std::sqrt(15 / (float)nextSize);
         currentSize = nextSize;
-    } while (nextSize >= 15);
+    } while (nextSize >= 20);
 
     auto q = 1.0f / 0.0f;
 
@@ -1261,7 +1272,7 @@ void createCheckboadPatterns(Mat &t1) {
 
 void findPeaks(const Mat &mat, std::vector<cv::Point3f> &points, size_t *size, int kernel, int noiseTolerance) {
     auto data = (float *)mat.data;
-    auto p = 0;
+    size_t p = 0;
 
     Mat mask = Mat::zeros(mat.size(), CV_8SC1);
 
