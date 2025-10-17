@@ -353,7 +353,7 @@ int main(int argc, const char **argv) {
 
 //    running = false;
 
-    int patternSize = 64;
+    int patternSize = 60;
     cv::Mat map1, map2;
 
     bool needsCalibration1 = true;
@@ -467,16 +467,17 @@ int main(int argc, const char **argv) {
             std::vector<Point3f> grid(points.size());
             size_t gridWidth = 0;
             size_t gridHeight = 0;
-            if (quadRms < 0.05f) {
+            if (quadRms < 0.05f && !std::isnan(quadRms)) {
                 gridRmse = findGrid(leftMatches1.size(), quad, points, grid, &gridWidth, &gridHeight);
 
-                patternSize = (int)((quad.topRight.x - quad.topLeft.x) * 0.9);
+                patternSize = (int)(quad.topRight.x - quad.topLeft.x);
                 patternSize -= patternSize % 2;
                 patternSize = std::min(256, std::max(24, patternSize));
             } else {
-                patternSize = random() % (65 - 24) + 24;
+                patternSize = (int)(random() % (65 - 24) + 24);
                 patternSize -= patternSize % 2;
             }
+            std::cerr << "Pattern size " << patternSize << std::endl;
 
             std::vector<Point3f> idealGrid(gridWidth * gridHeight);
 
@@ -503,8 +504,8 @@ int main(int argc, const char **argv) {
                 char info[256];
                 snprintf(info, sizeof info - sizeof("\0"), "%d", j);
 
-                cv::drawMarker(leftMatches1, Point((int)p.x, (int)p.y), cv::Scalar(0, 255, 0), MARKER_TILTED_CROSS, 50 * p.z, 2);
-                cv::drawMarker(colorLeft, Point((int)p.x, (int)p.y), cv::Scalar(0, 255, 0), MARKER_TILTED_CROSS, 50 * p.z, 2);
+                cv::drawMarker(leftMatches1, Point((int)p.x, (int)p.y), cv::Scalar(0, 255, 0), MARKER_TILTED_CROSS, 20 * p.z, 2);
+                cv::drawMarker(colorLeft, Point((int)p.x, (int)p.y), cv::Scalar(0, 255, 0), MARKER_TILTED_CROSS, 20 * p.z, 2);
             }
 
             auto color = quadRms < 0.1f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255);
@@ -769,21 +770,27 @@ void autoFitGrid(std::vector<Point3f> &grid, const std::vector<Point3f> &fitTo, 
         return;
     }
 
-    auto topLeft1 = grid[0];
-    auto topLeft2 = fitTo[0];
-    auto topRight1 = grid[w - 1];
-    auto topRight2 = fitTo[w - 1];
-    auto bottomLeft1 = grid[(h - 1) * w];
-    auto bottomLeft2 = grid[(h - 1) * w];
+    const auto cW = w / 2;
+    const auto cH = h / 2;
 
-    auto scaleX = (topRight2.x - topLeft2.x) / (topRight1.x - topLeft1.x);
-    auto scaleY = (bottomLeft2.y - topLeft2.y) / (bottomLeft1.y - topLeft1.y);
+    auto left1 = grid[cH * w + 1];
+    auto right1 = grid[cH * w + w - 2];
+    auto top1 = grid[w + cW];
+    auto bottom1 = grid[(h - 2) * w + cW];
+
+    auto left2 = fitTo[cH * w + 1];
+    auto right2 = fitTo[cH * w + w - 2];
+    auto top2 = fitTo[w + cW];
+    auto bottom2 = fitTo[(h - 2) * w + cW];
+
+    auto scaleX = (right2.x - left2.x) / (right1.x - left1.x);
+    auto scaleY = (bottom2.y - top2.y) / (bottom1.y - top1.y);
 
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             auto p = &grid[y * w + x];
-            p->x = (p->x - topLeft1.x) * scaleX + topLeft2.x;
-            p->y = (p->y - topLeft1.y) * scaleY + topLeft2.y;
+            p->x = (p->x - left1.x) * scaleX + left2.x;
+            p->y = (p->y - top1.y) * scaleY + top2.y;
         }
     }
 }
@@ -939,9 +946,10 @@ float findGrid(
                 auto next = &grid[(cH + s * (i + 1)) * w + cW + j];
                 CV_Assert(next < gridMaxOffset);
 
-                auto searchRadius = distance(current, prev) / 4;
+                auto searchRadius = distance(current, prev) * 0.1f;
                 auto nextApproximated = approximate(current, prev);
                 *next = findNearestPoint(nextApproximated, points, searchRadius);
+                next->z + 1;
                 err += (float)std::pow(distance(*next, nextApproximated), 2);
             }
             for (auto k = 0; k < cW; k++) {
@@ -954,13 +962,13 @@ float findGrid(
                     auto searchRadius = distance(current, left) / 4;
                     auto nextApproximated = approximate2(current, left, top);
                     *next = findNearestPoint(nextApproximated, points, searchRadius);
+                    next->z + 1;
                     err += (float)std::pow(distance(*next, nextApproximated), 2);
                 }
             }
         }
     }
 
-    size_t top, left;
     cropGrid(grid, gridWidth, gridHeight);
 
     return std::sqrt(err / (float)(w * h));
@@ -971,8 +979,8 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
     size_t cW = *w / 2;
     size_t cH = *h / 2;
 
-    auto wScore = 0.0, hScore = 0.0;
-    auto threshold = 0.3;
+    auto wScore = 0.0f, hScore = 0.0f;
+    auto threshold = 0.9f;
 
     for (int x = 0; x < *w; ++x) {
         wScore += grid[cH * *w + x].z;
@@ -982,59 +990,88 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
         hScore += grid[y * *w + cW].z;
     }
 
-    for (int y = 0; y < *h; ++y) {
+    double wThreshold = wScore * threshold;
+    double hThreshold = hScore * threshold;
+
+    for (int y = 0; y < cH - 2; ++y) {
         top = y;
-        auto rowScore = 0.0;
+        auto rowScore = 0.0f, rowScore1 = 0.0f;
         for (int x = 0; x < *w; ++x) {
             rowScore += grid[y * *w + x].z;
+            rowScore1 += grid[(y + 1) * *w + x].z;
         }
 
-        if (rowScore > wScore * threshold) {
+        auto t1 = wThreshold - rowScore;
+        auto t2 = rowScore1 - wThreshold;
+
+        if (t1 < t2 && t2 > 0) {
+            break;
+        } else if (t1 >= t2 && t2 > 0) {
+            top++;
             break;
         }
     }
 
-    for (int y = (int)*h; y > 0; --y) {
+    for (int y = (int)*h; y > cH - 2; --y) {
         bottom = y;
-        auto rowScore = 0.0;
+        auto rowScore = 0.0f, rowScore1 = 0.0f;
         for (int x = 0; x < *w; ++x) {
             rowScore += grid[(y - 1) * *w + x].z;
+            rowScore1 += grid[(y - 2) * *w + x].z;
         }
 
-        if (rowScore > wScore * threshold) {
+        auto t1 = wThreshold - rowScore;
+        auto t2 = rowScore1 - wThreshold;
+
+        if (t1 < t2 && t2 > 0) {
+            break;
+        } else if (t1 >= t2 && t2 > 0) {
+            bottom--;
             break;
         }
     }
 
-    for (int x = 0; x < *w; ++x) {
+    for (int x = 0; x < cW - 2; ++x) {
         left = x;
-        auto rowScore = 0.0;
+        auto rowScore = 0.0f, rowScore1 = 0.0f;
         for (int y = 0; y < *h; ++y) {
             rowScore += grid[y * *w + x].z;
+            rowScore1 += grid[y * *w + x + 1].z;
         }
 
-        if (rowScore > wScore * threshold) {
+        auto t1 = hThreshold - rowScore;
+        auto t2 = rowScore1 - hThreshold;
+
+        if (t1 < t2 && t2 > 0) {
+            break;
+        } else if (t1 >= t2 && t2 > 0) {
+            left++;
             break;
         }
-
     }
 
-    for (int x = (int)*w; x > 0; --x) {
+    for (int x = (int)*w; x > cW + 2; --x) {
         right = x;
-        auto rowScore = 0.0;
+        auto rowScore = 0.0f, rowScore1 = 0.0f;
         for (int y = 0; y < *h; ++y) {
             rowScore += grid[y * *w + x - 1].z;
+            rowScore1 += grid[y * *w + x - 2].z;
         }
 
-        if (rowScore > wScore * threshold) {
+        auto t1 = hThreshold - rowScore;
+        auto t2 = rowScore1 - hThreshold;
+
+        if (t1 < t2 && t2 > 0) {
+            break;
+        } else if (t1 >= t2 && t2 > 0) {
+            right--;
             break;
         }
-
     }
 
     auto w0 = *w;
-    *w = right > left ? right - left : 0;
-    *h = bottom > top ? bottom - top : 0;
+    *w = right - left;
+    *h = bottom - top;
 
     for (int y = 0; y < *h; ++y) {
         for (int x = 0; x < *w; ++x) {
@@ -1325,11 +1362,11 @@ void findPeaks(const Mat &mat, std::vector<cv::Point3f> &points, size_t *size, i
                 const Rect2i &roi = cv::Rect(j - kernelRadius, i - kernelRadius, kernel, kernel);
                 auto processed = Mat(mask, roi);
                 processed.setTo(1);
-                auto point = findMassCenter(mat, j, i, 48);
+                auto point = findMassCenter(mat, j, i, kernelRadius);
                 j+=kernel;
                 points[p] = point;
                 p++;
-                if (p > *size) {
+                if (p >= *size) {
                     return;
                 }
             }
@@ -1345,7 +1382,7 @@ cv::Point3f findMassCenter(const Mat &mat, int x, int y, int searchRadius) {
     auto mass = 0.0f;
     auto sumX = 0.0f;
     auto sumY = 0.0f;
-    auto count = 0;
+    auto count = 0.0f;
 
     for (int i = -searchRadius; i <= searchRadius; ++i) {
         for (int j = -searchRadius; j <= searchRadius; ++j) {
@@ -1363,7 +1400,7 @@ cv::Point3f findMassCenter(const Mat &mat, int x, int y, int searchRadius) {
             if (pixelValue <= 0) {
                 continue;
             }
-             mass += pixelValue;
+            mass += pixelValue;
             sumX += pixelValue * (float)j;
             sumY += pixelValue * (float)i;
             count++;
@@ -1375,7 +1412,7 @@ cv::Point3f findMassCenter(const Mat &mat, int x, int y, int searchRadius) {
 
     auto height = 0.0f;
     if (mass > 0) {
-        height = data[(int)cY * w + (int)cX];
+        height = mass / (float)searchRadius / (float)searchRadius;
     }
 
     return {cX, cY, height};
