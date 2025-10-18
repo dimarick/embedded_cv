@@ -819,6 +819,10 @@ float distance(Point3f p1, Point3f p2) {
     return (float)std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
 }
 
+template <typename T> auto sign(T val) {
+    return T((T(0) < val) - (val < T(0)));
+}
+
 void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &idealGrid, size_t w, size_t h) {
     const auto cW = (int)w / 2;
     const auto cH = (int)h / 2;
@@ -829,40 +833,64 @@ void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &ide
 
     const auto c = grid[cH * w + cW];
     idealGrid[cH * w + cW] = c;
+
+
     auto r = (int)(std::min(cH, cW) * 0.7);
 
-    const auto topLeft = grid[(cH - r) * w + cW - r];
-    const auto topRight = grid[(cH - r) * w + cW + r];
-    const auto bottomLeft = grid[(cH + r) * w + cW - r];
-    const auto bottomRight = grid[(cH + r) * w + cW + r];
-    const auto topCenter = grid[(cH - r) * w + cW];
-    const auto leftCenter = grid[(cH) * w + cW - r];
-    const auto rightCenter = grid[(cH) * w + cW + r];
-    const auto bottomCenter = grid[(cH + r) * w + cW];
-    const auto top = grid[(cH - r) * w + cW];
-    const auto left = grid[cH * w + cW - r];
-    const auto bottom = grid[(cH + r) * w + cW];
-    const auto right = grid[cH * w + cW + r];
+    auto w0 = Point3f(0, 0, 0);
+    auto h0 = Point3f(0, 0, 0);
+    float wn = 0;
+    float hn = 0;
+
+    for (int i = -r; i < r; i++) {
+        if (i == 0 ) {
+            continue;
+        }
+        const auto wr = i < 0 ? -i : r;
+        const auto hr = i < 0 ? r : i;
+        const auto topLeft = grid[(cH - hr) * w + cW - wr];
+        const auto topRight = grid[(cH - hr) * w + cW + wr];
+        const auto bottomLeft = grid[(cH + hr) * w + cW - wr];
+        const auto bottomRight = grid[(cH + hr) * w + cW + wr];
+
+        auto z = topLeft.z + topRight.z + bottomLeft.z + bottomRight.z;
+
+        if (i < 0) {
+            h0 += lineLineIntersection(topLeft, bottomLeft, topRight, bottomRight);
+            hn++;
+        } else {
+            w0 += lineLineIntersection(topLeft, topRight, bottomLeft, bottomRight);
+            wn++;
+        }
+    }
+
+    w0 /= wn;
+    h0 /= hn;
+
+    const auto top = grid[(cH - 1) * w + cW];
+    const auto left = grid[cH * w + cW - 1];
+    const auto bottom = grid[(cH + 1) * w + cW];
+    const auto right = grid[cH * w + cW + 1];
 
     const auto gridWx = (right.x - left.x) / 2;
     const auto gridWy = (right.y - left.y) / 2;
     const auto gridHx = (bottom.x - top.x) / 2;
     const auto gridHy = (bottom.y - top.y) / 2;
 
-    const auto w0 = line3AvgIntersection(topLeft, topRight, bottomLeft, bottomRight, leftCenter, rightCenter);
-    const auto h0 = line3AvgIntersection(topLeft, bottomLeft, topRight, bottomRight, topCenter, bottomCenter);
     const auto gridWscale = distance(c, w0) / (distance(c, w0) + distance(left, right) / 2);
-    const auto gridHscale =  distance(c, h0) / (distance(c, h0) - distance(top, bottom) / 2);
+    const auto gridHscale = distance(c, h0) / (distance(c, h0) + distance(top, bottom) / 2);
+    const auto gridWsign = -sign(c.x - w0.x);
+    const auto gridHsign = -sign(c.y - h0.y);
 
     for (auto x0 = 0; x0 < w; ++x0) {
         for (auto y0 = 0; y0 < h; ++y0) {
-            auto dx = (float) (x0 - cW) / (float)r;
-            auto wScale = std::pow(gridWscale, dx);
+            auto dx = (float) (x0 - cW);
+            auto wScale = std::pow(gridWscale, gridWsign * dx);
             auto xw = c.x + dx * gridWx * wScale;
             auto xh = c.y + dx * gridWy * wScale;
 
-            auto dy = (float) (y0 - cH) / (float)r;
-            auto hScale = std::pow(gridHscale, dy);
+            auto dy = (float) (y0 - cH);
+            auto hScale = std::pow(gridHscale, gridHsign * dy);
             auto yw = c.x + dy * gridHx * hScale;
             auto yh = c.y + dy * gridHy * hScale;
 
