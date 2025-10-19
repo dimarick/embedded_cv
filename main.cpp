@@ -296,8 +296,8 @@ int main(int argc, const char **argv) {
 
 //    running = false;
 
-    int patternSize = 60;
-    cv::Mat map1, map2;
+    size_t patternSize = 60;
+    cv::Mat bestMap1, bestMap2;
 
     bool needsCalibration1 = true;
 
@@ -306,13 +306,25 @@ int main(int argc, const char **argv) {
     double prevRmse = 1000;
     double prevStdRmse = 1000;
     double prevRmseUndistorted = 1000;
-    double prevStdRmseUndistorted = 1000;
+    double prevStdRmseUndistorted = 1e6;
     size_t nextFrameId = 0;
 
     ecv::CalibrateMapper<double> calibrateMapper;
 
-    std::vector<std::vector<Point3f>> objectPoints(10);
-    std::vector<std::vector<Point2f>> imagePoints(10);
+    std::vector<std::vector<Point3f>> objectPoints(3);
+    std::vector<std::vector<Point2f>> imagePoints(3);
+
+    Mat cameraMatrix = Mat::zeros(3, 3, CV_64F);
+    std::vector<double> distCoeff(12);
+    Mat rvecs = Mat::zeros(3, 3, CV_64F);
+    Mat tvecs = Mat::zeros(3, 3, CV_64F);
+
+    cameraMatrix.setTo(Scalar::all(0));
+    auto cameraData = (double *)cameraMatrix.data;
+
+    cameraData[0] = 8000.;
+    cameraData[4] = 8000.;
+    cameraData[8] = 1.;
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -344,6 +356,7 @@ int main(int argc, const char **argv) {
         }
 
         if (needsCalibration1) {
+            cv::Mat map1, map2;
             Mat colorLeft = imageLeft.getMat(AccessFlag::ACCESS_RW);
             calibrateMapper.setPatternSize(patternSize);
             std::vector<cv::Point3d> peaks(1000);
@@ -358,31 +371,25 @@ int main(int argc, const char **argv) {
             auto squareRms = calibrateMapper.detectBaseSquare(colorLeft.size(), peaks, square);
             auto gridRmse = calibrateMapper.detectFrameImagePointsGrid(colorLeft.size(), peaks, square, imageGrid, &gridWidth, &gridHeight);
 
-            if (squareRms < 0.05f && !std::isnan(squareRms) && (gridWidth * gridHeight) > 0) {
-                auto list = {
-                    square.topRight.x - square.topLeft.x,
-                    square.bottomLeft.y - square.topLeft.y,
-
-                    (imageGrid[1].x - imageGrid[0].x),
-                    (imageGrid[gridWidth - 1].x - imageGrid[gridWidth - 2].x),
-                    (imageGrid[(gridHeight - 1) * gridWidth + 1].x - imageGrid[(gridHeight - 1) * gridWidth].x),
-                    (imageGrid[(gridHeight - 1) * gridWidth + gridWidth - 1].x - imageGrid[(gridHeight - 1) * gridWidth + gridWidth - 2].x),
-
-                    (imageGrid[1 * gridWidth].y - imageGrid[0].y),
-                    (imageGrid[1 * gridWidth + gridWidth - 1].y - imageGrid[gridWidth - 1].y),
-
-                    (imageGrid[(gridHeight - 1) * gridWidth].y - imageGrid[(gridHeight - 2) * gridWidth].y),
-                    (imageGrid[(gridHeight - 1) * gridWidth + gridWidth - 1].y - imageGrid[(gridHeight - 2) * gridWidth + gridWidth - 1].y),
-                };
-                patternSize = (int)std::min(list);
-                patternSize -= patternSize % 2;
-                patternSize = std::min(256, std::max(24, patternSize));
-            } else {
-                patternSize = (int)(random() % (65 - 24) + 24);
-                patternSize -= patternSize % 2;
+            auto stdGridRmse = 1e6;
+            if (calibrateMapper.isGridValid(colorLeft.size(), imageGrid, gridWidth, gridHeight)) {
+                try {
+                    stdGridRmse = calibrateMapper.generateFrameObjectPointsGrid(colorLeft.size(), imageGrid, objectGrid, gridWidth,
+                                                                                gridHeight);
+                } catch (const std::exception &e) {
+                    patternSize = (int)(random() % (128 - 24) + 24);
+                    patternSize -= patternSize % 2;
+                    std::cerr << "cv::generateFrameObjectPointsGrid failed" << std::endl;
+                    continue;
+                }
             }
 
-            auto stdGridRmse = calibrateMapper.generateFrameObjectPointsGrid(imageGrid, objectGrid, gridWidth, gridHeight);
+            if (squareRms < 0.05f && !std::isnan(squareRms) && (gridWidth * gridHeight) > 0) {
+                patternSize = calibrateMapper.suggestPatternSize(imageGrid, square, gridWidth, gridHeight);
+            } else {
+                patternSize = (int)(random() % (128 - 24) + 24);
+                patternSize -= patternSize % 2;
+            }
 
             calibrateMapper.drawPeaks(colorLeft, peaks, size, cv::Scalar(0, 255, 0));
             calibrateMapper.drawBaseSquare(colorLeft, square, squareRms < 0.1f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255));
@@ -390,12 +397,11 @@ int main(int argc, const char **argv) {
             calibrateMapper.drawGrid(colorLeft, objectGrid, gridWidth, gridHeight, cv::Scalar(255, 255, 0));
             calibrateMapper.drawGridCorrelation(colorLeft, imageGrid, objectGrid, gridWidth, gridHeight, cv::Scalar(255, 0, 255));
 
-            std::cerr << "Peaks " << size << "; square q " << squareRms << "; stdGridRmse " << stdGridRmse << "; stdGridRmse " << patternSize << std::endl;
+            std::cerr << "Peaks " << size << "; square q " << squareRms << "; gridRmse " << gridRmse << "; stdGridRmse " << stdGridRmse << "; patternSize " << patternSize << std::endl;
 
             if (
                 calibrateMapper.isGridValid(colorLeft.size(), imageGrid, gridWidth, gridHeight)
                 && calibrateMapper.isGridValid(colorLeft.size(), objectGrid, gridWidth, gridHeight)
-                && gridRmse < 100 && stdGridRmse < 50
             ) {
                 auto frameId = nextFrameId % objectPoints.size();
                 nextFrameId++;
@@ -406,27 +412,14 @@ int main(int argc, const char **argv) {
                 calibrateMapper.convertTo2dPoints(imageGrid, imagePoints[frameId]);
                 calibrateMapper.convertToPlain3dPoints(objectGrid, objectPoints[frameId]);
 
-                Mat cameraMatrix = Mat::zeros(3, 3, CV_64F);
-                std::vector<double> distCoeff(14);
-                Mat rvecs = Mat::zeros(3, 3, CV_64F);
-                Mat tvecs = Mat::zeros(3, 3, CV_64F);
-
-                cameraMatrix.setTo(Scalar::all(0));
-                auto cameraData = (double *)cameraMatrix.data;
-
-                cameraData[0] = 8000.;
-                cameraData[4] = 8000.;
-                cameraData[8] = 1.;
-
                 map1.setTo(Scalar::all(0));
                 map2.setTo(Scalar::all(0));
 
                 int baseFlags =
-                        CALIB_USE_EXTRINSIC_GUESS|
+//                        CALIB_USE_EXTRINSIC_GUESS|
                         CALIB_FIX_PRINCIPAL_POINT|
                         CALIB_RATIONAL_MODEL|
-                        CALIB_THIN_PRISM_MODEL|
-                        CALIB_TILTED_MODEL;
+                        CALIB_THIN_PRISM_MODEL;
 
                 std::vector<int> flagsChain = {
 //                        CALIB_USE_INTRINSIC_GUESS|
@@ -437,7 +430,7 @@ int main(int argc, const char **argv) {
 //                        CALIB_FIX_K1|
 //                        CALIB_FIX_K2|
 //                        CALIB_FIX_K3|
-                        CALIB_FIX_K4|
+//                        CALIB_FIX_K4|
                         CALIB_FIX_K5|
                         CALIB_FIX_K6|
                         CALIB_FIX_ASPECT_RATIO,
@@ -447,8 +440,8 @@ int main(int argc, const char **argv) {
                         CALIB_FIX_TAUX_TAUY|
                         CALIB_FIX_TANGENT_DIST|
 //                        CALIB_FIX_S1_S2_S3_S4|
-                        CALIB_FIX_K1|
-                        CALIB_FIX_K2|
+//                        CALIB_FIX_K1|
+//                        CALIB_FIX_K2|
 //                        CALIB_FIX_K3|
 //                        CALIB_FIX_K4|
 //                        CALIB_FIX_K5|
@@ -456,10 +449,10 @@ int main(int argc, const char **argv) {
                         CALIB_FIX_ASPECT_RATIO,
 
                         CALIB_USE_INTRINSIC_GUESS|
-                        CALIB_FIX_FOCAL_LENGTH|
+//                        CALIB_FIX_FOCAL_LENGTH|
                         CALIB_FIX_TAUX_TAUY|
 //                        CALIB_FIX_TANGENT_DIST|
-                        CALIB_FIX_S1_S2_S3_S4|
+//                        CALIB_FIX_S1_S2_S3_S4|
                         CALIB_FIX_K1|
                         CALIB_FIX_K2|
                         CALIB_FIX_K3|
@@ -492,21 +485,64 @@ int main(int argc, const char **argv) {
                 Mat plainLeft;
                 cv::remap(readingImLeft, plainLeft, map1, map2, INTER_LINEAR);
 
+                std::vector<cv::Point3d> plainPeaks(1000);
+                std::vector<Point3d> plainImageGrid(plainPeaks.size());
+                std::vector<Point3d> plainObjectGrid(plainPeaks.size());
+                size_t plainGridWidth = 0;
+                size_t plainGridHeight = 0;
+                size_t plainSize = plainPeaks.size();
+                ecv::CalibrateMapper<double>::BaseSquare plainSquare;
+
+                calibrateMapper.detectPeaks(plainLeft, plainPeaks, &plainSize);
+                calibrateMapper.detectBaseSquare(plainLeft.size(), plainPeaks, plainSquare);
+                auto plainGridRmse = calibrateMapper.detectFrameImagePointsGrid(plainLeft.size(), plainPeaks, plainSquare, plainImageGrid, &plainGridWidth, &plainGridHeight);
+
+                auto plainStdGridRmse = 1e6;
+                if (calibrateMapper.isGridValid(plainLeft.size(), plainImageGrid, plainGridWidth, plainGridHeight)) {
+                    try {
+                        plainStdGridRmse = calibrateMapper.generateFrameObjectPointsGrid(plainLeft.size(), plainImageGrid, plainObjectGrid, plainGridWidth,
+                                                                                         plainGridHeight);
+                    } catch (const std::exception &e) {
+                        std::cerr << "cv::generateFrameObjectPointsGrid failed" << std::endl;
+                        continue;
+                    }
+                }
+
+                if (plainStdGridRmse < prevStdRmseUndistorted) {
+                    prevStdRmseUndistorted = plainStdGridRmse;
+                    bestMap1 = map1;
+                    bestMap2 = map2;
+                } else {
+                    nextFrameId++;
+                }
+                std::cout << "Plain Peaks " << plainSize << "; plainGridRmse " << plainGridRmse << "; stdGridRmse " << plainStdGridRmse << "; prevStdRmseUndistorted " << prevStdRmseUndistorted << std::endl;
+
+                calibrateMapper.drawPeaks(plainLeft, plainPeaks, plainSize, cv::Scalar(0, 255, 0));
+                calibrateMapper.drawBaseSquare(plainLeft, plainSquare, cv::Scalar(0, 255, 255));
+                calibrateMapper.drawGrid(plainLeft, plainImageGrid, plainGridWidth, plainGridHeight, cv::Scalar(255, 0, 0), 1);
+                calibrateMapper.drawGrid(plainLeft, plainObjectGrid, plainGridWidth, plainGridHeight, cv::Scalar(255, 255, 0), 1);
+//                calibrateMapper.drawGridCorrelation(plainLeft, plainImageGrid, plainObjectGrid, plainGridWidth, plainGridHeight, cv::Scalar(255, 0, 255));
 
                 imshow("Plain", plainLeft);
             }
             imshow("GL2", colorLeft);
+
+            if (!bestMap1.empty()) {
+                Mat plainBestLeft;
+                cv::remap(readingImLeft, plainBestLeft, bestMap1, bestMap2, INTER_LINEAR);
+                imshow("Plain best", plainBestLeft);
+            }
 
             imageLeft.copyTo(inputLeft);
             imageRight.copyTo(inputRight);
             imageLeft.copyTo(outputLeft);
             imageRight.copyTo(outputRight);
         } else {
-            cv::remap(imageLeft, resultLeft, map1, map2, INTER_LINEAR);
+            cv::remap(imageLeft, resultLeft, bestMap1, bestMap2, INTER_LINEAR);
             imageRight.copyTo(inputRight);
             imageLeft.copyTo(outputLeft);
             imageRight.copyTo(outputRight);
-            imshow("Plain", resultLeft);
+            imshow("Plain best", resultLeft);
         }
 
 //        processor.processFrame(inputLeft, inputRight, output);

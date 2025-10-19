@@ -39,7 +39,7 @@ namespace ecv {
         void cropGrid(std::vector<Point3> &grid, size_t *w, size_t *h);
         void fillGridRow(size_t w, int cH, int cW, int j, const std::vector<Point3> &peaks, std::vector<Point3> &grid);
         Point3 findNearestPoint(const Point3 &point, const std::vector<Point3> &points, TP searchRadius);
-        void autoFitGrid(std::vector<Point3> &grid, const std::vector<Point3> &fitTo, size_t w, size_t h);
+        TP autoFitGrid(std::vector<Point3> &grid, const std::vector<Point3> &fitTo, size_t w, size_t h);
         Point3 lineLineIntersection(const Point3 &a1, const Point3 &a2, const Point3 &b1, const Point3 &b2);
         TP distance(Point3 p1, Point3 p2);
         TP sign(TP val);
@@ -51,14 +51,15 @@ namespace ecv {
         void detectPeaks(const cv::Mat &frame, std::vector<Point3> &peaks, size_t *size);
         TP detectBaseSquare(const cv::Size &frameSize, const std::vector<Point3> &peaks, BaseSquare &square);
         TP detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks, const BaseSquare &square, std::vector<Point3> &imageGrid, size_t *w, size_t *h);
-        TP generateFrameObjectPointsGrid(const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
+        size_t suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, size_t w, size_t h);
+        TP generateFrameObjectPointsGrid(const cv::Size &frameSize, const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
         bool isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h);
         void convertTo2dPoints(const std::vector<Point3> &points3d, std::vector<cv::Point2f> &points2d);
         void convertToPlain3dPoints(const std::vector<Point3> &points1, std::vector<cv::Point3f> &points2);
 
         void drawPeaks(cv::Mat &target, const std::vector<Point3> &peaks, size_t size, cv::Scalar color);
         void drawBaseSquare(cv::Mat &target, const BaseSquare &square, cv::Scalar color);
-        void drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, size_t w, size_t h, cv::Scalar color);
+        void drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, size_t w, size_t h, cv::Scalar color, int thickness = 5);
         void drawGridCorrelation(cv::Mat &target, const std::vector<Point3> &imageGrid, const std::vector<Point3> &objectGrid, size_t w, size_t h, cv::Scalar color);
 
     };
