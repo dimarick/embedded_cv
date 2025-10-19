@@ -72,8 +72,7 @@ add_executable(embedded_cv
         main.cpp
         ImageProcessor.cpp
         CvCommandHandler.cpp
-        OnlineCalibration.cpp
-        QuickStereoMatch.cpp
+        CalibrateMapper.cpp
 )
 
 target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} ${OpenCL_LIBRARIES} mini_server Eigen3::Eigen)
