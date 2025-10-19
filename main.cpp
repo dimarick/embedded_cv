@@ -57,7 +57,7 @@ void fillGridRow(size_t w, int cH, int cW, int j, std::vector<cv::Point3f> &poin
 
 void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h);
 
-void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &idealGrid, size_t width, size_t height);
+float createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &idealGrid, size_t width, size_t height);
 
 void autoFitGrid(std::vector<Point3f> &grid, const std::vector<Point3f> &fitTo, size_t w, size_t h);
 auto line3AvgIntersection(const Point3f &a1, const Point3f &a2, const Point3f &b1, const Point3f &b2, const Point3f &c1, const Point3f &c2);
@@ -360,7 +360,10 @@ int main(int argc, const char **argv) {
 
     std::vector<double> avgDistCoeff(14);
     bool avgDistCoeffInitialized = false;
-    double prevRms = 1000;
+    double prevRmse = 1000;
+    double prevStdRmse = 1000;
+    double prevRmseUndistorted = 1000;
+    double prevStdRmseUndistorted = 1000;
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -470,20 +473,38 @@ int main(int argc, const char **argv) {
             if (quadRms < 0.05f && !std::isnan(quadRms)) {
                 gridRmse = findGrid(leftMatches1.size(), quad, points, grid, &gridWidth, &gridHeight);
 
-                patternSize = (int)(quad.topRight.x - quad.topLeft.x);
+            }
+            std::cerr << "Pattern size " << patternSize << std::endl;
+
+            std::vector<Point3f> idealGrid(gridWidth * gridHeight);
+
+            auto stdGridRmse = createIdealGrid(grid, idealGrid, gridWidth, gridHeight);
+
+            autoFitGrid(idealGrid, grid, gridWidth, gridHeight);
+
+            if (quadRms < 0.05f && !std::isnan(quadRms) && !grid.empty()) {
+                auto list = {
+                    quad.topRight.x - quad.topLeft.x,
+                    quad.bottomLeft.y - quad.topLeft.y,
+
+                    (grid[1].x - grid[0].x),
+                    (grid[gridWidth - 1].x - grid[gridWidth - 2].x),
+                    (grid[(gridHeight - 1) * gridWidth + 1].x - grid[(gridHeight - 1) * gridWidth].x),
+                    (grid[(gridHeight - 1) * gridWidth + gridWidth - 1].x - grid[(gridHeight - 1) * gridWidth + gridWidth - 2].x),
+
+                    (grid[1 * gridWidth].y - grid[0].y),
+                    (grid[1 * gridWidth + gridWidth - 1].y - grid[gridWidth - 1].y),
+
+                    (grid[(gridHeight - 1) * gridWidth].y - grid[(gridHeight - 2) * gridWidth].y),
+                    (grid[(gridHeight - 1) * gridWidth + gridWidth - 1].y - grid[(gridHeight - 2) * gridWidth + gridWidth - 1].y),
+                };
+                patternSize = (int)std::min(list);
                 patternSize -= patternSize % 2;
                 patternSize = std::min(256, std::max(24, patternSize));
             } else {
                 patternSize = (int)(random() % (65 - 24) + 24);
                 patternSize -= patternSize % 2;
             }
-            std::cerr << "Pattern size " << patternSize << std::endl;
-
-            std::vector<Point3f> idealGrid(gridWidth * gridHeight);
-
-            createIdealGrid(grid, idealGrid, gridWidth, gridHeight);
-
-            autoFitGrid(idealGrid, grid, gridWidth, gridHeight);
 
             auto center = Point((int)colorLeft.size().width / 2, (int)colorLeft.size().height / 2);
             cv::drawMarker(colorLeft, center, cv::Scalar(255, 0, 0), MARKER_DIAMOND, 20, 2);
@@ -571,9 +592,9 @@ int main(int argc, const char **argv) {
                 }
             }
 
-            std::cerr << "Peaks " << size << "; square q " << quadRms << std::endl;
+            std::cerr << "Peaks " << size << "; square q " << quadRms  << "; stdGridRmse  " << stdGridRmse << std::endl;
 
-            if (idealGrid.size() > 30 && gridRmse < 100) {
+            if (idealGrid.size() > 30 && gridRmse < 100 && stdGridRmse < 50) {
                 grid.resize(gridWidth * gridHeight);
                 idealGrid.resize(gridWidth * gridHeight);
 
@@ -607,14 +628,16 @@ int main(int argc, const char **argv) {
                 map1.setTo(Scalar::all(0));
                 map2.setTo(Scalar::all(0));
 
-                std::vector<int> flagsChain = {
-//                        CALIB_USE_INTRINSIC_GUESS|
+                int baseFlags =
                         CALIB_USE_EXTRINSIC_GUESS|
                         CALIB_FIX_PRINCIPAL_POINT|
-//                        CALIB_FIX_FOCAL_LENGTH|
                         CALIB_RATIONAL_MODEL|
                         CALIB_THIN_PRISM_MODEL|
-                        CALIB_TILTED_MODEL|
+                        CALIB_TILTED_MODEL;
+
+                std::vector<int> flagsChain = {
+//                        CALIB_USE_INTRINSIC_GUESS|
+//                        CALIB_FIX_FOCAL_LENGTH|
                         CALIB_FIX_TAUX_TAUY|
                         CALIB_FIX_TANGENT_DIST|
                         CALIB_FIX_S1_S2_S3_S4|
@@ -627,12 +650,7 @@ int main(int argc, const char **argv) {
                         CALIB_FIX_ASPECT_RATIO,
 
                         CALIB_USE_INTRINSIC_GUESS|
-                        CALIB_USE_EXTRINSIC_GUESS|
-                        CALIB_FIX_PRINCIPAL_POINT|
                         CALIB_FIX_FOCAL_LENGTH|
-                        CALIB_RATIONAL_MODEL|
-                        CALIB_THIN_PRISM_MODEL|
-                        CALIB_TILTED_MODEL|
                         CALIB_FIX_TAUX_TAUY|
                         CALIB_FIX_TANGENT_DIST|
 //                        CALIB_FIX_S1_S2_S3_S4|
@@ -643,6 +661,32 @@ int main(int argc, const char **argv) {
 //                        CALIB_FIX_K5|
 //                        CALIB_FIX_K6|
                         CALIB_FIX_ASPECT_RATIO,
+
+                        CALIB_USE_INTRINSIC_GUESS|
+                        CALIB_FIX_FOCAL_LENGTH|
+                        CALIB_FIX_TAUX_TAUY|
+//                        CALIB_FIX_TANGENT_DIST|
+                        CALIB_FIX_S1_S2_S3_S4|
+                        CALIB_FIX_K1|
+                        CALIB_FIX_K2|
+                        CALIB_FIX_K3|
+                        CALIB_FIX_K4|
+                        CALIB_FIX_K5|
+                        CALIB_FIX_K6|
+                        CALIB_FIX_ASPECT_RATIO,
+
+                        CALIB_USE_INTRINSIC_GUESS|
+                        CALIB_FIX_FOCAL_LENGTH|
+                        CALIB_FIX_TAUX_TAUY|
+                        CALIB_FIX_TANGENT_DIST|
+                        CALIB_FIX_S1_S2_S3_S4|
+                        CALIB_FIX_K1|
+                        CALIB_FIX_K2|
+                        CALIB_FIX_K3|
+                        CALIB_FIX_K4|
+                        CALIB_FIX_K5|
+                        CALIB_FIX_K6|
+                        CALIB_FIX_ASPECT_RATIO,
                     };
 
                 auto rms = 0.0;
@@ -650,7 +694,7 @@ int main(int argc, const char **argv) {
                 try {
                     for (auto flags: flagsChain) {
                         rms = cv::calibrateCamera(objectPoints, imagePoints, colorLeft.size(), cameraMatrix,
-                                                  distCoeff, rvecs, tvecs, flags,
+                                                  distCoeff, rvecs, tvecs, baseFlags | flags,
                                                   TermCriteria(10000, 0.01)
                         );
                     }
@@ -661,12 +705,13 @@ int main(int argc, const char **argv) {
                 cv::initUndistortRectifyMap(cameraMatrix, distCoeff, noArray(), cameraMatrix, colorLeft.size(),
                                             CV_32FC2,
                                             map1, map2);
-                prevRms = rms;
             }
 
             if (!map1.empty()) {
                 Mat plainLeft;
                 cv::remap(readingImLeft, plainLeft, map1, map2, INTER_LINEAR);
+
+
                 imshow("Plain", plainLeft);
             }
             imshow("GL2", colorLeft);
@@ -823,12 +868,14 @@ template <typename T> auto sign(T val) {
     return T((T(0) < val) - (val < T(0)));
 }
 
-void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &idealGrid, size_t w, size_t h) {
+float createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &idealGrid, size_t w, size_t h) {
     const auto cW = (int)w / 2;
     const auto cH = (int)h / 2;
 
+    auto rmse = 0.0f;
+
     if (idealGrid.size() <= (cH * w + cW)) {
-        return;
+        return 1.0f / 0.0f;
     }
 
     const auto c = grid[cH * w + cW];
@@ -901,8 +948,11 @@ void createIdealGrid(const std::vector<Point3f> &grid, std::vector<Point3f> &ide
             }
 
             idealGrid[y0 * w + x0] = p;
+            rmse += distance(p, grid[y0 * w + x0]);
         }
     }
+
+    return rmse / (float)w / (float)h;
 }
 
 Point3f approximate(Point3f current, Point3f prev) {
@@ -1021,7 +1071,7 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
     double wThreshold = wScore * threshold;
     double hThreshold = hScore * threshold;
 
-    for (int y = 0; y < cH - 2; ++y) {
+    for (int y = 0; y < cH - 3; ++y) {
         top = y;
         auto rowScore = 0.0f, rowScore1 = 0.0f;
         for (int x = 0; x < *w; ++x) {
@@ -1040,7 +1090,7 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
         }
     }
 
-    for (int y = (int)*h; y > cH - 2; --y) {
+    for (int y = (int)*h; y > cH + 3; --y) {
         bottom = y;
         auto rowScore = 0.0f, rowScore1 = 0.0f;
         for (int x = 0; x < *w; ++x) {
@@ -1059,7 +1109,7 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
         }
     }
 
-    for (int x = 0; x < cW - 2; ++x) {
+    for (int x = 0; x < cW - 3; ++x) {
         left = x;
         auto rowScore = 0.0f, rowScore1 = 0.0f;
         for (int y = 0; y < *h; ++y) {
@@ -1078,7 +1128,7 @@ void cropGrid(std::vector<Point3f> &grid, size_t *w, size_t *h) {
         }
     }
 
-    for (int x = (int)*w; x > cW + 2; --x) {
+    for (int x = (int)*w; x > cW + 3; --x) {
         right = x;
         auto rowScore = 0.0f, rowScore1 = 0.0f;
         for (int y = 0; y < *h; ++y) {
