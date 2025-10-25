@@ -73,6 +73,8 @@ add_executable(embedded_cv
         ImageProcessor.cpp
         CvCommandHandler.cpp
         CalibrateMapper.cpp
+        Calibrator.cpp
+        Calibrator.h
 )
 
 target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} ${OpenCL_LIBRARIES} mini_server Eigen3::Eigen)
