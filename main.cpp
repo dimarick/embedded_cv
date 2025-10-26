@@ -32,6 +32,7 @@ static std::atomic running = true;
 
 static BroadcastingServer broadcastingServer;
 static CommandServer commandServer;
+int findNearestPoint(const Point2f &point, const std::vector<Point3d> &points, double searchRadius);
 
 int main(int argc, const char **argv) {
     cpptrace::register_terminate_handler();
@@ -39,7 +40,6 @@ int main(int argc, const char **argv) {
     cv::Mat captureFrameLeft, captureFrameRight, readingLeft, readingRight, readingImLeft, readingImRight;
     cv::UMat output, outputLeft, inputLeft, imageLeft, outputRight, inputRight, imageRight;
     cv::Mat resultLeft, resultRight;
-    cv::UMat uresultLeft, uresultRight;
     cv::VideoCapture captureLeft, captureRight;
 
     cpptrace::register_terminate_handler();
@@ -298,21 +298,23 @@ int main(int argc, const char **argv) {
 
 //    running = false;
 
-    size_t patternSize = 60;
-    cv::Mat bestMap1, bestMap2;
+
+    std::vector<cv::UMat> frames(2);
+    std::vector<cv::Mat> bestMap1(frames.size()), bestMap2(frames.size());
 
     bool needsCalibration1 = true;
 
     std::vector<double> avgDistCoeff(14);
-    double prevStdRmseUndistorted = 1e6;
-    size_t nextFrameId = 0;
+    std::vector<double> prevStdRmseUndistorted(frames.size(), 1e6);
+    std::vector<size_t> nextFrameId(frames.size());
 
-    ecv::CalibrateMapper<double> calibrateMapper;
-    ecv::CalibrateMapper<double> calibrateMapper2;
-    ecv::Calibrator calibrator;
+    std::vector<ecv::CalibrateMapper<double>> calibrateMapper(frames.size());
+    std::vector<ecv::CalibrateMapper<double>> calibrateMapper2(frames.size());
+    std::vector<ecv::CalibrateMapper<double>> calibrateMapper3(frames.size());
+    std::vector<ecv::Calibrator> calibrator(frames.size());
 
-    std::vector<std::vector<Point3f>> objectPoints(3);
-    std::vector<std::vector<Point2f>> imagePoints(3);
+    std::vector objectPoints(frames.size(), std::vector<std::vector<Point3f>>(3));
+    std::vector imagePoints(frames.size(), std::vector<std::vector<Point2f>>(3));
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -328,10 +330,14 @@ int main(int argc, const char **argv) {
         readerLeftLock.lock();
         readingImLeft.copyTo(imageLeft);
         readerLeftLock.unlock();
+
         readerRightLock.lock();
         readingImRight.copyTo(imageRight);
-        cv::rotate(readingImRight, imageRight, ROTATE_180);
         readerRightLock.unlock();
+
+        cv::rotate(imageRight, imageRight, ROTATE_180);
+
+        frames = {imageLeft, imageRight};
 
         auto now = std::chrono::high_resolution_clock::now();
         auto us = (double) (now - prev).count();
@@ -344,94 +350,160 @@ int main(int argc, const char **argv) {
         }
 
         if (needsCalibration1) {
-            cv::Mat map1, map2;
-            Mat colorLeft = imageLeft.getMat(AccessFlag::ACCESS_RW);
-            std::vector<Point3d> imageGrid(1000);
-            std::vector<Point3d> objectGrid(imageGrid.size());
-            size_t gridWidth = 0;
-            size_t gridHeight = 0;
-            ecv::CalibrateMapper<double>::BaseSquare square;
+            std::vector<cv::Mat> map1(frames.size()), map2(frames.size());
+            std::vector imageGrid(frames.size(), std::vector<Point3d>(1000));
+            std::vector objectGrid(frames.size(), std::vector<Point3d>(imageGrid[0].size()));
+            std::vector<size_t> gridWidth(frames.size());
+            std::vector<size_t> gridHeight(frames.size());
+            std::vector<ecv::CalibrateMapper<double>::BaseSquare> square(frames.size());
+            std::vector<cv::Mat> plain(frames.size());
 
-            auto gridRmse = calibrateMapper.detectFrameImagePointsGrid(colorLeft, imageGrid, &gridWidth, &gridHeight, colorLeft);
+            for (int j = 0; j < frames.size(); ++j) {
+                Mat colorFrame;
+                const auto &frame = frames[j].getMat(AccessFlag::ACCESS_RW);
+                frame.copyTo(colorFrame);
 
-            auto stdGridRmse = 1e6;
-            if (calibrateMapper.isGridValid(colorLeft.size(), imageGrid, gridWidth, gridHeight)) {
-                stdGridRmse = calibrateMapper.generateFrameObjectPointsGrid(colorLeft.size(), imageGrid, objectGrid, gridWidth,
-                                                                            gridHeight);
-            }
 
-            calibrateMapper.drawGrid(colorLeft, imageGrid, gridWidth, gridHeight, cv::Scalar(255, 0, 0));
-            calibrateMapper.drawGrid(colorLeft, objectGrid, gridWidth, gridHeight, cv::Scalar(255, 255, 0));
-            calibrateMapper.drawGridCorrelation(colorLeft, imageGrid, objectGrid, gridWidth, gridHeight, cv::Scalar(255, 0, 255));
+                auto gridRmse = calibrateMapper[j].detectFrameImagePointsGrid(colorFrame, imageGrid[j], &gridWidth[j], &gridHeight[j], colorFrame);
 
-            std::cerr << "; gridRmse " << gridRmse << "; stdGridRmse " << stdGridRmse << "; patternSize " << calibrateMapper.patternSize << "; skew " << calibrateMapper.skew << std::endl;
-
-            if (
-                calibrateMapper.isGridValid(colorLeft.size(), imageGrid, gridWidth, gridHeight)
-                && calibrateMapper.isGridValid(colorLeft.size(), objectGrid, gridWidth, gridHeight)
-            ) {
-                auto frameId = nextFrameId % objectPoints.size();
-                nextFrameId++;
-
-                imagePoints[frameId].resize(gridWidth * gridHeight);
-                objectPoints[frameId].resize(gridWidth * gridHeight);
-
-                calibrateMapper.convertTo2dPoints(imageGrid, imagePoints[frameId]);
-                calibrateMapper.convertToPlain3dPoints(objectGrid, objectPoints[frameId]);
-
-                calibrator.calibrate(colorLeft.size(), objectPoints, imagePoints, map1, map2);
-            }
-
-            if (!map1.empty()) {
-                Mat plainLeft;
-                cv::remap(readingImLeft, plainLeft, map1, map2, INTER_LANCZOS4);
-
-                std::vector<Point3d> plainImageGrid(1000);
-                std::vector<Point3d> plainObjectGrid(plainImageGrid.size());
-                size_t plainGridWidth = 0;
-                size_t plainGridHeight = 0;
-
-                auto plainGridRmse = calibrateMapper2.detectFrameImagePointsGrid(plainLeft, plainImageGrid, &plainGridWidth, &plainGridHeight, plainLeft);
-
-                auto plainStdGridRmse = 1e6;
-                if (calibrateMapper.isGridValid(plainLeft.size(), plainImageGrid, plainGridWidth, plainGridHeight)) {
-                    plainStdGridRmse = calibrateMapper2.generateFrameObjectPointsGrid(plainLeft.size(), plainImageGrid, plainObjectGrid, plainGridWidth,
-                                                                                      plainGridHeight);
+                auto stdGridRmse = 1e6;
+                if (calibrateMapper[j].isGridValid(colorFrame.size(), imageGrid[j], gridWidth[j], gridHeight[j])) {
+                    stdGridRmse = calibrateMapper[j].generateFrameObjectPointsGrid(colorFrame.size(), imageGrid[j], objectGrid[j], gridWidth[j],
+                                                                                gridHeight[j]);
                 }
 
-                if (plainStdGridRmse < prevStdRmseUndistorted) {
-                    prevStdRmseUndistorted = plainStdGridRmse;
-                    map1.copyTo(bestMap1);
-                    map2.copyTo(bestMap2);
-                } else {
-                    nextFrameId++;
-                }
-                std::cout << "; plainGridRmse " << plainGridRmse << "; stdGridRmse " << plainStdGridRmse << "; prevStdRmseUndistorted " << prevStdRmseUndistorted << std::endl;
+                calibrateMapper[j].drawGrid(colorFrame, imageGrid[j], gridWidth[j], gridHeight[j], cv::Scalar(255, 0, 0));
+                calibrateMapper[j].drawGrid(colorFrame, objectGrid[j], gridWidth[j], gridHeight[j], cv::Scalar(255, 255, 0));
+                calibrateMapper[j].drawGridCorrelation(colorFrame, imageGrid[j], objectGrid[j], gridWidth[j], gridHeight[j], cv::Scalar(255, 0, 255));
 
-                calibrateMapper.drawGrid(plainLeft, plainImageGrid, plainGridWidth, plainGridHeight, cv::Scalar(255, 0, 0), 1);
-                calibrateMapper.drawGrid(plainLeft, plainObjectGrid, plainGridWidth, plainGridHeight, cv::Scalar(255, 255, 0), 1);
+                std::cerr << "; gridRmse " << gridRmse << "; stdGridRmse " << stdGridRmse << "; patternSize " << calibrateMapper[j].patternSize << "; skew " << calibrateMapper[j].skew << std::endl;
+
+                if (
+                        calibrateMapper[j].isGridValid(colorFrame.size(), imageGrid[j], gridWidth[j], gridHeight[j])
+                        && calibrateMapper[j].isGridValid(colorFrame.size(), objectGrid[j], gridWidth[j], gridHeight[j])
+                        ) {
+                    auto frameId = nextFrameId[j] % objectPoints[j].size();
+                    nextFrameId[j]++;
+
+                    imagePoints[j][frameId].resize(gridWidth[j] * gridHeight[j]);
+                    objectPoints[j][frameId].resize(gridWidth[j] * gridHeight[j]);
+
+                    calibrateMapper[j].convertTo2dPoints(imageGrid[j], imagePoints[j][frameId]);
+                    calibrateMapper[j].convertToPlain3dPoints(objectGrid[j], objectPoints[j][frameId]);
+
+                    calibrator[j].calibrate(colorFrame.size(), objectPoints[j], imagePoints[j], map1[j], map2[j]);
+                }
+
+                if (!map1[j].empty()) {
+                    Mat plainCurrent;
+                    cv::remap(frame, plainCurrent, map1[j], map2[j], INTER_LANCZOS4);
+
+                    std::vector<Point3d> plainImageGrid(1000);
+                    std::vector<Point3d> plainObjectGrid(plainImageGrid.size());
+                    size_t plainGridWidth = 0;
+                    size_t plainGridHeight = 0;
+
+                    auto plainGridRmse = calibrateMapper2[j].detectFrameImagePointsGrid(plainCurrent, plainImageGrid, &plainGridWidth, &plainGridHeight, plainCurrent);
+
+                    auto plainStdGridRmse = 1e6;
+                    if (calibrateMapper2[j].isGridValid(plainCurrent.size(), plainImageGrid, plainGridWidth, plainGridHeight)) {
+                        plainStdGridRmse = calibrateMapper2[j].generateFrameObjectPointsGrid(plainCurrent.size(), plainImageGrid, plainObjectGrid, plainGridWidth,
+                                                                                             plainGridHeight);
+                    }
+
+                    if (plainStdGridRmse < prevStdRmseUndistorted[j]) {
+                        prevStdRmseUndistorted[j] = plainStdGridRmse;
+                        map1[j].copyTo(bestMap1[j]);
+                        map2[j].copyTo(bestMap2[j]);
+                    } else {
+                        nextFrameId[j]++;
+                    }
+                    std::cout << "; plainGridRmse " << plainGridRmse << "; stdGridRmse " << plainStdGridRmse << "; prevStdRmseUndistorted " << prevStdRmseUndistorted[j] << std::endl;
+
+                    calibrateMapper2[j].drawGrid(plainCurrent, plainImageGrid, plainGridWidth, plainGridHeight, cv::Scalar(255, 0, 0), 1);
+                    calibrateMapper2[j].drawGrid(plainCurrent, plainObjectGrid, plainGridWidth, plainGridHeight, cv::Scalar(255, 255, 0), 1);
 //                calibrateMapper.drawGridCorrelation(plainLeft, plainImageGrid, plainObjectGrid, plainGridWidth, plainGridHeight, cv::Scalar(255, 0, 255));
 
-                imshow("Plain", plainLeft);
-            }
-            imshow("GL2", colorLeft);
+//                    imshow("Plain " + std::to_string(j), plain);
+                }
+                imshow("GL " + std::to_string(j), colorFrame);
 
-            if (!bestMap1.empty()) {
-                Mat plainBestLeft;
-                cv::remap(readingImLeft, plainBestLeft, bestMap1, bestMap2, INTER_NEAREST);
-                imshow("Plain best", plainBestLeft);
+                if (!bestMap1[j].empty()) {
+                    cv::remap(frame, plain[j], bestMap1[j], bestMap2[j], INTER_NEAREST);
+                    imshow("Plain best " + std::to_string(j), plain[j]);
+                }
             }
 
-            imageLeft.copyTo(inputLeft);
-            imageRight.copyTo(inputRight);
-            imageLeft.copyTo(outputLeft);
-            imageRight.copyTo(outputRight);
+            if (frames.size() == 2) {
+                std::vector plainImageGrid(frames.size(), std::vector<Point3d>(1000));
+                std::vector<size_t> plainWidth(frames.size(), 0);
+                std::vector<size_t> plainHeight(frames.size(), 0);
+
+                for (int j = 0; j < frames.size(); ++j) {
+                    const auto &frame = frames[j].getMat(AccessFlag::ACCESS_RW);
+
+                    auto plainGridRmse = calibrateMapper3[j].detectFrameImagePointsGrid(frame, plainImageGrid[j], &plainWidth[j], &plainHeight[j]);
+
+                    if (std::isnan(plainGridRmse)) {
+                        break;
+                    }
+                }
+
+                if (plainWidth[0] == plainWidth[1] && plainHeight[0] == plainHeight[1] && plainHeight[0] > 0 && plainHeight[1] > 0 && !bestMap1[1].empty()) {
+                    const auto &baseFrame = frames[0].getMat(AccessFlag::ACCESS_RW);
+                    const auto &otherFrame = frames[1].getMat(AccessFlag::ACCESS_RW);
+
+                    const auto &baseSize = baseFrame.size();
+                    cv::Point2f imageCenter = {(float)(baseSize.width - 1) / 2, (float)(baseSize.height - 1) / 2};
+                    auto gridCenter = findNearestPoint(imageCenter, plainImageGrid[0], (double)calibrateMapper3[0].patternSize);
+                    auto gridCenter2 = findNearestPoint(imageCenter, plainImageGrid[1], (double)calibrateMapper3[1].patternSize);
+
+                    if (gridCenter < 0 || gridCenter2 < 0) {
+                        continue;
+                    }
+
+                    auto gridCenterX = (size_t) gridCenter % plainWidth[0];
+                    auto gridCenterY = (size_t) gridCenter / plainWidth[0];
+                    auto gridCenterX2 = (size_t) gridCenter2 % plainWidth[1];
+                    const std::vector<cv::Point2f> src = {
+                            {(float)plainImageGrid[0][gridCenterY * plainWidth[0] + gridCenterX].x, (float)plainImageGrid[0][gridCenterY * plainWidth[0] + gridCenterX].y},
+                            {(float)plainImageGrid[0][(gridCenterY - 1) * plainWidth[0] + gridCenterX].x, (float)plainImageGrid[0][(gridCenterY - 1) * plainWidth[0] + gridCenterX].y},
+                            {(float)plainImageGrid[0][gridCenterY * plainWidth[0] + gridCenterX - 1].x, (float)plainImageGrid[0][gridCenterY * plainWidth[0] + gridCenterX - 1].y},
+                    };
+                    const std::vector<cv::Point2f> dest = {
+                            {(float)plainImageGrid[1][gridCenterY * plainWidth[0] + gridCenterX2].x, (float)plainImageGrid[1][gridCenterY * plainWidth[0] + gridCenterX2].y},
+                            {(float)plainImageGrid[1][(gridCenterY - 1) * plainWidth[0] + gridCenterX2].x, (float)plainImageGrid[1][(gridCenterY - 1) * plainWidth[0] + gridCenterX2].y},
+                            {(float)plainImageGrid[1][gridCenterY * plainWidth[0] + gridCenterX2 - 1].x, (float)plainImageGrid[1][gridCenterY * plainWidth[0] + gridCenterX2 - 1].y},
+                    };
+                    auto transform = cv::getAffineTransform(src, dest);
+
+                    CV_Assert(transform.type() == CV_64FC1);
+
+                    cv::Mat alignedMap;
+                    bestMap1[1].copyTo(alignedMap);
+
+                    for (auto it = alignedMap.begin<Point2f>(), end = alignedMap.end<Point2f>(); it != end; it++) {
+                        auto p = *it;
+                        std::vector<double> _p = {p.x, p.y, 1};
+                        cv::Mat _p2(2, 1, CV_64FC1);
+                        auto p2 = (cv::Point2d *)_p2.data;
+                        cv::gemm(transform, Mat(1, 3, CV_64FC1, _p.data()), 1, noArray(), 0, _p2, cv::GemmFlags::GEMM_2_T);
+                        *it = {(float)p2->x, (float)p2->y};
+                    }
+
+                    cv::Mat aligned;
+                    cv::remap(frames[1], aligned, alignedMap, noArray(), INTER_NEAREST);
+                    imshow("Aligned", aligned);
+                }
+            }
         } else {
-            cv::remap(imageLeft, uresultLeft, bestMap1, bestMap2, INTER_NEAREST);
-            //imageRight.copyTo(inputRight);
-            //imageLeft.copyTo(outputLeft);
-            //imageRight.copyTo(outputRight);
-            imshow("Plain best", uresultLeft);
+            for (int j = 0; j < frames.size(); ++j) {
+                cv::UMat uresultLeft, uresultRight;
+                const auto &frame = frames[j].getMat(AccessFlag::ACCESS_RW);
+
+                cv::remap(imageLeft, uresultLeft, bestMap1[j], bestMap2[j], INTER_NEAREST);
+                imshow("Plain best " + std::to_string(j), uresultLeft);
+            }
         }
 
 //        processor.processFrame(inputLeft, inputRight, output);
@@ -514,6 +586,26 @@ int main(int argc, const char **argv) {
     commandServerThread.join();
 
     return 0;
+}
+
+int findNearestPoint(const Point2f &point, const std::vector<Point3d> &points, double searchRadius) {
+    int found = -1;
+    auto foundDistance = 1e6;
+    for (int i = 0; i < points.size(); i++) {
+        auto p = points[i];
+        if (std::abs(p.x - point.x) > searchRadius || std::abs(p.y - point.y) > searchRadius) {
+            continue;
+        }
+
+        auto d = std::sqrt(std::pow(p.x - point.x, 2) + std::pow(p.y - point.y, 2));
+
+        if (d < foundDistance) {
+            foundDistance = d;
+            found = i;
+        }
+    }
+
+    return found;
 }
 
 void drawText(UMat &image, double rms) {

@@ -25,7 +25,6 @@ namespace ecv {
             auto rot = cv::getAffineTransform(src, dest);
             cv::warpAffine(this->checkBoardCornerPattern, this->checkBoardCornerPattern, rot,
                            this->checkBoardCornerPattern.size());
-            cv::imshow("pattern", this->checkBoardCornerPattern);
         }
     }
 
