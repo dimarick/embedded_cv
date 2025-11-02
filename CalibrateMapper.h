@@ -44,6 +44,7 @@ namespace ecv {
         TP autoFitGrid(std::vector<Point3> &grid, const std::vector<Point3> &fitTo, size_t w, size_t h);
         Point3 lineLineIntersection(const Point3 &a1, const Point3 &a2, const Point3 &b1, const Point3 &b2);
         TP distance(Point3 p1, Point3 p2);
+        TP distanceSqr(Point3 p1, Point3 p2);
         TP sign(TP val);
     public:
 
@@ -57,6 +58,7 @@ namespace ecv {
         TP detectFrameImagePointsGrid(const cv::Mat &frame, std::vector<Point3> &imageGrid, size_t *w, size_t *h);
         size_t suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, size_t w, size_t h);
         TP generateFrameObjectPointsGrid(const cv::Size &frameSize, const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
+        TP generateFrameObjectPointsGrid2(const cv::Size &frameSize, const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
         bool isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h);
         void convertTo2dPoints(const std::vector<Point3> &points3d, std::vector<cv::Point2f> &points2d);
         void convertToPlain3dPoints(const std::vector<Point3> &points1, std::vector<cv::Point3f> &points2);

@@ -374,6 +374,55 @@ namespace ecv {
         }
     }
 
+    template<typename TP> TP CalibrateMapper<TP>::generateFrameObjectPointsGrid2(const cv::Size &frameSize, const std::vector<Point3> &imageGrid,
+                                                        std::vector<Point3> &objectGrid, size_t w, size_t h) {
+        CV_Assert(w * h <= objectGrid.size());
+
+        std::vector<Point3> o(w * h);
+
+        for (int x = 0; x < w; ++x) {
+            for (int y = 0; y < h; ++y) {
+                o[y * w + x] = Point3(x, y, 1);
+            }
+        }
+
+        const std::vector<cv::Point2f> src = {
+            {(float)o[1 * w + 1].x, (float)o[1 * w + 1].y},
+            {(float)o[1 * w + w - 2].x, (float)o[1 * w + w - 2].y},
+            {(float)o[(h - 2) * w + 1].x, (float)o[(h - 2) * w + 1].y},
+            {(float)o[(h - 2) * w + w - 2].x, (float)o[(h - 2) * w + w - 2].y},
+        };
+        const std::vector<cv::Point2f> dest = {
+                {(float)imageGrid[1 * w + 1].x, (float)imageGrid[1 * w + 1].y},
+                {(float)imageGrid[1 * w + w - 2].x, (float)imageGrid[1 * w + w - 2].y},
+                {(float)imageGrid[(h - 2) * w + 1].x, (float)imageGrid[(h - 2) * w + 1].y},
+                {(float)imageGrid[(h - 2) * w + w - 2].x, (float)imageGrid[(h - 2) * w + w - 2].y},
+        };
+        auto transform = cv::getPerspectiveTransform(src, dest);
+
+        CV_Assert(transform.type() == CV_64FC1);
+
+        cv::gemm(
+                transform,
+                cv::Mat(w * h, 3, CV_64FC1, o.data()),
+                1,
+                cv::Mat(),
+                0,
+                cv::Mat(3, w * h, CV_64FC1, o.data()),
+                cv::GemmFlags::GEMM_2_T
+        );
+
+        cv::transpose(cv::Mat(3, w * h, CV_64FC1, o.data()), cv::Mat(w * h, 3, CV_64FC1, objectGrid.data()));
+
+        TP rmse = 0;
+        for (int i = 0; i < w * h; ++i) {
+            objectGrid[i] /= objectGrid[i].z;
+            rmse += distanceSqr(objectGrid[i], imageGrid[i]);
+        }
+
+        return std::sqrt(rmse);
+    }
+
     template<typename TP> bool CalibrateMapper<TP>::isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h) {
         if (w < 5 || h < 5 || w > frameSize.width || h > frameSize.height || w * h >= gridPoints.size()) {
             return false;
@@ -939,6 +988,10 @@ namespace ecv {
 
     template<typename TP> TP CalibrateMapper<TP>::distance(Point3 p1, Point3 p2) {
         return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
+    }
+
+    template<typename TP> TP CalibrateMapper<TP>::distanceSqr(Point3 p1, Point3 p2) {
+        return std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2);
     }
 
     template<typename TP> TP CalibrateMapper<TP>::sign(TP val) {
