@@ -19,6 +19,7 @@
 #include <SocketFactory.h>
 #include <csignal>
 #include <core/opencl/ocl_defs.hpp>
+#include <fstream>
 
 #include "QuickStereoMatch.h"
 #include "CalibrateMapper.h"
@@ -33,6 +34,65 @@ static std::atomic running = true;
 static BroadcastingServer broadcastingServer;
 static CommandServer commandServer;
 int findNearestPoint(const Point2f &point, const std::vector<Point3d> &points, double searchRadius);
+
+
+void matwrite(const std::string& filename, const Mat& mat)
+{
+    std::ofstream fs(filename, std::fstream::binary);
+
+    // Header
+    int type = mat.type();
+    int channels = mat.channels();// rows
+    fs.write((char*)&mat.rows, sizeof(int));    // rows
+    fs.write((char*)&mat.cols, sizeof(int));    // cols
+    fs.write((char*)&type, sizeof(int));        // type
+    fs.write((char*)&channels, sizeof(int));    // channels
+
+    // Data
+    if (mat.isContinuous()) {
+        fs.write(mat.ptr<char>(0), (mat.dataend - mat.datastart));
+    } else {
+        int rowsz = CV_ELEM_SIZE(type) * mat.cols;
+        for (int r = 0; r < mat.rows; ++r)
+        {
+            fs.write(mat.ptr<char>(r), rowsz);
+        }
+    }
+}
+
+void matread(const std::string& filename, Mat &mat)
+{
+    std::ifstream fs(filename, std::fstream::binary);
+
+    if (!fs.good()) {
+        mat = Mat();
+        return;
+    }
+
+    // Header
+    int rows, cols, type, channels;
+    fs.read((char*)&rows, sizeof(int));         // rows
+    fs.read((char*)&cols, sizeof(int));         // cols
+    fs.read((char*)&type, sizeof(int));         // type
+    fs.read((char*)&channels, sizeof(int));     // channels
+
+    // Data
+    mat = Mat(rows, cols, type);
+    fs.read((char*)mat.data, CV_ELEM_SIZE(type) * rows * cols);
+}
+
+void invMap(const cv::Mat &src, cv::Mat &dest) {
+    if (dest.empty()) {
+        dest = Mat(src.size(), src.type());
+    }
+
+    for (int y = 0; y < src.rows; y++) {
+        for (int x = 0; x < src.cols; x++) {
+            const auto &p = src.at<cv::Point2f>(y, x);
+            dest.at<cv::Point2f>((int)std::round(p.y), (int)std::round(p.x)) = Point2f((float)x, (float)y);
+        }
+    }
+}
 
 int main(int argc, const char **argv) {
     cpptrace::register_terminate_handler();
@@ -302,9 +362,22 @@ int main(int argc, const char **argv) {
     std::vector<cv::UMat> frames(2);
     cv::Mat aligned;
     cv::Mat alignedMap;
+    cv::Mat invAlignedMap;
     std::vector<cv::Mat> bestMap1(frames.size()), bestMap2(frames.size());
+    std::vector<cv::Mat> invBestMap1(frames.size()), invBestMap2(frames.size());
 
-    bool needsCalibration1 = true;
+    matread("map0.bin", bestMap1[0]);
+    matread("map1.bin", bestMap1[1]);
+    matread("mapa.bin", alignedMap);
+
+    bool needsCalibration1 = bestMap1[0].empty() || bestMap1[1].empty() || alignedMap.empty();
+
+    if (!needsCalibration1) {
+        for (int i = 0; i < frames.size(); ++i) {
+            invMap(bestMap1[i], invBestMap1[i]);
+        }
+        invMap(alignedMap, invAlignedMap);
+    }
 
     std::vector<double> avgDistCoeff(14);
     std::vector<double> prevStdRmseUndistorted(frames.size(), 1e6);
@@ -317,6 +390,24 @@ int main(int argc, const char **argv) {
 
     std::vector objectPoints(frames.size(), std::vector<std::vector<Point3f>>(3));
     std::vector imagePoints(frames.size(), std::vector<std::vector<Point2f>>(3));
+
+    namedWindow("Plain best " + std::to_string(0), WINDOW_AUTOSIZE);
+    namedWindow("src " + std::to_string(0), WINDOW_AUTOSIZE);
+
+    auto mousePlain = cv::Point2i();
+    auto mouseSrc = cv::Point2i();
+
+    cv::setMouseCallback("Plain best " + std::to_string(0), [](int event, int x, int y, int flags, void* userdata) {
+        auto mouse = (cv::Point2i *)userdata;
+        mouse->x = x;
+        mouse->y = y;
+    }, &mousePlain);
+
+    cv::setMouseCallback("src " + std::to_string(0), [](int event, int x, int y, int flags, void* userdata) {
+        auto mouse = (cv::Point2i *)userdata;
+        mouse->x = x;
+        mouse->y = y;
+    }, &mouseSrc);
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -359,8 +450,6 @@ int main(int argc, const char **argv) {
             std::vector<size_t> gridHeight(frames.size());
             std::vector<ecv::CalibrateMapper<double>::BaseSquare> square(frames.size());
             std::vector<cv::Mat> plain(frames.size());
-
-            auto bestMapUpdated = false;
 
             for (int j = 0; j < frames.size(); ++j) {
                 Mat colorFrame;
@@ -419,7 +508,6 @@ int main(int argc, const char **argv) {
                         prevStdRmseUndistorted[j] = plainStdGridRmse;
                         map1[j].copyTo(bestMap1[j]);
                         map2[j].copyTo(bestMap2[j]);
-                        bestMapUpdated = true;
                     } else {
                         nextFrameId[j]++;
                     }
@@ -435,11 +523,18 @@ int main(int argc, const char **argv) {
 
                 if (!bestMap1[j].empty()) {
                     cv::remap(frame, plain[j], bestMap1[j], bestMap2[j], INTER_NEAREST);
+
                     imshow("Plain best " + std::to_string(j), plain[j]);
                 }
             }
 
-            if (frames.size() == 2 && !plain[0].empty() && !plain[1].empty()) {
+            bool isAllCalibrated = true;
+
+            for (int j = 0; j < frames.size(); ++j) {
+                isAllCalibrated &= !plain[j].empty();
+            }
+
+            if (frames.size() >= 2 && isAllCalibrated) {
                 std::vector plainImageGrid(frames.size(), std::vector<Point3d>(1000));
                 std::vector<size_t> plainWidth(frames.size(), 0);
                 std::vector<size_t> plainHeight(frames.size(), 0);
@@ -501,32 +596,38 @@ int main(int argc, const char **argv) {
                         auto gridCenterY = (size_t) gridCenter / plainWidth[0];
                         auto gridCenterX2 = (size_t) gridCenter2 % plainWidth[1];
                         auto gridCenterY2 = gridCenterY;
-                        auto r = std::min({
+                        auto rw = std::min({
                             gridCenterX,
                             gridCenterX2,
+                            plainWidth[0] - gridCenterX,
+                            plainWidth[1] - gridCenterX2,
+                        });
+                        auto rh = std::min({
                             gridCenterY,
                             gridCenterY2,
                             plainHeight[0] - gridCenterY,
-                            plainWidth[0] - gridCenterX,
                             plainHeight[1] - gridCenterY2,
-                            plainWidth[1] - gridCenterX2,
-                        }) - 1;
+                        });
 
-                        if (r < 1) {
+                        if (rw < 1) {
+                            continue;
+                        }
+
+                        if (rh < 1) {
                             continue;
                         }
 
                         const std::vector<cv::Point2f> src = {
-                                {(float)plainImageGrid[0][(gridCenterY - r) * plainWidth[0] + gridCenterX - r].x, (float)plainImageGrid[0][(gridCenterY - r) * plainWidth[0] + gridCenterX - r].y},
-                                {(float)plainImageGrid[0][(gridCenterY - r) * plainWidth[0] + gridCenterX + r].x, (float)plainImageGrid[0][(gridCenterY - r) * plainWidth[0] + gridCenterX + r].y},
-                                {(float)plainImageGrid[0][(gridCenterY + r) * plainWidth[0] + gridCenterX - r].x, (float)plainImageGrid[0][(gridCenterY + r) * plainWidth[0] + gridCenterX - r].y},
-                                {(float)plainImageGrid[0][(gridCenterY + r) * plainWidth[0] + gridCenterX + r].x, (float)plainImageGrid[0][(gridCenterY + r) * plainWidth[0] + gridCenterX + r].y},
+                                {(float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX - rw].x, (float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX - rw].y},
+                                {(float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX + rw - 1].x, (float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX + rw - 1].y},
+                                {(float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX - rw].x, (float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX - rw].y},
+                                {(float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX + rw - 1].x, (float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX + rw - 1].y},
                         };
                         const std::vector<cv::Point2f> dest = {
-                                {(float)plainImageGrid[1][(gridCenterY2 - r) * plainWidth[1] + gridCenterX2 - r].x, (float)plainImageGrid[1][(gridCenterY2 - r) * plainWidth[0] + gridCenterX2 - r].y},
-                                {(float)plainImageGrid[1][(gridCenterY2 - r) * plainWidth[1] + gridCenterX2 + r].x, (float)plainImageGrid[1][(gridCenterY2 - r) * plainWidth[0] + gridCenterX2 + r].y},
-                                {(float)plainImageGrid[1][(gridCenterY2 + r) * plainWidth[1] + gridCenterX2 - r].x, (float)plainImageGrid[1][(gridCenterY2 + r) * plainWidth[0] + gridCenterX2 - r].y},
-                                {(float)plainImageGrid[1][(gridCenterY2 + r) * plainWidth[1] + gridCenterX2 + r].x, (float)plainImageGrid[1][(gridCenterY2 + r) * plainWidth[0] + gridCenterX2 + r].y},
+                                {(float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[1] + gridCenterX2 - rw].x, (float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[0] + gridCenterX2 - rw].y},
+                                {(float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[1] + gridCenterX2 + rw - 1].x, (float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[0] + gridCenterX2 + rw - 1].y},
+                                {(float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[1] + gridCenterX2 - rw].x, (float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[0] + gridCenterX2 - rw].y},
+                                {(float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[1] + gridCenterX2 + rw - 1].x, (float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[0] + gridCenterX2 + rw - 1].y},
                         };
                         transform = cv::getPerspectiveTransform(src, dest);
                     }
@@ -546,19 +647,60 @@ int main(int argc, const char **argv) {
 
                     cv::remap(frames[1], aligned, alignedMap, noArray(), INTER_NEAREST);
                     imshow("Aligned", aligned);
-                } else {
-                    continue;
+
+                    for (int i = 0; i < frames.size(); ++i) {
+                        invMap(bestMap1[i], invBestMap1[i]);
+                    }
+                    invMap(alignedMap, invAlignedMap);
+
+                    matwrite("map0.bin", bestMap1[0]);
+                    matwrite("map1.bin", bestMap1[1]);
+                    matwrite("mapa.bin", alignedMap);
                 }
             }
         } else {
+            std::vector<cv::Mat> result(frames.size());
             for (int j = 0; j < frames.size(); ++j) {
-                cv::UMat uresultLeft;
-                cv::remap(frames[j], uresultLeft, bestMap1[j], bestMap2[j], INTER_NEAREST);
-                imshow("Plain best " + std::to_string(j), uresultLeft);
+                for (int k = 1; k < 12; ++k) {
+                    auto p1 = Point(0, k * frames[j].size().height / 11);
+                    auto p2 = Point(frames[j].size().width, k * frames[j].size().height / 11);
+                    cv::line(frames[j], p1, p2, cv::Scalar(255, 0, 255), 1);
+                }
+                if (j != 1) {
+                    cv::remap(frames[j], result[j], bestMap1[j], cv::Mat(), INTER_NEAREST);
+                } else {
+                    cv::remap(frames[1], result[j], alignedMap, noArray(), INTER_NEAREST);
+                }
+
+                for (int k = 1; k < 12; ++k) {
+                    auto p1 = Point(0, k * frames[j].size().height / 11);
+                    auto p2 = Point(frames[j].size().width, k * frames[j].size().height / 11);
+                    cv::line(result[j], p1, p2, cv::Scalar(0, 255, 255), 1);
+                }
+
             }
 
-            cv::remap(frames[1], aligned, alignedMap, noArray(), INTER_NEAREST);
-            imshow("Aligned", aligned);
+            cv::drawMarker(frames[0], mouseSrc, cv::Scalar(255, 0, 255), MarkerTypes::MARKER_CROSS, 30, 2);
+            auto plainMap1 = invBestMap1[0].ptr<cv::Point2f>(mouseSrc.y, mouseSrc.x);
+            auto plainMap2 = alignedMap.ptr<cv::Point2f>((int)plainMap1->y, (int)plainMap1->x);
+            cv::drawMarker(result[0], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
+            cv::drawMarker(frames[1], cv::Point2i((int) plainMap2->x, (int) plainMap2->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_CROSS, 30, 2);
+            cv::drawMarker(result[1], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
+
+
+            for (int j = 0; j < frames.size(); ++j) {
+                imshow("Plain best " + std::to_string(j), result[j]);
+                imshow("src " + std::to_string(j), frames[j]);
+            }
+
+//            for (int j = 1; j < 12; ++j) {
+//                auto p1 = Point(0, j * aligned.size().height / 11);
+//                auto p2 = Point(aligned.size().width, j * aligned.size().height / 11);
+//                cv::line(aligned, p1, p2, cv::Scalar(0, 255, 255), 1);
+//            }
+
+//            cv::drawMarker(aligned, mousePlain, cv::Scalar(255, 0, 255), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
+//            imshow("Aligned", aligned);
         }
 
 //        processor.processFrame(inputLeft, inputRight, output);
