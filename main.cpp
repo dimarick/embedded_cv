@@ -6,7 +6,6 @@
 #include "opencv2/videoio.hpp"
 #include "ImageProcessor.h"
 #include "CvCommandHandler.h"
-#include "OnlineCalibration.h"
 #include <opencv2/core/ocl.hpp>
 #include <iostream>
 #include <chrono>
@@ -24,6 +23,7 @@
 #include "QuickStereoMatch.h"
 #include "CalibrateMapper.h"
 #include "Calibrator.h"
+#include "DisparityEvaluator.h"
 
 using namespace mini_server;
 
@@ -89,7 +89,9 @@ void invMap(const cv::Mat &src, cv::Mat &dest) {
     for (int y = 0; y < src.rows; y++) {
         for (int x = 0; x < src.cols; x++) {
             const auto &p = src.at<cv::Point2f>(y, x);
-            dest.at<cv::Point2f>((int)std::round(p.y), (int)std::round(p.x)) = Point2f((float)x, (float)y);
+            auto &p2 = dest.at<cv::Point2f>((int)std::round(p.y), (int)std::round(p.x));
+            p2.x = (float)x;
+            p2.y = (float)y;
         }
     }
 }
@@ -391,23 +393,21 @@ int main(int argc, const char **argv) {
     std::vector objectPoints(frames.size(), std::vector<std::vector<Point3f>>(3));
     std::vector imagePoints(frames.size(), std::vector<std::vector<Point2f>>(3));
 
-    namedWindow("Plain best " + std::to_string(0), WINDOW_AUTOSIZE);
+    namedWindow("Disparity", WINDOW_AUTOSIZE);
     namedWindow("src " + std::to_string(0), WINDOW_AUTOSIZE);
 
-    auto mousePlain = cv::Point2i();
+    auto mouseDisp = cv::Point2i();
     auto mouseSrc = cv::Point2i();
 
-    cv::setMouseCallback("Plain best " + std::to_string(0), [](int event, int x, int y, int flags, void* userdata) {
-        auto mouse = (cv::Point2i *)userdata;
+    void (*onMouse)(int, int, int, int, void *) = [](int event, int x, int y, int flags, void *userdata) {
+        auto mouse = (cv::Point2i *) userdata;
         mouse->x = x;
         mouse->y = y;
-    }, &mousePlain);
+    };
+    cv::setMouseCallback("Disparity", onMouse, &mouseDisp);
+    cv::setMouseCallback("src " + std::to_string(0), onMouse, &mouseSrc);
 
-    cv::setMouseCallback("src " + std::to_string(0), [](int event, int x, int y, int flags, void* userdata) {
-        auto mouse = (cv::Point2i *)userdata;
-        mouse->x = x;
-        mouse->y = y;
-    }, &mouseSrc);
+    ecv::DisparityEvaluator disparityEvaluator;
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -664,7 +664,7 @@ int main(int argc, const char **argv) {
                 for (int k = 1; k < 12; ++k) {
                     auto p1 = Point(0, k * frames[j].size().height / 11);
                     auto p2 = Point(frames[j].size().width, k * frames[j].size().height / 11);
-                    cv::line(frames[j], p1, p2, cv::Scalar(255, 0, 255), 1);
+//                    cv::line(frames[j], p1, p2, cv::Scalar(255, 0, 255), 1);
                 }
                 if (j != 1) {
                     cv::remap(frames[j], result[j], bestMap1[j], cv::Mat(), INTER_NEAREST);
@@ -675,7 +675,7 @@ int main(int argc, const char **argv) {
                 for (int k = 1; k < 12; ++k) {
                     auto p1 = Point(0, k * frames[j].size().height / 11);
                     auto p2 = Point(frames[j].size().width, k * frames[j].size().height / 11);
-                    cv::line(result[j], p1, p2, cv::Scalar(0, 255, 255), 1);
+//                    cv::line(result[j], p1, p2, cv::Scalar(0, 255, 255), 1);
                 }
 
             }
@@ -687,11 +687,36 @@ int main(int argc, const char **argv) {
             cv::drawMarker(frames[1], cv::Point2i((int) plainMap2->x, (int) plainMap2->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_CROSS, 30, 2);
             cv::drawMarker(result[1], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
 
+            cv::Mat disparity;
+            cv::Mat disparityFp;
+            cv::Mat disparity8;
+            disparityEvaluator.evaluateDisparity(result, disparity);
 
             for (int j = 0; j < frames.size(); ++j) {
                 imshow("Plain best " + std::to_string(j), result[j]);
-                imshow("src " + std::to_string(j), frames[j]);
+//                imshow("src " + std::to_string(j), frames[j]);
             }
+
+
+            double minVal, maxVal;
+
+            disparity.copyTo(disparityFp);
+            cv::minMaxLoc(disparityFp, &minVal, &maxVal);
+
+            disparityFp -= minVal;
+            disparityFp *= 255.0 / (maxVal - minVal);
+
+
+            disparityFp.convertTo(disparity8, CV_8U);
+            cv::applyColorMap(disparity8, disparity8, ColormapTypes::COLORMAP_JET);
+
+            cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
+            auto disparityAtPoint = (int)disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
+            auto dispStr = std::to_string(disparityAtPoint);
+            cv::putText(disparity8, dispStr, mouseDisp, FONT_HERSHEY_COMPLEX, 1, cv::Scalar(255, 128, 255));
+            imshow("Disparity", disparity8);
+
+            disparity.setTo(0);
 
 //            for (int j = 1; j < 12; ++j) {
 //                auto p1 = Point(0, j * aligned.size().height / 11);
