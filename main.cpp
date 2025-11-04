@@ -295,6 +295,7 @@ int main(int argc, const char **argv) {
     double fps = 0.;
     double avgFps = 0.;
     double avgTime = 0.;
+    double avgTime2 = 0.;
 
     captureFrameLeft.copyTo(readingLeft);
     captureFrameRight.copyTo(readingRight);
@@ -409,6 +410,16 @@ int main(int argc, const char **argv) {
 
     ecv::DisparityEvaluator disparityEvaluator;
 
+    uint8_t im1[]  = {0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0};
+    uint8_t im2[]  = {0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0};
+    int16_t disp[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    std::vector<cv::Mat> test = {cv::Mat(1, 20, CV_8U, im1), cv::Mat(1, 20, CV_8U, im2)};
+    cv::Mat dispMat = cv::Mat(1, 20, CV_16S, disp);
+
+    disparityEvaluator.evaluateDisparity(test, dispMat);
+
+    double minVal = 0, maxVal = 0;
+
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
         if (readerLeftCount == frameCount || readerRightCount == frameCount || readingImLeft.empty() || readingImRight.empty()) {
@@ -419,6 +430,8 @@ int main(int argc, const char **argv) {
         frameCount = nextFrame;
 
         auto start = std::chrono::high_resolution_clock::now();
+        std::chrono::system_clock::time_point startDisp;
+        std::chrono::system_clock::time_point endDisp;
 
         readerLeftLock.lock();
         readingImLeft.copyTo(imageLeft);
@@ -690,18 +703,20 @@ int main(int argc, const char **argv) {
             cv::Mat disparity;
             cv::Mat disparityFp;
             cv::Mat disparity8;
+            startDisp = std::chrono::high_resolution_clock::now();
             disparityEvaluator.evaluateDisparity(result, disparity);
+            endDisp = std::chrono::high_resolution_clock::now();
 
             for (int j = 0; j < frames.size(); ++j) {
                 imshow("Plain best " + std::to_string(j), result[j]);
 //                imshow("src " + std::to_string(j), frames[j]);
             }
 
-
-            double minVal, maxVal;
-
             disparity.copyTo(disparityFp);
-            cv::minMaxLoc(disparityFp, &minVal, &maxVal);
+            disparityFp *= -1;
+            if (minVal == 0 || maxVal == 0) {
+                cv::minMaxLoc(disparityFp, &minVal, &maxVal);
+            }
 
             disparityFp -= minVal;
             disparityFp *= 255.0 / (maxVal - minVal);
@@ -713,7 +728,7 @@ int main(int argc, const char **argv) {
             cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
             auto disparityAtPoint = (int)disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
             auto dispStr = std::to_string(disparityAtPoint);
-            cv::putText(disparity8, dispStr, mouseDisp, FONT_HERSHEY_COMPLEX, 1, cv::Scalar(255, 128, 255));
+            cv::putText(disparity8, dispStr, mouseDisp, FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
             imshow("Disparity", disparity8);
 
             disparity.setTo(0);
@@ -744,11 +759,13 @@ int main(int argc, const char **argv) {
         auto end = std::chrono::high_resolution_clock::now();
 
         double time = ((double) (end - start).count()) / 1e6;
+        double time2 = ((double) (endDisp - startDisp).count()) / 1e6;
         double avgA = 2. / ((i < 50 ? 10 : 100) + 1);
         avgTime = avgTime == 0. ? time : avgA * time + (1 - avgA) * avgTime;
+        avgTime2 = avgTime2 == 0. ? time2 : avgA * time2 + (1 - avgA) * avgTime2;
         avgFps = avgFps == 0. ? fps : avgA * fps + (1 - avgA) * avgFps;
 
-        std::cerr << "fps " << avgFps << " time " << time << " load " << avgTime * 100 / ((double)us / 1e6) << " %, avg " << avgTime << " size "
+        std::cerr << "fps " << avgFps << " time " << time << " time2 " << time2 << " load " << avgTime * 100 / ((double)us / 1e6) << " %, avg " << avgTime << " %, avg2 " << avgTime2 << " size "
                   << resultLeft.dataend - resultLeft.datastart << std::endl;
 
         std::ostringstream tm;

@@ -30,8 +30,8 @@ set(CMAKE_CXX_STANDARD 17)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")
 find_package(OpenCV 5.0.0 REQUIRED)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -msse3 -mtune=native")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -msse3 -mtune=native")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -march=native -mtune=native")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -march=native -mtune=native")
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
@@ -75,6 +75,8 @@ add_executable(embedded_cv
         CalibrateMapper.cpp
         Calibrator.cpp
         Calibrator.h
+        DisparityEvaluator.cpp
+        DisparityEvaluator.h
 )
 
 target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} ${OpenCL_LIBRARIES} mini_server Eigen3::Eigen)
