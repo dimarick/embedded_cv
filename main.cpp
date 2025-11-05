@@ -410,13 +410,13 @@ int main(int argc, const char **argv) {
 
     ecv::DisparityEvaluator disparityEvaluator;
 
-    uint8_t im1[]  = {0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0};
-    uint8_t im2[]  = {0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0};
-    int16_t disp[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-    std::vector<cv::Mat> test = {cv::Mat(1, 20, CV_8U, im1), cv::Mat(1, 20, CV_8U, im2)};
-    cv::Mat dispMat = cv::Mat(1, 20, CV_16S, disp);
-
-    disparityEvaluator.evaluateDisparity(test, dispMat);
+//    uint8_t im1[]  = {0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0};
+//    uint8_t im2[]  = {0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0};
+//    int16_t disp[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+//    std::vector<cv::Mat> test = {cv::Mat(1, 20, CV_8U, im1), cv::Mat(1, 20, CV_8U, im2)};
+//    cv::Mat dispMat = cv::Mat(1, 20, CV_16S, disp);
+//
+//    disparityEvaluator.evaluateDisparity(test, dispMat);
 
     double minVal = 0, maxVal = 0;
 
@@ -703,6 +703,7 @@ int main(int argc, const char **argv) {
             cv::Mat disparity;
             cv::Mat disparityFp;
             cv::Mat disparity8;
+            disparity.setTo(0);
             startDisp = std::chrono::high_resolution_clock::now();
             disparityEvaluator.evaluateDisparity(result, disparity);
             endDisp = std::chrono::high_resolution_clock::now();
@@ -713,9 +714,10 @@ int main(int argc, const char **argv) {
             }
 
             disparity.copyTo(disparityFp);
-            disparityFp *= -1;
             if (minVal == 0 || maxVal == 0) {
                 cv::minMaxLoc(disparityFp, &minVal, &maxVal);
+//                maxVal = 300 * 32;
+//                minVal = -100;
             }
 
             disparityFp -= minVal;
@@ -726,12 +728,10 @@ int main(int argc, const char **argv) {
             cv::applyColorMap(disparity8, disparity8, ColormapTypes::COLORMAP_JET);
 
             cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
-            auto disparityAtPoint = (int)disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
-            auto dispStr = std::to_string(disparityAtPoint);
+            auto disparityAtPoint = disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
+            auto dispStr = std::to_string((float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION);
             cv::putText(disparity8, dispStr, mouseDisp, FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
             imshow("Disparity", disparity8);
-
-            disparity.setTo(0);
 
 //            for (int j = 1; j < 12; ++j) {
 //                auto p1 = Point(0, j * aligned.size().height / 11);

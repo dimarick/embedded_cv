@@ -30,8 +30,8 @@ set(CMAKE_CXX_STANDARD 17)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")
 find_package(OpenCV 5.0.0 REQUIRED)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -march=native -mtune=native")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -march=native -mtune=native")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -ffast-math -ftree-vectorize -fopt-info-vec-missed=vec.miss.txt -ftree-vectorizer-verbose=5 -march=native -mtune=native")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math -ftree-vectorize -fopt-info-vec-missed=vec.miss.txt -ftree-vectorizer-verbose=5 -march=native -mtune=native")
 
 find_package(OpenMP)
 if (OPENMP_FOUND)

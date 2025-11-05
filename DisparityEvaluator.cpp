@@ -3,9 +3,7 @@
 #include "DisparityEvaluator.h"
 
 namespace ecv {
-    int16_t getDisparity(const uint8_t *data1, const uint8_t *data2, size_t x, size_t y, size_t w, size_t h, int minDisparity, int maxDisparity, size_t windowSize, uint8_t sz, bool allowFail = false);
-
-    void DisparityEvaluator::evaluateDisparity(const std::vector<cv::Mat> &frames, cv::Mat &disparity) const {
+    void DisparityEvaluator::evaluateDisparity(const std::vector<cv::Mat> &frames, cv::Mat &disparity) {
         for (int i = 1; i < frames.size(); i++) {
             CV_Assert(frames[0].cols == frames[i].cols);
             CV_Assert(frames[0].rows == frames[i].rows);
@@ -46,7 +44,7 @@ namespace ecv {
         this->evaluateIncrementally(frames, roughDisparity[0], disparity);
     }
 
-    void DisparityEvaluator::evaluateIncrementally(const std::vector<cv::Mat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity) const {
+    void DisparityEvaluator::evaluateIncrementally(const std::vector<cv::Mat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity) {
         for (int i = 1; i < frames.size(); i++) {
             CV_Assert(frames[0].cols == frames[i].cols);
             CV_Assert(frames[0].rows == frames[i].rows);
@@ -67,8 +65,9 @@ namespace ecv {
         auto sz = (int)frames[0].elemSize();
         auto w = frames[0].cols;
         auto wsz = sz * w;
-        auto maxDisparity = std::min(64, (int)(w * 0.25)) * sz;
-        auto windowSize = 3 * sz;
+        auto maxDisparity = std::min(256, (int)(w * 0.25)) * sz;
+        auto maxDisparity0 = maxDisparity;
+        auto windowSize = 4 * sz;
 
         std::vector<uint8_t *> data(frames.size());
 
@@ -77,119 +76,178 @@ namespace ecv {
         }
 
         auto disparityData = (int16_t *)disparity.data;
-        auto roughDisparityData = (int16_t *)roughDisparity.data;
         auto rw = roughDisparity.cols;
 
-        auto windowHeight = std::min(3, frames[0].rows);
+        auto windowHeight = std::min(4, frames[0].rows);
+
+        int16_t *roughDisparityData;
+
+        cv::Mat roughDisparity0;
 
         if (!roughDisparity.empty()) {
             CV_Assert(roughDisparity.cols == frames[0].cols / 2);
             CV_Assert(roughDisparity.rows == frames[0].rows / 2);
-            CV_Assert(disparity.type() == CV_16S);
+            CV_Assert(roughDisparity.type() == CV_16S);
+            roughDisparityData = (int16_t *)roughDisparity.data;
             maxDisparity = 5 * sz;
+            windowSize = 3 * sz;
+            windowHeight = std::min(3, frames[0].rows);
+        } else {
+            roughDisparity0 = cv::Mat(frames[0].cols / 2, std::max(1, frames[0].rows / 2), CV_16S);
+            roughDisparity0.setTo(0);
+            roughDisparityData = (int16_t *)roughDisparity0.data;
+            maxDisparity = 3 * sz;
             windowSize = 3 * sz;
             windowHeight = std::min(3, frames[0].rows);
         }
 
+        bool suppressFlag = true;
 
-        if (roughDisparity.empty()) {
-            auto step = sz;
+        auto step = sz;
 #pragma omp parallel for
-            for (size_t y = 0; y < frames[0].rows - windowHeight + 1; y++) {
-                windowSize = 3 * sz;
-                for (int x = 0; x < maxDisparity; x += step) {
-                    auto d = getDisparity(data[0], data[1], x, y, w, windowHeight, -x, maxDisparity, windowSize, sz, true);
-                    disparityData[y * w + x / sz] = d;
+        for (size_t y = 0; y < frames[0].rows - windowHeight + 1; y++) {
+            auto syptr = y / 2 * rw;
+            for (int x = 0; x < maxDisparity; x += step) {
+                auto rd = roughDisparityData[syptr + x / sz / 2] / DISPARITY_PRECISION;
+                if (rd == 0) {
+                    auto d = this->getDisparity(data[1], data[0], x, y, w, windowHeight, 0, maxDisparity0, windowSize, sz);
+                    disparityData[y * w + x / sz] = std::abs(d - disparityData[y * w + x / sz - 1]) == DISPARITY_PRECISION && suppressFlag ? disparityData[y * w + x / sz - 1] : d;
+                    continue;
                 }
-                for (int x = maxDisparity; x < wsz - windowSize - maxDisparity; x += step) {
-                    auto d = getDisparity(data[0], data[1], x, y, w, windowHeight, -maxDisparity,  maxDisparity, windowSize, sz, true);
-                    disparityData[y * w + x / sz] = d;
-                }
-                for (int x = wsz - windowSize - maxDisparity; x < wsz - windowSize; x += step) {
-                    auto d = getDisparity(data[0], data[1], x, y, w, windowHeight, -maxDisparity, (wsz - windowSize - x), windowSize, sz);
-                    disparityData[y * w + x / sz] = d;
-                }
+                auto suggest = (int16_t)(rd * 2 * sz);
+                auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, 0, (suggest + maxDisparity), windowSize, sz);
+                disparityData[y * w + x / sz] = std::abs(d - disparityData[y * w + x / sz - 1]) == DISPARITY_PRECISION && suppressFlag ? disparityData[y * w + x / sz - 1] : d;
+//                    disparityData[y * w + x / sz] = d;
+//                    disparityData[(y + 1) * w + x / sz + 1] = d;
+//                    disparityData[(y + 1) * w + x / sz] = d;
+//                    disparityData[y * w + x / sz + 1] = d;
             }
-        } else {
-            auto step = sz;
-#pragma omp parallel for
-            for (size_t y = 0; y < frames[0].rows - windowHeight + 1; y++) {
-                auto syptr = y / 2 * rw;
-                for (int x = 0; x < maxDisparity; x += step) {
-                    auto suggest = (int16_t)(roughDisparityData[syptr + x / sz / 2] * 2 * sz);
-                    auto d = getDisparity(data[0], data[1], x, y, w, windowHeight, -x, (suggest + maxDisparity), windowSize, sz, true);
-//                    disparityData[y * w + x / sz] = d;
-                    disparityData[y * w + x / sz] = std::abs(d - disparityData[y * w + x / sz - 1]) == 1 ? disparityData[y * w + x / sz - 1] : d;
+            for (int x = maxDisparity; x < wsz - windowSize - maxDisparity; x += step) {
+                auto rd = roughDisparityData[syptr + x / sz / 2] / DISPARITY_PRECISION;
+                if (rd == 0) {
+                    auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, 0,  maxDisparity0, windowSize, sz);
+                    disparityData[y * w + x / sz] = std::abs(d - disparityData[y * w + x / sz - 1]) == DISPARITY_PRECISION && suppressFlag ? disparityData[y * w + x / sz - 1] : d;
+                    continue;
                 }
-                for (int x = maxDisparity; x < wsz - windowSize - maxDisparity; x += step) {
-                    auto suggest = (int16_t)(roughDisparityData[syptr + x / sz / 2] * 2 * sz);
-                    auto d = getDisparity(data[0], data[1], x, y, w, windowHeight, (suggest - maxDisparity), (suggest + maxDisparity), windowSize, sz, true);
+                auto suggest = (int16_t)(rd * 2 * sz);
+                auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, (suggest - maxDisparity), (suggest + maxDisparity), windowSize, sz);
+                disparityData[y * w + x / sz] = std::abs(d - disparityData[y * w + x / sz - 1]) == DISPARITY_PRECISION && suppressFlag ? disparityData[y * w + x / sz - 1] : d;
 //                    disparityData[y * w + x / sz] = d;
-                    disparityData[y * w + x / sz] = std::abs(d - disparityData[y * w + x / sz - 1]) == 1 ? disparityData[y * w + x / sz - 1] : d;
+//                    disparityData[(y + 1) * w + x / sz + 1] = d;
+//                    disparityData[(y + 1) * w + x / sz] = d;
+//                    disparityData[y * w + x / sz + 1] = d;
+            }
+            for (int x = wsz - windowSize - maxDisparity; x < wsz - windowSize; x += step) {
+                auto rd = roughDisparityData[syptr + x / sz / 2] / DISPARITY_PRECISION;
+                if (rd == 0) {
+                    auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, 0, (wsz - windowSize - x), windowSize, sz);
+                    disparityData[y * w + x / sz] = std::abs(d - disparityData[y * w + x / sz - 1]) == DISPARITY_PRECISION && suppressFlag ? disparityData[y * w + x / sz - 1] : d;
+                    continue;
                 }
-                for (int x = wsz - windowSize - maxDisparity; x < wsz - windowSize; x += step) {
-                    auto suggest = (int16_t)(roughDisparityData[syptr + x / sz / 2] * 2 * sz);
-                    auto d = getDisparity(data[0], data[1], x, y, w, windowHeight, (suggest - maxDisparity), (wsz - windowSize - x), windowSize, sz);
+                auto suggest = (int16_t)(rd * 2 * sz);
+                auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, (suggest - maxDisparity), (wsz - windowSize - x), windowSize, sz);
+                disparityData[y * w + x / sz] = std::abs(d - disparityData[y * w + x / sz - 1]) == DISPARITY_PRECISION && suppressFlag ? disparityData[y * w + x / sz - 1] : d;
 //                    disparityData[y * w + x / sz] = d;
-                    disparityData[y * w + x / sz] = std::abs(d - disparityData[y * w + x / sz - 1]) == 1 ? disparityData[y * w + x / sz - 1] : d;
-                }
+//                    disparityData[(y + 1) * w + x / sz + 1] = d;
+//                    disparityData[(y + 1) * w + x / sz] = d;
+//                    disparityData[y * w + x / sz + 1] = d;
             }
         }
     }
 
     int eval(const uint8_t *src, const uint8_t *dest, size_t windowSize, uint8_t sz);
 
-    int16_t getDisparity(const uint8_t *data1, const uint8_t *data2, size_t x, size_t y, size_t w, size_t h, int minDisparity, int maxDisparity, size_t windowSize, uint8_t sz, bool allowFail) {
+    int16_t DisparityEvaluator::getDisparity(const uint8_t *data1, const uint8_t *data2, size_t x, size_t y, size_t w, size_t h, int minDisparity, int maxDisparity, size_t windowSize, uint8_t sz) {
         const uint8_t *src = data1 + y * w * sz + x;
         const uint8_t *dest = data2 + y * w * sz + x;
-        std::vector<int64_t> score(3, 0);
-        int64_t minScore = std::numeric_limits<int64_t>::max();
-        auto disparity = 0;
 
-        auto avgScore = 0;
+        float disparity;
+        float avgScore;
+        float minScore;
+        maxDisparity = std::max(minDisparity, maxDisparity);
+        minDisparity = std::min(minDisparity, maxDisparity);
+        int disparityRange = maxDisparity - minDisparity;
 
-        int k = 0;
-        for (int i = minDisparity; i < maxDisparity; i += sz) {
-            int64_t newScore = 0;
-            for (int j = 0; j < h; j++) {
-                newScore += eval(src + j * w * sz, dest + i + j * w * sz, windowSize, sz);
+        auto scoreSize = std::max(1, std::min(4, disparityRange / 6));
+
+        std::vector<float> score(scoreSize, 0);
+
+        std::vector<float> bestScore(scoreSize, 0);
+        int bestI = 0;
+        int bestK = 0;
+
+        auto wi = 0;
+        int wis[] = {2, 3};
+        int wstep = 1;
+        do {
+            minScore = std::numeric_limits<float>::max();
+            disparity = 0;
+            avgScore = 0;
+
+            int k = 0;
+            float scoreSum = 0;
+
+            for (int i = minDisparity; i < maxDisparity; i += sz) {
+                int64_t score0 = 0;
+#pragma omp simd
+                for (int j = 0; j < h; j++) {
+                    auto s0 = src + j * w * sz;
+                    auto d0 = dest + i + j * w * sz;
+                    for (int i0 = 0; i0 < windowSize; i0+=wstep) {
+                        auto d = s0[i0] - d0[i0];
+                        score0 += d * d;
+                    }
+                }
+
+                auto newScore = (float)score0;
+                auto prevScore = score[k % score.size()];
+                score[k % score.size()] = (float)newScore;
+
+                scoreSum += (float)newScore - prevScore;
+
+                auto n = std::min(k + 1, (int) score.size());
+
+                auto scoreAvg = scoreSum / (float)n;
+
+                avgScore += newScore;
+
+                if (scoreAvg < minScore && k >= score.size()) {
+                    minScore = scoreAvg;
+                    std::copy(score.begin(), score.end(), bestScore.begin());
+                    bestI = i / sz;
+                    bestK = k;
+                }
+                k++;
             }
-//            for (int j = 0; j < h; j++) {
-//                newScore += eval(dest + i + j * w * sz, src + j * w * sz, windowSize, sz);
-//            }
 
-            score[k % score.size()] = newScore;
+            avgScore /= (float)k;
+            windowSize *= wis[wi];
+            wi++;
+            wstep++;
+        } while (wi < sizeof wis / sizeof *wis && avgScore < minScore * 5);
 
-            int64_t scoreSum = 0;
-
-            auto n = std::min(k + 1, (int) score.size());
-
-            for (int j = 0; j < n; ++j) {
-                scoreSum += score[j];
-            }
-
-            scoreSum /= n;
-
-//            newScore += eval(dest, src - i, windowSize, sz);
-            avgScore += newScore;
-
-            if (scoreSum < minScore) {
-                minScore = scoreSum;
-                disparity = i / sz;
-            }
-            k++;
+        if (wi > sizeof wis / sizeof *wis) {
+//            this->q *= 0.9999;
+            return 0;
         }
 
-        avgScore /= k;
+//        this->q /= 0.9999;
 
-        if (windowSize < 128 && avgScore < minScore * 2) {
-            return getDisparity(data1, data2, x, y, w, h, minDisparity, maxDisparity, windowSize * 2, sz, true);
+        auto n = std::min(bestK + 1, (int) bestScore.size());
+        float mass = 0;
+        float sumX = 0;
+
+        for (int j = 1; j <= n; ++j) {
+            auto m = (float)bestScore[(bestK + j) % bestScore.size()];
+            mass += m;
+            sumX += m * (float)j;
         }
+        disparity = (float)bestI + (sumX / mass) - (float)n;
 
-        return (int16_t)(disparity);
+        return (int16_t)std::round(disparity * DisparityEvaluator::DISPARITY_PRECISION);
     }
 
-    int eval(const uint8_t *src, const uint8_t *dest, size_t windowSize, uint8_t sz) {
+    inline int eval(const uint8_t *src, const uint8_t *dest, size_t windowSize, uint8_t sz) {
         auto score = 0;
         for (int i = 0; i < windowSize; ++i) {
             auto d = ((int)src[i]) - ((int)dest[i]);
