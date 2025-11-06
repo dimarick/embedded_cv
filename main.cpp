@@ -716,8 +716,8 @@ int main(int argc, const char **argv) {
             disparity.copyTo(disparityFp);
             if (minVal == 0 || maxVal == 0) {
                 cv::minMaxLoc(disparityFp, &minVal, &maxVal);
-//                maxVal = 300 * 32;
-//                minVal = -100;
+                maxVal = 300 * ecv::DisparityEvaluator::DISPARITY_PRECISION;
+                minVal = 0;
             }
 
             disparityFp -= minVal;
