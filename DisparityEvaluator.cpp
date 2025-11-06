@@ -141,7 +141,7 @@ namespace ecv {
 
         float disparity;
         float avgScore;
-        float minScore;
+        float maxScore;
         maxDisparity = std::max(minDisparity, maxDisparity);
         minDisparity = std::min(minDisparity, maxDisparity);
         int disparityRange = maxDisparity - minDisparity;
@@ -156,11 +156,11 @@ namespace ecv {
         int bestK = 0;
 
         auto wi = 0;
-        int wis[] = {1, 3, 11};
+        int wis[] = {1, 7};
         int wstep = 1;
         do {
             auto windowSize = (int)windowSize0 * wis[wi];
-            minScore = std::numeric_limits<float>::max();
+            maxScore = 0;
             disparity = 0;
             avgScore = 0;
 
@@ -168,19 +168,18 @@ namespace ecv {
             float scoreSum = 0;
 
             for (int i = minDisparity; i < maxDisparity; i += sz) {
-                int64_t score0 = 0;
-                for (int j = 0; j < h; j++) {
-                    auto row = j * w * sz;
-                    auto s0 = src + row;
-                    auto d0 = dest + i + row;
-#pragma omp simd
+                int score0 = 0;
+
+                int hstep = (int)w * sz;
+                for (int j = 0; j < h * hstep; j+= hstep) {
                     for (int i0 = -windowSize; i0 <= windowSize; i0+=wstep) {
-                        auto e0 = s0[i0] - d0[i0];
-                        score0 += e0 * e0;
+                        const auto d = src[j + i0] - dest[i + j + i0];
+                        score0 += d * d;
                     }
                 }
 
-                auto newScore = (float)score0 / (float)windowSize;
+                float maxPossibleScore = 255.f * 255.f * ((float)windowSize * 2 + 1) * (float)h;
+                auto newScore = maxPossibleScore - (float)score0 / (float)windowSize;
                 auto prevScore = score[k % scoreSize];
                 score[k % scoreSize] = (float)newScore;
 
@@ -188,12 +187,12 @@ namespace ecv {
 
                 auto n = std::min(k + 1, (int) scoreSize);
 
-                auto scoreAvg = scoreSum / (float)n;
+                auto currentScore = scoreSum / (float)n;
 
                 avgScore += newScore;
 
-                if (scoreAvg < minScore && k >= scoreSize) {
-                    minScore = scoreAvg;
+                if (maxScore < currentScore && k >= scoreSize) {
+                    maxScore = currentScore;
                     memcpy(bestScore, score, sizeof score);
                     bestI = i / sz;
                     bestK = k;
@@ -203,24 +202,20 @@ namespace ecv {
 
             avgScore /= (float)k;
             wi++;
-            wstep++;
-        } while (wi < sizeof wis / sizeof *wis && avgScore < minScore * this->q);
+        } while (wi < sizeof wis / sizeof *wis && avgScore > maxScore * this->q);
 
-        if (avgScore < minScore * this->q) {
+        if (avgScore > maxScore * this->q) {
+            this->q = this->q + 3e-7;
             return 0;
         }
+        this->q = this->q - 1e-7;
 
         auto n = std::min(bestK + 1, (int) scoreSize);
         float mass = 0;
         float sumX = 0;
 
-        float max = 0;
-        for (int i = 0; i < scoreSize; ++i) {
-            max = std::max(bestScore[i], max);
-        }
-
         for (int j = 1; j <= n; ++j) {
-            auto m = max - (float)bestScore[(bestK + j) % scoreSize];
+            auto m = (float)bestScore[(bestK + j) % scoreSize];
             mass += m;
             sumX += m * (float)j;
         }
