@@ -114,7 +114,7 @@ namespace ecv {
         this->kernel.setArg(a++, DISPARITY_PRECISION);
 
 //        std::vector<cl::Event> kEvent = {cl::Event()};
-        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(1, 1), cl::NDRange(1, 1));
+        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(1024, 1024), cl::NDRange(1024, 1));
 //        queue.enqueueNDRangeKernel(this->kernel, cl::NullRange, cl::NDRange(frames[0].rows, frames[0].cols), cl::NDRange(frames[0].rows, 1));
 
         queue.finish();
