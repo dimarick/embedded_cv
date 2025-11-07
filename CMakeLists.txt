@@ -26,12 +26,14 @@ add_definitions(-include /home/dima/embedded_cv/release/${ARCH}/Debug/OpenCV/inc
 add_definitions(-DCL_TARGET_OPENCL_VERSION=220)
 add_definitions(-DBASE_DIR="lib/PRiMEStereoMatch/")
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")
 find_package(OpenCV 5.0.0 REQUIRED)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -ffast-math -ftree-vectorize -fopt-info-vec-missed=vec.miss.txt -ftree-vectorizer-verbose=5 -march=native -mtune=native")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math -ftree-vectorize -fopt-info-vec-missed=vec.miss.txt -ftree-vectorizer-verbose=5 -march=native -mtune=native")
+set(OPT_FLAGS "-O0 -ffast-math -ftree-vectorize -fopt-info-vec-missed=vec.miss.txt -ftree-vectorizer-verbose=5 -mtune=native -mno-avx512f")
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OPT_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OPT_FLAGS}")
 
 find_package(OpenMP)
 if (OPENMP_FOUND)

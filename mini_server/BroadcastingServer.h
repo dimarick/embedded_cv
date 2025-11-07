@@ -4,6 +4,7 @@
 #include <mutex>
 #include <set>
 #include <atomic>
+#include <string>
 
 namespace mini_server {
     class BroadcastingServer {
