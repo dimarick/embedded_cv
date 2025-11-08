@@ -1,4 +1,6 @@
-short getDisparity(
+#include "opencl_ide_defs.h"
+
+float getDisparity(
         uchar *data1,
         uchar *data2,
         size_t x,
@@ -8,10 +10,9 @@ short getDisparity(
         int minDisparity,
         int maxDisparity,
         size_t windowSize0,
-        uchar sz,
-        float* q,
-        int DISPARITY_PRECISION
-    ) {
+        int sz,
+        float* q
+) {
     const uchar *src = data1 + y * w * sz + x;
     const uchar *dest = data2 + y * w * sz + x;
 
@@ -36,34 +37,35 @@ short getDisparity(
     int bestK = 0;
 
     int wi = 0;
-    int wis[] = {1, 7};
+    int wis[] = {1};
     int wstep = 1;
+    int k = 0;
     do {
         int windowSize = (int)windowSize0 * wis[wi];
+        float maxPossibleScore = 255.f * 255.f * ((float)windowSize * 2 + 1) * (float)h;
         maxScore = 0;
         disparity = 0;
         avgScore = 0;
 
-        int k = 0;
+        k = 0;
         float scoreSum = 0;
 
         for (int i = minDisparity; i < maxDisparity; i += sz) {
-            int score0 = 0;
+            float score0 = 0;
 
-            int hstep = (int)w * sz;
+            int hstep = w * sz;
             for (int j = 0; j < h * hstep; j+= hstep) {
-                for (int i0 = -windowSize; i0 <= windowSize; i0+=wstep) {
-                    const int d = src[j + i0] - dest[i + j + i0];
+                for (int i0 = 0; i0 <= windowSize; i0+=wstep) {
+                    const float d = src[j + i0] - dest[i + j + i0];
                     score0 += d * d;
                 }
             }
 
-            float maxPossibleScore = 255.f * 255.f * ((float)windowSize * 2 + 1) * (float)h;
-            float newScore = maxPossibleScore - (float)score0 / (float)windowSize;
+            float newScore = (maxPossibleScore - score0) / (float)windowSize;
             float prevScore = score[k % scoreSize];
-            score[k % scoreSize] = (float)newScore;
+            score[k % scoreSize] = newScore;
 
-            scoreSum += (float)newScore - prevScore;
+            scoreSum += newScore - prevScore;
 
             int n = min(k + 1, (int) scoreSize);
 
@@ -71,44 +73,46 @@ short getDisparity(
 
             avgScore += newScore;
 
-            if (maxScore < currentScore && k >= scoreSize) {
-                maxScore = currentScore;
-                for (int j = 0; j < scoreSize; ++j) {
-                    bestScore[j] = score[j];
-                }
-                bestI = i / sz;
-                bestK = k;
+            bool needUpdate = currentScore > maxScore;
+
+            bestI = needUpdate ? i / sz : bestI;
+            bestK = needUpdate ? k : bestK;
+            maxScore = fmax(maxScore, currentScore);
+            for (int j = 0; j < scoreSize; ++j) {
+                bestScore[j] = needUpdate ? score[j] : bestScore[j];
             }
+
             k++;
         }
 
         avgScore /= (float)k;
         wi++;
-    } while (wi < sizeof wis / sizeof *wis && avgScore > maxScore * *q);
+    } while (wi < sizeof wis / sizeof *wis && avgScore > maxScore * 0.9);
 
-    if (avgScore > maxScore * *q) {
-        *q = *q + 3e-7;
-        return 0;
-    }
+//    if (avgScore > maxScore * *q) {
+//        *q = *q + 3e-7;
+//        return 0;
+//    }
+//
+//    *q = *q - 1e-7;
 
-    *q = *q - 1e-7;
-
-    int n = min(bestK + 1, (int) scoreSize);
+    scoreSize = min(k, scoreSize);
+    int n = min(bestK + 1, scoreSize);
     float mass = 0;
     float sumX = 0;
 
-    for (int j = 1; j <= n; ++j) {
-        float m = (float)bestScore[(bestK + j) % scoreSize];
+    float jf = 1;
+    for (int j = 1; j <= n; ++j, ++jf) {
+        float m = bestScore[(bestK + j) % scoreSize];
         mass += m;
-        sumX += m * (float)j;
+        sumX += m * jf;
     }
-    disparity = (float)bestI + (sumX / mass) - (float)n;
+    disparity = (float)(bestI - n) + (sumX / mass);
 
-    return (short)rint(disparity * DISPARITY_PRECISION);
+    return disparity;
 }
 
 __kernel void DisparityEvaluator(
-        __global char* data,
         __global uchar* frame0,
         __global uchar* frame1,
         __global float* roughDisparity,
@@ -118,33 +122,58 @@ __kernel void DisparityEvaluator(
         const int windowHeight,
         const int windowSize,
         const int w,
+        const int h,
         const int sz,
         const int DISPARITY_PRECISION
 ) {
-    data[0] = 'H';
-    data[1] = 'e';
-    data[2] = 'l';
-    data[3] = 'l';
-    data[4] = 'o';
-    data[5] = ' ';
-    data[6] = 'W';
-    data[7] = 'o';
-    data[8] = 'r';
-    data[9] = 'l';
-    data[10] = 'd';
-    data[11] = '!';
-    data[12] = '\n';
-    size_t x = get_global_id(0);
-    size_t y = get_global_id(1);
+    size_t y0 = get_global_id(0) * 2;
+    size_t x0 = get_global_id(1) * 2;
+    size_t g = get_global_id(2);
 
     float _q = q0;
     int wsz = w * sz;
 
-    short d = getDisparity(frame1, frame0, x * sz, y, w, windowHeight, 0, (wsz - windowSize - x), windowSize, sz, &_q, DISPARITY_PRECISION);
+
+    size_t y = y0 + g % 2;
+    size_t x = x0 + g / 2;
+
+    int windowSize0 = 3;
+
+#define maxFragmentHeight 3
+#define maxFragmentWidth (256 + 30) * 3
+#define maxBuffer maxFragmentWidth * maxFragmentHeight
+#define maxRowWidth 1920 * 3
+#define maxBuffer maxFragmentWidth * maxFragmentHeight
+#define maxLocalBuffer maxRowWidth * maxFragmentHeight
+
+//    __local uchar lFrame0[maxLocalBuffer];
+//    __local uchar lFrame1[maxLocalBuffer];
+
+    __private uchar pFrame0[maxBuffer];
+    __private uchar pFrame1[maxBuffer];
+
+    int maxDisparity = min(256 * sz, (int)(wsz - windowSize - x * sz));
+    int fragmentWidth = min(maxFragmentWidth, maxDisparity + windowSize);
+    int fragmentHeight = min(maxFragmentHeight, windowHeight);
+
+//    for (int i = 0; i < fragmentHeight; ++i) {
+//        for (int j = 0; j < wsz; ++j) {
+//            lFrame0[i * wsz + j] = frame0[(y + i) * wsz + x * sz + j];
+//            lFrame1[i * wsz + j] = frame1[(y + i) * wsz + x * sz + j];
+//        }
+//    }
+
+    for (int i = 0; i < fragmentHeight; ++i) {
+        for (int j = 0; j < fragmentWidth; ++j) {
+            pFrame0[i * fragmentWidth + j] = frame0[(y + i) * wsz + x * sz + j];
+            pFrame1[i * fragmentWidth + j] = frame1[(y + i) * wsz + x * sz + j];
+        }
+    }
+
+//    barrier(CLK_LOCAL_MEM_FENCE);
+
+    float d = getDisparity(pFrame1, pFrame0, 0, 0, fragmentWidth / sz, fragmentHeight, 0, maxDisparity, windowSize, sz, &_q);
+    disparity[y * w + x] = (short)rint(d * (float)DISPARITY_PRECISION);
 
     *q += _q - q0;
-
-    *q = 0.4f;
-
-    disparity[y * w + x] = (short)100;
 }

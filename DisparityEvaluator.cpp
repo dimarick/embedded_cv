@@ -1,6 +1,7 @@
 #include <imgproc.hpp>
 #include <iostream>
 #include <fstream>
+#include <cpptrace/basic.hpp>
 #include "DisparityEvaluator.h"
 namespace ecv {
     const char kernelSources[] =
@@ -49,6 +50,12 @@ namespace ecv {
         }
 
         this->evaluateIncrementallyOcl(frames, roughDisparity[0], disparity);
+//        try {
+//        } catch (const cl::Error &e) {
+//            std::cerr << "OpenCL API exception " << e.err() << " (" << openclErrorString(e.err()) << "), what " << e.what() << std::endl;
+//
+//            throw e;
+//        }
 //        this->evaluateIncrementally(frames, roughDisparity[0], disparity);
     }
 
@@ -63,6 +70,11 @@ namespace ecv {
             CV_Assert(frames[0].elemSize() == frames[i].elemSize());
         }
 
+        std::vector<size_t> maxRanges = this->device.getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
+
+        CV_Assert(frames[0].rows / 2 <= maxRanges[0]);
+        CV_Assert(frames[0].cols / 2 <= maxRanges[1]);
+
         if (disparity.empty()) {
             disparity = cv::Mat(frames[0].size(), CV_16S);
             disparity.setTo(0);
@@ -72,6 +84,15 @@ namespace ecv {
             CV_Assert(disparity.type() == CV_16S);
         }
 
+        cv::Mat rd = roughDisparity;
+
+        if (!rd.empty()) {
+            CV_Assert(rd.cols == frames[0].cols / 2);
+            CV_Assert(rd.rows == frames[0].rows / 2);
+            CV_Assert(rd.type() == CV_16S);
+        } else {
+            rd = cv::Mat(frames[0].cols / 2, std::max(1, frames[0].rows / 2), CV_16S);
+        }
         std::vector<cl::Buffer> gFrames(frames.size());
         cl::Buffer gDisparity(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, disparity.dataend - disparity.datastart);
         std::vector<cl::Event> events;
@@ -82,25 +103,21 @@ namespace ecv {
             auto &event = events.emplace_back();
             queue.enqueueWriteBuffer(gFrames[i], CL_FALSE, 0, frames[i].dataend - frames[i].datastart, (void *)frames[i].datastart, nullptr, &event);
         }
-        cl::Buffer gRoughDisparity(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, roughDisparity.dataend - roughDisparity.datastart);
+        cl::Buffer gRoughDisparity(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, rd.dataend - rd.datastart);
         auto &event = events.emplace_back();
-        queue.enqueueWriteBuffer(gRoughDisparity, CL_FALSE, 0, roughDisparity.dataend - roughDisparity.datastart, (void *)roughDisparity.datastart, nullptr, &event);
+        queue.enqueueWriteBuffer(gRoughDisparity, CL_FALSE, 0, rd.dataend - rd.datastart, (void *)rd.datastart, nullptr, &event);
 
         auto sz = (int)frames[0].elemSize();
         auto w = frames[0].cols;
-        auto windowSize = 1 * sz;
+        auto h = frames[0].rows;
+        auto windowSize = 3 * sz;
         auto windowHeight = std::min(3, frames[0].rows);
         auto _q = (float)this->q;
         cl::Buffer gQ(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, sizeof _q);
 
         queue.finish();
 
-        char buf[16];
-        buf[0] = 'a';
-        cl::Buffer memBuf(this->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, sizeof(buf));
-
         auto a = 0;
-        this->kernel.setArg(a++, memBuf);
         this->kernel.setArg(a++, gFrames[0]);
         this->kernel.setArg(a++, gFrames[1]);
         this->kernel.setArg(a++, gRoughDisparity);
@@ -110,17 +127,17 @@ namespace ecv {
         this->kernel.setArg(a++, windowHeight);
         this->kernel.setArg(a++, windowSize);
         this->kernel.setArg(a++, w);
+        this->kernel.setArg(a++, h);
         this->kernel.setArg(a++, sz);
         this->kernel.setArg(a++, DISPARITY_PRECISION);
 
 //        std::vector<cl::Event> kEvent = {cl::Event()};
-        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(1024, 1024), cl::NDRange(1024, 1));
+        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(h / 2, w / 2, 2 * 2), cl::NDRange(h / 2, 1));
 //        queue.enqueueNDRangeKernel(this->kernel, cl::NullRange, cl::NDRange(frames[0].rows, frames[0].cols), cl::NDRange(frames[0].rows, 1));
 
         queue.finish();
-        queue.enqueueReadBuffer(gDisparity, CL_TRUE, 0, disparity.dataend - disparity.datastart, (void *)disparity.datastart);
-        queue.enqueueReadBuffer(gQ, CL_TRUE, 0, sizeof(_q), (void *)&_q);
-        queue.enqueueReadBuffer(memBuf, CL_TRUE, 0, sizeof(buf), buf);
+        queue.enqueueReadBuffer(gDisparity, CL_FALSE, 0, disparity.dataend - disparity.datastart, (void *)disparity.datastart);
+        queue.enqueueReadBuffer(gQ, CL_FALSE, 0, sizeof(_q), (void *)&_q);
         queue.finish();
         this->q = _q;
     }
@@ -148,7 +165,7 @@ namespace ecv {
         auto wsz = sz * w;
         auto maxDisparity = 5 * sz;
         auto maxDisparity0 = 256 * sz;
-        auto windowSize = 1 * sz;
+        auto windowSize = 3 * sz;
 
         std::vector<uint8_t *> data(frames.size());
 
@@ -180,37 +197,20 @@ namespace ecv {
 #pragma omp parallel for
         for (size_t y = 0; y < frames[0].rows - windowHeight + 1; y++) {
             auto syptr = y / 2 * rw;
-            for (int x = 0; x < maxDisparity; x += step) {
+            for (int x = 0; x < wsz - windowSize; x += step) {
+                auto disparityRightLimit = wsz - windowSize - x;
+                auto disparityLeftLimit = -x;
                 auto rd = roughDisparityData[syptr + x / sz / 2] / DISPARITY_PRECISION;
                 if (rd == 0) {
-                    auto d = this->getDisparity(data[1], data[0], x, y, w, windowHeight, 0, maxDisparity0, windowSize, sz);
+                    auto maxDisp = std::min(disparityRightLimit, maxDisparity0);
+                    auto d = this->getDisparity(data[1], data[0], x, y, w, windowHeight, 0, maxDisp, windowSize, sz);
                     disparityData[y * w + x / sz] = d;
                     continue;
                 }
                 auto suggest = (int16_t)(rd * 2 * sz);
-                auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, 0, (suggest + maxDisparity), windowSize, sz);
-                disparityData[y * w + x / sz] = d;
-            }
-            for (int x = maxDisparity; x < wsz - windowSize - maxDisparity; x += step) {
-                auto rd = roughDisparityData[syptr + x / sz / 2] / DISPARITY_PRECISION;
-                if (rd == 0) {
-                    auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, 0,  maxDisparity0, windowSize, sz);
-                    disparityData[y * w + x / sz] = d;
-                    continue;
-                }
-                auto suggest = (int16_t)(rd * 2 * sz);
-                auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, (suggest - maxDisparity), (suggest + maxDisparity), windowSize, sz);
-                disparityData[y * w + x / sz] = d;
-            }
-            for (int x = wsz - windowSize - maxDisparity; x < wsz - windowSize; x += step) {
-                auto rd = roughDisparityData[syptr + x / sz / 2] / DISPARITY_PRECISION;
-                if (rd == 0) {
-                    auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, 0, (wsz - windowSize - x), windowSize, sz);
-                    disparityData[y * w + x / sz] = d;
-                    continue;
-                }
-                auto suggest = (int16_t)(rd * 2 * sz);
-                auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, (suggest - maxDisparity), (wsz - windowSize - x), windowSize, sz);
+                auto minDisp = std::max(disparityLeftLimit, suggest - maxDisparity);
+                auto maxDisp = std::min(disparityRightLimit, suggest + maxDisparity);
+                auto d = getDisparity(data[1], data[0], x, y, w, windowHeight, minDisp, maxDisp, windowSize, sz);
                 disparityData[y * w + x / sz] = d;
             }
         }
@@ -255,7 +255,7 @@ namespace ecv {
 
                 int hstep = (int)w * sz;
                 for (int j = 0; j < h * hstep; j+= hstep) {
-                    for (int i0 = -windowSize; i0 <= windowSize; i0+=wstep) {
+                    for (int i0 = 0; i0 <= windowSize; i0+=wstep) {
                         const auto d = src[j + i0] - dest[i + j + i0];
                         score0 += d * d;
                     }
@@ -349,8 +349,9 @@ namespace ecv {
             throw std::runtime_error("Create program failed");
         }
 
-        err = program.build();
-        if(err != CL_BUILD_SUCCESS){
+        try {
+            err = program.build("-Werror -cl-fast-relaxed-math -cl-finite-math-only -cl-unsafe-math-optimizations -cl-no-signed-zeros");
+        } catch (...) {
             std::cerr << "Build Status: " << program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(device)
                       << "Build Log:\t " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << std::endl;
             throw std::runtime_error("Build failed");
@@ -366,5 +367,138 @@ namespace ecv {
         this->queue = cl::CommandQueue(context, device);
 
         this->oclInitialized = true;
+    }
+
+    const char *DisparityEvaluator::openclErrorString(cl_int err) {
+        switch (err) {
+            case CL_SUCCESS:
+                return "CL_SUCCESS";
+            case CL_DEVICE_NOT_FOUND:
+                return "CL_DEVICE_NOT_FOUND";
+            case CL_DEVICE_NOT_AVAILABLE:
+                return "CL_DEVICE_NOT_AVAILABLE";
+            case CL_COMPILER_NOT_AVAILABLE:
+                return "CL_COMPILER_NOT_AVAILABLE";
+            case CL_MEM_OBJECT_ALLOCATION_FAILURE:
+                return "CL_MEM_OBJECT_ALLOCATION_FAILURE";
+            case CL_OUT_OF_RESOURCES:
+                return "CL_OUT_OF_RESOURCES";
+            case CL_OUT_OF_HOST_MEMORY:
+                return "CL_OUT_OF_HOST_MEMORY";
+            case CL_PROFILING_INFO_NOT_AVAILABLE:
+                return "CL_PROFILING_INFO_NOT_AVAILABLE";
+            case CL_MEM_COPY_OVERLAP:
+                return "CL_MEM_COPY_OVERLAP";
+            case CL_IMAGE_FORMAT_MISMATCH:
+                return "CL_IMAGE_FORMAT_MISMATCH";
+            case CL_IMAGE_FORMAT_NOT_SUPPORTED:
+                return "CL_IMAGE_FORMAT_NOT_SUPPORTED";
+            case CL_BUILD_PROGRAM_FAILURE:
+                return "CL_BUILD_PROGRAM_FAILURE";
+            case CL_MAP_FAILURE:
+                return "CL_MAP_FAILURE";
+            case CL_MISALIGNED_SUB_BUFFER_OFFSET:
+                return "CL_MISALIGNED_SUB_BUFFER_OFFSET";
+            case CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST:
+                return "CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST";
+            case CL_COMPILE_PROGRAM_FAILURE:
+                return "CL_COMPILE_PROGRAM_FAILURE";
+            case CL_LINKER_NOT_AVAILABLE:
+                return "CL_LINKER_NOT_AVAILABLE";
+            case CL_LINK_PROGRAM_FAILURE:
+                return "CL_LINK_PROGRAM_FAILURE";
+            case CL_DEVICE_PARTITION_FAILED:
+                return "CL_DEVICE_PARTITION_FAILED";
+            case CL_KERNEL_ARG_INFO_NOT_AVAILABLE:
+                return "CL_KERNEL_ARG_INFO_NOT_AVAILABLE";
+            case CL_INVALID_VALUE:
+                return "CL_INVALID_VALUE";
+            case CL_INVALID_DEVICE_TYPE:
+                return "CL_INVALID_DEVICE_TYPE";
+            case CL_INVALID_PLATFORM:
+                return "CL_INVALID_PLATFORM";
+            case CL_INVALID_DEVICE:
+                return "CL_INVALID_DEVICE";
+            case CL_INVALID_CONTEXT:
+                return "CL_INVALID_CONTEXT";
+            case CL_INVALID_QUEUE_PROPERTIES:
+                return "CL_INVALID_QUEUE_PROPERTIES";
+            case CL_INVALID_COMMAND_QUEUE:
+                return "CL_INVALID_COMMAND_QUEUE";
+            case CL_INVALID_HOST_PTR:
+                return "CL_INVALID_HOST_PTR";
+            case CL_INVALID_MEM_OBJECT:
+                return "CL_INVALID_MEM_OBJECT";
+            case CL_INVALID_IMAGE_FORMAT_DESCRIPTOR:
+                return "CL_INVALID_IMAGE_FORMAT_DESCRIPTOR";
+            case CL_INVALID_IMAGE_SIZE:
+                return "CL_INVALID_IMAGE_SIZE";
+            case CL_INVALID_SAMPLER:
+                return "CL_INVALID_SAMPLER";
+            case CL_INVALID_BINARY:
+                return "CL_INVALID_BINARY";
+            case CL_INVALID_BUILD_OPTIONS:
+                return "CL_INVALID_BUILD_OPTIONS";
+            case CL_INVALID_PROGRAM:
+                return "CL_INVALID_PROGRAM";
+            case CL_INVALID_PROGRAM_EXECUTABLE:
+                return "CL_INVALID_PROGRAM_EXECUTABLE";
+            case CL_INVALID_KERNEL_NAME:
+                return "CL_INVALID_KERNEL_NAME";
+            case CL_INVALID_KERNEL_DEFINITION:
+                return "CL_INVALID_KERNEL_DEFINITION";
+            case CL_INVALID_KERNEL:
+                return "CL_INVALID_KERNEL";
+            case CL_INVALID_ARG_INDEX:
+                return "CL_INVALID_ARG_INDEX";
+            case CL_INVALID_ARG_VALUE:
+                return "CL_INVALID_ARG_VALUE";
+            case CL_INVALID_ARG_SIZE:
+                return "CL_INVALID_ARG_SIZE";
+            case CL_INVALID_KERNEL_ARGS:
+                return "CL_INVALID_KERNEL_ARGS";
+            case CL_INVALID_WORK_DIMENSION:
+                return "CL_INVALID_WORK_DIMENSION";
+            case CL_INVALID_WORK_GROUP_SIZE:
+                return "CL_INVALID_WORK_GROUP_SIZE";
+            case CL_INVALID_WORK_ITEM_SIZE:
+                return "CL_INVALID_WORK_ITEM_SIZE";
+            case CL_INVALID_GLOBAL_OFFSET:
+                return "CL_INVALID_GLOBAL_OFFSET";
+            case CL_INVALID_EVENT_WAIT_LIST:
+                return "CL_INVALID_EVENT_WAIT_LIST";
+            case CL_INVALID_EVENT:
+                return "CL_INVALID_EVENT";
+            case CL_INVALID_OPERATION:
+                return "CL_INVALID_OPERATION";
+            case CL_INVALID_GL_OBJECT:
+                return "CL_INVALID_GL_OBJECT";
+            case CL_INVALID_BUFFER_SIZE:
+                return "CL_INVALID_BUFFER_SIZE";
+            case CL_INVALID_MIP_LEVEL:
+                return "CL_INVALID_MIP_LEVEL";
+            case CL_INVALID_GLOBAL_WORK_SIZE:
+                return "CL_INVALID_GLOBAL_WORK_SIZE";
+            case CL_INVALID_PROPERTY:
+                return "CL_INVALID_PROPERTY";
+            case CL_INVALID_IMAGE_DESCRIPTOR:
+                return "CL_INVALID_IMAGE_DESCRIPTOR";
+            case CL_INVALID_COMPILER_OPTIONS:
+                return "CL_INVALID_COMPILER_OPTIONS";
+            case CL_INVALID_LINKER_OPTIONS:
+                return "CL_INVALID_LINKER_OPTIONS";
+            case CL_INVALID_DEVICE_PARTITION_COUNT:
+                return "CL_INVALID_DEVICE_PARTITION_COUNT";
+            case CL_INVALID_PIPE_SIZE:
+                return "CL_INVALID_PIPE_SIZE";
+            case CL_INVALID_DEVICE_QUEUE:
+                return "CL_INVALID_DEVICE_QUEUE";
+            case CL_INVALID_SPEC_ID:
+                return "CL_INVALID_SPEC_ID";
+            case CL_MAX_SIZE_RESTRICTION_EXCEEDED:
+                return "CL_MAX_SIZE_RESTRICTION_EXCEEDED";
+            default:
+                return "UNDEFINED";
+        }
     }
 } // ecv
