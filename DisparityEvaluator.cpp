@@ -49,13 +49,13 @@ namespace ecv {
             this->evaluateIncrementally(piramids[i - 1], roughDisparity[i], roughDisparity[i - 1]);
         }
 
-        this->evaluateIncrementallyOcl(frames, roughDisparity[0], disparity);
-//        try {
-//        } catch (const cl::Error &e) {
-//            std::cerr << "OpenCL API exception " << e.err() << " (" << openclErrorString(e.err()) << "), what " << e.what() << std::endl;
-//
-//            throw e;
-//        }
+        try {
+            this->evaluateIncrementallyOcl(frames, roughDisparity[0], disparity);
+        } catch (const cl::Error &e) {
+            std::cerr << "OpenCL API exception " << e.err() << " (" << openclErrorString(e.err()) << "), what " << e.what() << std::endl;
+
+            throw e;
+        }
 //        this->evaluateIncrementally(frames, roughDisparity[0], disparity);
     }
 
@@ -132,7 +132,7 @@ namespace ecv {
         this->kernel.setArg(a++, DISPARITY_PRECISION);
 
 //        std::vector<cl::Event> kEvent = {cl::Event()};
-        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(h / 2, w / 2, 2 * 2), cl::NDRange(h / 2, 1));
+        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 16, h / 2), cl::NDRange(w / 16, 1));
 //        queue.enqueueNDRangeKernel(this->kernel, cl::NullRange, cl::NDRange(frames[0].rows, frames[0].cols), cl::NDRange(frames[0].rows, 1));
 
         queue.finish();
