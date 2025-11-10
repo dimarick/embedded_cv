@@ -34,6 +34,7 @@ namespace ecv {
         std::vector<int> flagsChain = {
 //                        cv::CALIB_USE_INTRINSIC_GUESS|
 //                        cv::CALIB_FIX_FOCAL_LENGTH|
+                cv::CALIB_USE_LU|
                 cv::CALIB_FIX_TAUX_TAUY|
                 cv::CALIB_FIX_TANGENT_DIST|
                 cv::CALIB_FIX_S1_S2_S3_S4|
