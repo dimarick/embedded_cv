@@ -387,16 +387,16 @@ namespace ecv {
         }
 
         const std::vector<cv::Point2f> src = {
-            {(float)o[1 * w + 1].x, (float)o[1 * w + 1].y},
-            {(float)o[1 * w + w - 2].x, (float)o[1 * w + w - 2].y},
-            {(float)o[(h - 2) * w + 1].x, (float)o[(h - 2) * w + 1].y},
-            {(float)o[(h - 2) * w + w - 2].x, (float)o[(h - 2) * w + w - 2].y},
+            {(float)o[0 * w + 0].x, (float)o[0 * w + 0].y},
+            {(float)o[0 * w + w - 1].x, (float)o[0 * w + w - 1].y},
+            {(float)o[(h - 1) * w + 0].x, (float)o[(h - 1) * w + 0].y},
+            {(float)o[(h - 1) * w + w - 1].x, (float)o[(h - 1) * w + w - 1].y},
         };
         const std::vector<cv::Point2f> dest = {
-                {(float)imageGrid[1 * w + 1].x, (float)imageGrid[1 * w + 1].y},
-                {(float)imageGrid[1 * w + w - 2].x, (float)imageGrid[1 * w + w - 2].y},
-                {(float)imageGrid[(h - 2) * w + 1].x, (float)imageGrid[(h - 2) * w + 1].y},
-                {(float)imageGrid[(h - 2) * w + w - 2].x, (float)imageGrid[(h - 2) * w + w - 2].y},
+                {(float)imageGrid[0 * w + 0].x, (float)imageGrid[0 * w + 0].y},
+                {(float)imageGrid[0 * w + w - 1].x, (float)imageGrid[0 * w + w - 1].y},
+                {(float)imageGrid[(h - 1) * w + 0].x, (float)imageGrid[(h - 1) * w + 0].y},
+                {(float)imageGrid[(h - 1) * w + w - 1].x, (float)imageGrid[(h - 1) * w + w - 1].y},
         };
         auto transform = cv::getPerspectiveTransform(src, dest);
 
@@ -481,11 +481,12 @@ namespace ecv {
     }
 
     template<typename TP> void CalibrateMapper<TP>::drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, size_t w, size_t h, cv::Scalar color, int thickness) {
+
         for (int x = 0; x < w; ++x) {
             for (int y = 0; y < h; ++y) {
                 auto p = grid[y * w + x];
-                auto right = grid[y * w + x + 1];
-                auto bottom = grid[(y + 1) * w + x];
+                auto right = x + 1 == w ? Point3(0, 0, 0): grid[y * w + x + 1];
+                auto bottom = y + 1 == h ? Point3(0, 0, 0) : grid[(y + 1) * w + x];
 
                 if (p.z < 0) {
                     continue;
@@ -908,10 +909,10 @@ namespace ecv {
         const auto cH = h / 2;
 
         auto c1 = grid[cH * w + cW];
-        auto left1 = grid[cH * w + 1];
-        auto right1 = grid[cH * w + w - 2];
-        auto top1 = grid[w + cW];
-        auto bottom1 = grid[(h - 2) * w + cW];
+        auto left1 = grid[cH * w];
+        auto right1 = grid[cH * w + w - 1];
+        auto top1 = grid[cW];
+        auto bottom1 = grid[(h - 1) * w + cW];
 
         auto topLeft1 = grid[0];
         auto topRight1 = grid[w - 1];
@@ -919,10 +920,10 @@ namespace ecv {
         auto bottomRight1 = grid[(h - 1) * w + w - 1];
 
         auto c2 = fitTo[cH * w + cW];
-        auto left2 = fitTo[cH * w + 1];
-        auto right2 = fitTo[cH * w + w - 2];
-        auto top2 = fitTo[w + cW];
-        auto bottom2 = fitTo[(h - 2) * w + cW];
+        auto left2 = fitTo[cH * w];
+        auto right2 = fitTo[cH * w + w - 1];
+        auto top2 = fitTo[cW];
+        auto bottom2 = fitTo[(h - 1) * w + cW];
 
         auto topLeft2 = fitTo[0];
         auto topRight2 = fitTo[w - 1];

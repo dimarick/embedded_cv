@@ -89,7 +89,9 @@ void invMap(const cv::Mat &src, cv::Mat &dest) {
     for (int y = 0; y < src.rows; y++) {
         for (int x = 0; x < src.cols; x++) {
             const auto &p = src.at<cv::Point2f>(y, x);
-            auto &p2 = dest.at<cv::Point2f>((int)std::round(p.y), (int)std::round(p.x));
+            int row = (int) std::round(p.y);
+            int col = (int) std::round(p.x);
+            auto &p2 = dest.at<cv::Point2f>(std::max(0, std::min(row, dest.rows - 1)), std::max(0, std::min(col, dest.cols - 1)));
             p2.x = (float)x;
             p2.y = (float)y;
         }
@@ -523,6 +525,7 @@ int main(int argc, const char **argv) {
                         map2[j].copyTo(bestMap2[j]);
                     } else {
                         nextFrameId[j]++;
+                        prevStdRmseUndistorted[j] *= 1.01;
                     }
                     std::cout << "; plainGridRmse " << plainGridRmse << "; stdGridRmse " << plainStdGridRmse << "; prevStdRmseUndistorted " << prevStdRmseUndistorted[j] << std::endl;
 
