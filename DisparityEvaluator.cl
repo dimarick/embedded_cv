@@ -11,7 +11,8 @@ float getDisparity(
         int maxDisparity,
         size_t windowSize0,
         int sz,
-        float* q
+        float* q,
+        bool debug
 ) {
     const uchar *src = data1 + y * w * sz + x;
     const uchar *dest = data2 + y * w * sz + x;
@@ -23,7 +24,7 @@ float getDisparity(
     minDisparity = min(minDisparity, maxDisparity);
     int disparityRange = maxDisparity - minDisparity;
 
-    const int maxScoreSize = 5;
+    const int maxScoreSize = 7;
     int scoreSize = max(2, min(maxScoreSize, disparityRange / 6));
     float score[maxScoreSize];
     float bestScore[maxScoreSize];
@@ -40,7 +41,7 @@ float getDisparity(
     int wis[] = {1};
     int wstep = 1;
     int k = 0;
-//    do {
+    do {
         int windowSize = (int)windowSize0 * wis[wi];
         float maxPossibleScore = 255.f * 255.f * (float)windowSize * (float)h;
         maxScore = 0;
@@ -83,10 +84,11 @@ float getDisparity(
 
             k++;
         }
-//
-//        avgScore /= (float)k;
-//        wi++;
-//    } while (wi < sizeof wis / sizeof *wis && avgScore > maxScore * 0.9);
+
+        avgScore /= (float)k;
+        wi++;
+        wstep++;
+    } while (wi < sizeof wis / sizeof *wis && avgScore > maxScore * 0.9);
 
 //    if (avgScore > maxScore * *q) {
 //        *q = *q + 3e-7;
@@ -95,17 +97,24 @@ float getDisparity(
 //
 //    *q = *q - 1e-7;
 
-    scoreSize = min(k, scoreSize);
-    int n = min(bestK + 1, scoreSize);
+    scoreSize = min(k + 1, scoreSize);
+    int n = scoreSize;
     float mass = 0;
     float sumX = 0;
 
+
+    float min = 1e12;
+
+    for (int j = 0; j <= n - 1; ++j) {
+        min = fmin(min, bestScore[j]);
+    }
     float jf = 1;
     for (int j = 1; j <= n; ++j, ++jf) {
-        float m = bestScore[(bestK + j) % scoreSize];
+        float m = bestScore[(bestK + j) % scoreSize] - min;
         mass += m;
         sumX += m * jf;
     }
+
     disparity = (float)(bestI - n) + (sumX / mass);
 
     return disparity;
@@ -166,9 +175,9 @@ float16 getDisparityV16(
 
             int hstep = w * sz;
             for (int j = 0; j < h * hstep; j+= hstep) {
-                for (int i0 = 0; i0 <= windowSize / 16 + 1; i0+=wstep) {
-                    const float16 d0 = convert_float16(vload16(i0, src + j));
-                    const float16 d1 = convert_float16(vload16(i0, dest + i + j));
+                for (int i0 = 0; i0 <= windowSize; i0+=wstep) {
+                    const float16 d0 = convert_float16(vload16(0, src + j + i0));
+                    const float16 d1 = convert_float16(vload16(0, dest + j + i0 + i));
                     const float16 d = d0 - d1;
                     score0 += d * d;
                 }
@@ -374,7 +383,7 @@ __kernel void DisparityEvaluator(
         const int sz,
         const int DISPARITY_PRECISION
 ) {
-    int x0 = get_local_id(0) * 16;
+    int x0 = get_local_id(0) * 2;
     int y0 = get_global_id(1) * 2;
 
     float _q = q0;
@@ -383,8 +392,6 @@ __kernel void DisparityEvaluator(
     int windowSize0 = 3;
 
 #define maxFragmentHeight 3
-#define maxFragmentWidth (256 + 30) * 3
-#define maxBuffer maxFragmentWidth * maxFragmentHeight
 #define maxRowWidth 1920 * 3
 #define maxLocalBuffer maxRowWidth * (maxFragmentHeight + 1)
 
@@ -393,47 +400,54 @@ __kernel void DisparityEvaluator(
     __local uchar pFrame0[maxLocalBuffer];
     __local uchar pFrame1[maxLocalBuffer];
 
-    int rowLimit = min(x0 + 16, w);
+    int rowLimit = min(x0 + 2, w);
 
     for (int y = y0; y < y0 + 2; ++y) {
         for (int i = 0; i < fragmentHeight; ++i) {
             for (int x = x0; x < rowLimit; x++) {
-                for (int ch = 0; ch < 4; ch++) {
+                for (int ch = 0; ch < sz; ch++) {
     //                pFrame0[i * wsz + x] = frame0[(y + i) * wsz + x];
     //                pFrame1[i * wsz + x] = frame1[(y + i) * wsz + x];
-                    pFrame0[i * 4 + ch + x * 4 * fragmentHeight] = frame0[(y + i) * wsz + x * sz + ch];
-                    pFrame1[i * 4 + ch + x * 4 * fragmentHeight] = frame1[(y + i) * wsz + x * sz + ch];
+                    pFrame0[i * 4 + ch + x * sz * fragmentHeight] = frame0[(y + i) * wsz + x * sz + ch];
+                    pFrame1[i * 4 + ch + x * sz * fragmentHeight] = frame1[(y + i) * wsz + x * sz + ch];
                 }
             }
         }
 
         barrier(CLK_LOCAL_MEM_FENCE);
 
-        for (int x = 0; x < rowLimit - x0; x += 16) {
+        for (int x = 0; x < rowLimit - x0; x += 1) {
 //        for (int x = 0; x < rowLimit - x0; x++) {
             int maxDisparity = min(256 * sz * fragmentHeight, (int) (wsz - windowSize - (x + x0) * sz) * fragmentHeight);
-//            float d = getDisparity(pFrame1, pFrame0, (x + x0) * sz * fragmentHeight, 0, w, 1, 0, maxDisparity, windowSize * fragmentHeight, sz * fragmentHeight, &_q);
-            float16 d = getDisparityV16(pFrame1, pFrame0, (x + x0) * sz * fragmentHeight, 0, w, 1, 0, maxDisparity, windowSize * fragmentHeight, 4 * fragmentHeight, &_q, x0 == 32 && y == 42);
+            float d0 = getDisparity(pFrame1, pFrame0, (x + x0) * sz * fragmentHeight, 0, w, 1, 0, maxDisparity, 3 * windowSize * fragmentHeight, sz * fragmentHeight, &_q, (x + x0) == 20 && y == 20);
+            short id0 = (int) rint(d0);
+            float xd0 = -getDisparity(pFrame0, pFrame1, (x + x0 + id0) * sz * fragmentHeight, 0, w, 1, -maxDisparity, 0, (windowSize + 2) * fragmentHeight, sz * fragmentHeight, &_q, (x + x0) == 20 && y == 20);
+            float d = d0 * (float) DISPARITY_PRECISION;
+            float xd = xd0 * (float) DISPARITY_PRECISION;
+            short sxd = (short) rint(xd);
+            short sd = (short) rint(d);
 
-            d *= (float) DISPARITY_PRECISION;
+            bool valid = fabs(d0 - xd0) / d0 < 0.1;
 
-//            disparity[y * w + x + x0] = (short) rint(d);
-            disparity[y * w + x + x0 + 0x0] = (short) rint(d.s0);
-            disparity[y * w + x + x0 + 0x1] = (short) rint(d.s1);
-            disparity[y * w + x + x0 + 0x2] = (short) rint(d.s2);
-            disparity[y * w + x + x0 + 0x3] = (short) rint(d.s3);
-            disparity[y * w + x + x0 + 0x4] = (short) rint(d.s4);
-            disparity[y * w + x + x0 + 0x5] = (short) rint(d.s5);
-            disparity[y * w + x + x0 + 0x6] = (short) rint(d.s6);
-            disparity[y * w + x + x0 + 0x7] = (short) rint(d.s7);
-            disparity[y * w + x + x0 + 0x8] = (short) rint(d.s8);
-            disparity[y * w + x + x0 + 0x9] = (short) rint(d.s9);
-            disparity[y * w + x + x0 + 0xA] = (short) rint(d.sA);
-            disparity[y * w + x + x0 + 0xB] = (short) rint(d.sB);
-            disparity[y * w + x + x0 + 0xC] = (short) rint(d.sC);
-            disparity[y * w + x + x0 + 0xD] = (short) rint(d.sD);
-            disparity[y * w + x + x0 + 0xE] = (short) rint(d.sE);
-            disparity[y * w + x + x0 + 0xF] = (short) rint(d.sF);
+            disparity[y * w + x + x0] = sxd;
+//            disparity[y * w + x + x0 + ixd0] += xd;
+//            disparity[y * w + x + x0 - sd2] = (sd2 + disparity[y * w + x + x0 - sd2]) / 2;
+//            disparity[y * w + x + x0 + 0x0] = (short) rint(d.s0);
+//            disparity[y * w + x + x0 + 0x1] = (short) rint(d.s1);
+//            disparity[y * w + x + x0 + 0x2] = (short) rint(d.s2);
+//            disparity[y * w + x + x0 + 0x3] = (short) rint(d.s3);
+//            disparity[y * w + x + x0 + 0x4] = (short) rint(d.s4);
+//            disparity[y * w + x + x0 + 0x5] = (short) rint(d.s5);
+//            disparity[y * w + x + x0 + 0x6] = (short) rint(d.s6);
+//            disparity[y * w + x + x0 + 0x7] = (short) rint(d.s7);
+//            disparity[y * w + x + x0 + 0x8] = (short) rint(d.s8);
+//            disparity[y * w + x + x0 + 0x9] = (short) rint(d.s9);
+//            disparity[y * w + x + x0 + 0xA] = (short) rint(d.sA);
+//            disparity[y * w + x + x0 + 0xB] = (short) rint(d.sB);
+//            disparity[y * w + x + x0 + 0xC] = (short) rint(d.sC);
+//            disparity[y * w + x + x0 + 0xD] = (short) rint(d.sD);
+//            disparity[y * w + x + x0 + 0xE] = (short) rint(d.sE);
+//            disparity[y * w + x + x0 + 0xF] = (short) rint(d.sF);
 
         }
     }
