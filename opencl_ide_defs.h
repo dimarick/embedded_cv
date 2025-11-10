@@ -75,6 +75,7 @@ typedef double double8;
 typedef double double16;
 
 typedef unsigned long size_t;
+typedef unsigned long uintptr_t;
 
 // https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/commonFunctions.html
 #define gentype float

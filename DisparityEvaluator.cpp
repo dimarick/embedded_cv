@@ -111,7 +111,7 @@ namespace ecv {
         auto w = frames[0].cols;
         auto h = frames[0].rows;
         auto windowSize = 3 * sz;
-        auto windowHeight = std::min(3, frames[0].rows);
+        auto windowHeight = std::min(4, frames[0].rows);
         auto _q = (float)this->q;
         cl::Buffer gQ(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, sizeof _q);
 
