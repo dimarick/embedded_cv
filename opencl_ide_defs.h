@@ -9,76 +9,144 @@
 #define __constant
 #define __private
 
-#define half float
+typedef float half;
 typedef unsigned char uchar;
-typedef unsigned char uchar2;
-typedef unsigned char uchar3;
-typedef unsigned char uchar4;
-typedef unsigned char uchar8;
-typedef unsigned char uchar16;
-
-typedef unsigned char char2;
-typedef unsigned char char3;
-typedef unsigned char char4;
-typedef unsigned char char8;
-typedef unsigned char char16;
-
-typedef signed short short2;
-typedef signed short short3;
-typedef signed short short4;
-typedef signed short short8;
-typedef signed short short16;
-
 typedef unsigned short ushort;
-typedef unsigned short ushort2;
-typedef unsigned short ushort3;
-typedef unsigned short ushort4;
-typedef unsigned short ushort8;
-typedef unsigned short ushort16;
-
-typedef signed int int2;
-typedef signed int int3;
-typedef signed int int4;
-typedef signed int int8;
-typedef signed int int16;
-
 typedef unsigned int uint;
-typedef unsigned int uint2;
-typedef unsigned int uint3;
-typedef unsigned int uint4;
-typedef unsigned int uint8;
-typedef unsigned int uint16;
-
-typedef signed long long2;
-typedef signed long long3;
-typedef signed long long4;
-typedef signed long long8;
-typedef signed long long16;
-
 typedef unsigned long ulong;
-typedef unsigned long ulong2;
-typedef unsigned long ulong3;
-typedef unsigned long ulong4;
-typedef unsigned long ulong8;
-typedef unsigned long ulong16;
-
-typedef float float2;
-typedef float float3;
-typedef float float4;
-typedef float float8;
-typedef float float16;
-
-typedef double double2;
-typedef double double3;
-typedef double double4;
-typedef double double8;
-typedef double double16;
-
 typedef unsigned long size_t;
 typedef unsigned long uintptr_t;
+typedef signed long intptr_t;
+typedef signed long ptrdiff_t;
+
+#define FIELD2(expr) expr s0; expr s1;
+#define FIELD3(expr) FIELD2(expr) expr s2;
+#define FIELD4(expr) FIELD3(expr) expr s3;
+#define FIELD5(expr) FIELD4(expr) expr s4;
+#define FIELD6(expr) FIELD5(expr) expr s5;
+#define FIELD7(expr) FIELD6(expr) expr s6;
+#define FIELD8(expr) FIELD7(expr) expr s7;
+#define FIELD9(expr) FIELD8(expr) expr s8;
+#define FIELD10(expr) FIELD9(expr) expr s9;
+#define FIELD11(expr) FIELD10(expr) expr sA;
+#define FIELD12(expr) FIELD11(expr) expr sB;
+#define FIELD13(expr) FIELD12(expr) expr sC;
+#define FIELD14(expr) FIELD13(expr) expr sD;
+#define FIELD15(expr) FIELD14(expr) expr sE;
+#define FIELD16(expr) FIELD15(expr) expr sF;
+
+#define VECTOR_1FN(T, fn) \
+T ## 2 fn(T ## 2); \
+T ## 3 fn(T ## 3); \
+T ## 4 fn(T ## 4); \
+T ## 8 fn(T ## 8); \
+T ## 16 fn(T ## 16);
+
+#define VECTOR_2FN(T, fn) \
+T ## 2 fn(T ## 2, T ## 2); \
+T ## 3 fn(T ## 3, T ## 3); \
+T ## 4 fn(T ## 4, T ## 4); \
+T ## 8 fn(T ## 8, T ## 8); \
+T ## 16 fn(T ## 16, T ## 16);
+
+#define VECTOR_VLOADSTORE(T) \
+T ##  2 vload ##  2(size_t offset, const T *p); \
+T ##  3 vload ##  3(size_t offset, const T *p); \
+T ##  4 vload ##  4(size_t offset, const T *p); \
+T ##  8 vload ##  8(size_t offset, const T *p); \
+T ## 16 vload ## 16(size_t offset, const T *p); \
+void vstore ##  2(T ##  2 data, size_t offset, const T *p); \
+void vstore ##  3(T ##  3 data, size_t offset, const T *p); \
+void vstore ##  4(T ##  4 data, size_t offset, const T *p); \
+void vstore ##  8(T ##  8 data, size_t offset, const T *p); \
+void vstore ## 16(T ## 16 data, size_t offset, const T *p);
+
+#define VECTOR_CONVERT(T, T2) \
+T ##  2 convert_ ## T ##  2(T2 ##  2); \
+T ##  3 convert_ ## T ##  3(T2 ##  3); \
+T ##  4 convert_ ## T ##  4(T2 ##  4); \
+T ##  8 convert_ ## T ##  8(T2 ##  8); \
+T ## 16 convert_ ## T ## 16(T2 ## 16);
+
+#define VECTOR_CONVERT_ALL(T) \
+VECTOR_CONVERT(T, char) \
+VECTOR_CONVERT(T, uchar) \
+VECTOR_CONVERT(T, short) \
+VECTOR_CONVERT(T, ushort) \
+VECTOR_CONVERT(T, int) \
+VECTOR_CONVERT(T, uint) \
+VECTOR_CONVERT(T, long) \
+VECTOR_CONVERT(T, ulong) \
+VECTOR_CONVERT(T, half) \
+VECTOR_CONVERT(T, float) \
+VECTOR_CONVERT(T, double)
+
+#define VECTOR_TYPE(T) \
+struct T ## 2 { FIELD2(T) }; \
+struct T ## 3 { FIELD3(T) }; \
+struct T ## 4 { FIELD4(T) }; \
+struct T ## 8 { FIELD8(T) }; \
+struct T ## 16 { FIELD16(T) }; \
+VECTOR_2FN(T, operator==) \
+VECTOR_2FN(T, operator>) \
+VECTOR_2FN(T, operator<) \
+VECTOR_2FN(T, operator>=) \
+VECTOR_2FN(T, operator<=) \
+VECTOR_2FN(T, operator&&) \
+VECTOR_2FN(T, operator||) \
+VECTOR_2FN(T, operator<<) \
+VECTOR_2FN(T, operator>>) \
+VECTOR_2FN(T, operator-) \
+VECTOR_2FN(T, operator+) \
+VECTOR_2FN(T, operator*) \
+VECTOR_2FN(T, operator/) \
+VECTOR_2FN(T, operator<<=) \
+VECTOR_2FN(T, operator>>=) \
+VECTOR_2FN(T, operator-=) \
+VECTOR_2FN(T, operator+=) \
+VECTOR_2FN(T, operator*=) \
+VECTOR_2FN(T, operator/=) \
+VECTOR_1FN(T, operator++) \
+VECTOR_1FN(T, operator--)
+
+VECTOR_TYPE(char);
+VECTOR_TYPE(uchar);
+VECTOR_TYPE(short);
+VECTOR_TYPE(ushort);
+VECTOR_TYPE(int);
+VECTOR_TYPE(uint);
+VECTOR_TYPE(long);
+VECTOR_TYPE(ulong);
+VECTOR_TYPE(half);
+VECTOR_TYPE(float);
+VECTOR_TYPE(double);
+
+VECTOR_VLOADSTORE(char);
+VECTOR_VLOADSTORE(uchar);
+VECTOR_VLOADSTORE(short);
+VECTOR_VLOADSTORE(ushort);
+VECTOR_VLOADSTORE(int);
+VECTOR_VLOADSTORE(uint);
+VECTOR_VLOADSTORE(long);
+VECTOR_VLOADSTORE(ulong);
+VECTOR_VLOADSTORE(float);
+VECTOR_VLOADSTORE(double);
+
+VECTOR_CONVERT_ALL(char);
+VECTOR_CONVERT_ALL(uchar);
+VECTOR_CONVERT_ALL(short);
+VECTOR_CONVERT_ALL(ushort);
+VECTOR_CONVERT_ALL(int);
+VECTOR_CONVERT_ALL(uint);
+VECTOR_CONVERT_ALL(long);
+VECTOR_CONVERT_ALL(ulong);
+VECTOR_CONVERT_ALL(float);
+VECTOR_CONVERT_ALL(double);
+
 
 // https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/commonFunctions.html
 #define gentype float
+#define igentype int
 gentype		clamp		(gentype x, float minval, float maxval);
 gentype		degrees		(gentype radians);
 gentype		max			(gentype x, gentype y);
@@ -90,7 +158,9 @@ gentype		radians		(gentype degrees);
 gentype		sign		(gentype x);
 gentype		smoothstep	(gentype edge0, gentype edge1, gentype x);
 gentype		step		(gentype edge, gentype x);
+igentype	rint		(gentype x);
 #undef gentype
+#undef igentype
 
 // https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/barrier.html
 enum	cl_mem_fence_flags
@@ -99,21 +169,6 @@ enum	cl_mem_fence_flags
     CLK_GLOBAL_MEM_FENCE
 };
 void	barrier(cl_mem_fence_flags flags);
-
-// https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/vectorDataLoadandStoreFunctions.html
-#define gentype float
-#define gentypen float4
-gentypen	vload4			(size_t offset, const gentype *p);
-void		vstore4			(gentypen data, size_t offset, gentype *p);
-void		vstore4			(gentypen data, size_t offset, gentype *p);
-#undef gentypen
-#undef gentype
-float		vload_half		(size_t offset, const half *p);
-float4		vload_half4		(size_t offset, const half *p);
-void		vstore_half		(float data, size_t offset, half *p);
-void		vstore_half4	(float4 data, size_t offset, half *p);
-float4		vloada_half4	(size_t offset, const half *p);
-void		vstorea_half4	(float4 data, size_t offset, half *p);
 
 // https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/workItemFunctions.html
 uint	get_work_dim		();
@@ -124,94 +179,6 @@ size_t	get_local_id		(uint dimindx);
 size_t	get_num_groups		(uint dimindx);
 size_t	get_group_id		(uint dimindx);
 size_t	get_global_offset	(uint dimindx);
-
-uchar2	vload2			(size_t offset, const uchar *p);
-char2	vload2			(size_t offset, const char *p);
-ushort2	vload2			(size_t offset, const ushort *p);
-short2	vload2			(size_t offset, const short *p);
-int2	vload2			(size_t offset, const int *p);
-uint2	vload2			(size_t offset, const uint *p);
-long2	vload2			(size_t offset, const long *p);
-ulong2	vload2			(size_t offset, const ulong *p);
-float2	vload2			(size_t offset, const float *p);
-double2	vload2			(size_t offset, const double *p);
-
-uchar4	vload4			(size_t offset, const uchar *p);
-char4	vload4			(size_t offset, const char *p);
-ushort4	vload4			(size_t offset, const ushort *p);
-short4	vload4			(size_t offset, const short *p);
-int4	vload4			(size_t offset, const int *p);
-uint4	vload4			(size_t offset, const uint *p);
-long4	vload4			(size_t offset, const long *p);
-ulong4	vload4			(size_t offset, const ulong *p);
-float4	vload4			(size_t offset, const float *p);
-double4	vload4			(size_t offset, const double *p);
-
-uchar8	vload8			(size_t offset, const uchar *p);
-char8	vload8			(size_t offset, const char *p);
-ushort8	vload8			(size_t offset, const ushort *p);
-short8	vload8			(size_t offset, const short *p);
-int8	vload8			(size_t offset, const int *p);
-uint8	vload8			(size_t offset, const uint *p);
-long8	vload8			(size_t offset, const long *p);
-ulong8	vload8			(size_t offset, const ulong *p);
-float8	vload8			(size_t offset, const float *p);
-double8	vload8			(size_t offset, const double *p);
-
-uchar16	vload16			(size_t offset, const uchar *p);
-char16	vload16			(size_t offset, const char *p);
-ushort16	vload16			(size_t offset, const ushort *p);
-short16	vload16			(size_t offset, const short *p);
-int16	vload16			(size_t offset, const int *p);
-uint16	vload16			(size_t offset, const uint *p);
-long16	vload16			(size_t offset, const long *p);
-ulong16	vload16			(size_t offset, const ulong *p);
-float16	vload16			(size_t offset, const float *p);
-double16	vload16			(size_t offset, const double *p);
-
-void vstore2			(uchar2 data, size_t offset, const uchar *p);
-void vstore2			(char2 data, size_t offset, const char *p);
-void vstore2			(ushort2 data, size_t offset, const ushort *p);
-void vstore2			(short2 data, size_t offset, const short *p);
-void vstore2			(int2 data, size_t offset, const int *p);
-void vstore2			(uint2 data, size_t offset, const uint *p);
-void vstore2			(long2 data, size_t offset, const long *p);
-void vstore2			(ulong2 data, size_t offset, const ulong *p);
-void vstore2			(float2 data, size_t offset, const float *p);
-void vstore2			(double2 data, size_t offset, const double *p);
-
-void vstore4			(uchar4 data, size_t offset, const uchar *p);
-void vstore4			(char4 data, size_t offset, const char *p);
-void vstore4			(ushort4 data, size_t offset, const ushort *p);
-void vstore4			(short4 data, size_t offset, const short *p);
-void vstore4			(int4 data, size_t offset, const int *p);
-void vstore4			(uint4 data, size_t offset, const uint *p);
-void vstore4			(long4 data, size_t offset, const long *p);
-void vstore4			(ulong4 data, size_t offset, const ulong *p);
-void vstore4			(float4 data, size_t offset, const float *p);
-void vstore4			(double4 data, size_t offset, const double *p);
-
-void vstore8			(uchar8 data, size_t offset, const uchar *p);
-void vstore8			(char8 data, size_t offset, const char *p);
-void vstore8			(ushort8 data, size_t offset, const ushort *p);
-void vstore8			(short8 data, size_t offset, const short *p);
-void vstore8			(int8 data, size_t offset, const int *p);
-void vstore8			(uint8 data, size_t offset, const uint *p);
-void vstore8			(long8 data, size_t offset, const long *p);
-void vstore8			(ulong8 data, size_t offset, const ulong *p);
-void vstore8			(float8 data, size_t offset, const float *p);
-void vstore8			(double8 data, size_t offset, const double *p);
-
-void vstore16			(uchar16 data, size_t offset, const uchar *p);
-void vstore16			(char16 data, size_t offset, const char *p);
-void vstore16			(ushort16 data, size_t offset, const ushort *p);
-void vstore16			(short16 data, size_t offset, const short *p);
-void vstore16			(int16 data, size_t offset, const int *p);
-void vstore16			(uint16 data, size_t offset, const uint *p);
-void vstore16			(long16 data, size_t offset, const long *p);
-void vstore16			(ulong16 data, size_t offset, const ulong *p);
-void vstore16			(float16 data, size_t offset, const float *p);
-void vstore16			(double16 data, size_t offset, const double *p);
 
 #ifndef STATIC_KEYWORD
 #define STATIC_KEYWORD static

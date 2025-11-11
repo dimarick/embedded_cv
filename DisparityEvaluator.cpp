@@ -132,7 +132,7 @@ namespace ecv {
         this->kernel.setArg(a++, DISPARITY_PRECISION);
 
 //        std::vector<cl::Event> kEvent = {cl::Event()};
-        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 2, h / 2), cl::NDRange(w / 2, 1));
+        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 4, h / 4), cl::NDRange(w / 4, 1));
 //        queue.enqueueNDRangeKernel(this->kernel, cl::NullRange, cl::NDRange(frames[0].rows, frames[0].cols), cl::NDRange(frames[0].rows, 1));
 
         queue.finish();
@@ -350,7 +350,9 @@ namespace ecv {
         }
 
         try {
-            err = program.build("-Werror -cl-fast-relaxed-math -cl-finite-math-only -cl-unsafe-math-optimizations -cl-no-signed-zeros");
+            err = program.build("-Werror -cl-denorms-are-zero -cl-fast-relaxed-math -cl-finite-math-only -cl-unsafe-math-optimizations -cl-no-signed-zeros");
+//            err = program.build("-Werror -cl-opt-disable -DDEBUG=1");
+//            err = program.build("-Werror");
         } catch (...) {
             std::cerr << "Build Status: " << program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(device)
                       << "Build Log:\t " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << std::endl;

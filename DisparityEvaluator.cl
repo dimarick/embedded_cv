@@ -17,7 +17,7 @@
 #define EACH16(expr) EACH15(expr) expr.sF;
 
 #ifndef GRANULE_SIZE
-#define GRANULE_SIZE 2
+#define GRANULE_SIZE 4
 #endif
 
 #ifndef DEBUG
@@ -57,6 +57,10 @@ struct __bounds_checker {
 #define BC_ARG , struct __bounds_checker *__bc
 #define BC_DUMP(expr) if (__bc0.n > 0) { expr; printf("ptr %c %p out of range %p-%p %d %d\n", __bc0.t, __bc0.ptr, __bc0.start, __bc0.end, __bc0.line, __bc0.n); }
 
+#define CHECK_NUMBER(v) \
+    if (isinf(v)) { __bc->n++; __bc->t = 'f'; __bc->line = __LINE__; } \
+    if (isnan(v)) { __bc->n++; __bc->t = 'n'; __bc->line = __LINE__; }
+
 #else
 #define CHECK_GLOBAL_BOUNDARY(_ptr, dataStart, dataSize)
 #define CHECK_LOCAL_BOUNDARY(_ptr, dataStart, dataSize)
@@ -68,7 +72,20 @@ struct __bounds_checker {
 #define BC_PASS
 #define BC_ARG
 #define BC_DUMP(expr)
+#define CHECK_NUMBER(v)
+#define printf
 #endif
+
+#define VECTOR_FOR_START(dim, i, rangeStart, rangeEnd) \
+{ int __nextVal = (rangeStart); \
+for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim; i++, __nextVal += dim) {
+
+#define VECTOR_FOR_CONTINUE(dim, i, rangeStart, rangeEnd) }; for (int i = __nextVal; i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim; i++) {
+
+#define VECTOR_FOR_TAIL(i, rangeStart, rangeEnd) } for (int i = __nextVal; i < (rangeEnd); i++) {
+
+#define VECTOR_FOR_END }}
+
 
 float getDisparity(
         __local char *data1,
@@ -81,7 +98,8 @@ float getDisparity(
         int maxDisparity,
         size_t windowSize0,
         int sz,
-        float* q
+        float* q,
+        bool debug
         BC_ARG
 ) {
     __local const char *src = data1 + y * w * sz + x;
@@ -103,11 +121,13 @@ float getDisparity(
     CHECK_LOCAL_BOUNDARY(dest, data2, dataSize);
     CHECK_LOCAL_BOUNDARY(&dest[minDisparity], data2, dataSize);
 
-    const int maxScoreSize = 7;
-    uint scoreSize = max(2, min(maxScoreSize, disparityRange / sz / 6));
+    const uint maxScoreSize = 8;
+    uint scoreSize = max((uint)2, min(maxScoreSize, (uint)disparityRange / sz / 6));
     __private float score[maxScoreSize];
     __private float bestScore[maxScoreSize];
 
+    CHECK_BOUNDARY(&bestScore[scoreSize-1], bestScore, maxScoreSize * sizeof *bestScore);
+    CHECK_BOUNDARY(&score[scoreSize-1], score, maxScoreSize * sizeof *score);
     for (int i = 0; i < scoreSize; ++i) {
         bestScore[i] = 0;
         score[i] = 0;
@@ -135,27 +155,31 @@ float getDisparity(
 
             int hstep = w * sz;
             for (int j = 0; j < h * hstep; j += hstep) {
-                const int windowSize16 = windowSize / 16;
-                const int windowSize8 = windowSize / 8;
-                const int windowSize4 = windowSize / 4;
-                const int windowSize2 = windowSize / 2;
-                for (int i0 = 0; i0 < windowSize16; i0+=1) {
+                VECTOR_FOR_START(16, i0, 0, windowSize)
                     const char16 d0 = vload16(i0, &src[j]) - vload16(i0, &dest[i + j]);
                     float16 df = convert_float16(d0);
                     df *= df;
                     EACH16(score0 += df)
-                }
-                for (int i0 = windowSize16 * 16; i0 < windowSize8; i0+=1) {
+                VECTOR_FOR_CONTINUE(8, i0, 0, windowSize)
                     const char8 d0 = vload8(i0, &src[j]) - vload8(i0, &dest[i + j]);
                     float8 df = convert_float8(d0);
                     df *= df;
                     EACH8(score0 += df)
-                }
-                for (int i0 = windowSize8 * 8; i0 <= windowSize; i0+=1) {
+                VECTOR_FOR_CONTINUE(4, i0, 0, windowSize)
+                    const char4 d0 = vload4(i0, &src[j]) - vload4(i0, &dest[i + j]);
+                    float4 df = convert_float4(d0);
+                    df *= df;
+                    EACH4(score0 += df)
+                VECTOR_FOR_CONTINUE(2, i0, 0, windowSize)
+                    const char2 d0 = vload2(i0, &src[j]) - vload2(i0, &dest[i + j]);
+                    float2 df = convert_float2(d0);
+                    df *= df;
+                    EACH2(score0 += df)
+                VECTOR_FOR_TAIL(i0, 0, windowSize)
                     const char d0 = src[j + i0] - dest[i + j + i0];
                     const float df = (float)d0;
                     score0 += df * df;
-                }
+                VECTOR_FOR_END
             }
 
             float newScore = (maxPossibleScore - score0) / (float)windowSize;
@@ -176,9 +200,18 @@ float getDisparity(
             bestI = needUpdate ? i / sz : bestI;
             bestK = needUpdate ? k : bestK;
             maxScore = fmax(maxScore, currentScore);
-            for (int j = 0; j < scoreSize; ++j) {
-                bestScore[j] = needUpdate ? score[j] : bestScore[j];
-            }
+
+            const int copySize = (int)needUpdate * scoreSize;
+
+            VECTOR_FOR_START(8, j, 0, copySize)
+                vstore8(vload8(j, &score[j]), j, &bestScore[j]);
+            VECTOR_FOR_CONTINUE(4, j, 0, copySize)
+                vstore4(vload4(j, &score[j]), j, &bestScore[j]);
+            VECTOR_FOR_CONTINUE(2, j, 0, copySize)
+                vstore2(vload2(j, &score[j]), j, &bestScore[j]);
+            VECTOR_FOR_TAIL(j, 0, copySize)
+                bestScore[j] = score[j];
+            VECTOR_FOR_END
 
             k++;
         }
@@ -202,23 +235,45 @@ float getDisparity(
 
     float min = 1e12;
 
-    for (int i = 0; i < n; ++i) {
+    VECTOR_FOR_START(8, i, 0, n)
+        const float8 v = vload8(i, bestScore);
+        min = fmin(min, v.s0);
+        min = fmin(min, v.s1);
+        min = fmin(min, v.s2);
+        min = fmin(min, v.s3);
+        min = fmin(min, v.s4);
+        min = fmin(min, v.s5);
+        min = fmin(min, v.s6);
+        min = fmin(min, v.s7);
+    VECTOR_FOR_TAIL(i, 1, n + 1)
         min = fmin(min, bestScore[i]);
-    }
+    VECTOR_FOR_END
+
     float f = 1;
-    for (uint i = 1; i <= n; ++i, ++f) {
-        CHECK_BOUNDARY(&bestScore[(bestK + i) % n], bestScore, maxScoreSize * sizeof *bestScore);
+    VECTOR_FOR_START(8, i, 1, n + 1)
+        float8 m = vload8(i, &bestScore[(bestK + i) % n]) - min;
+        EACH8(mass += m);
+        EACH8(sumX += (f++) * m);
+    VECTOR_FOR_CONTINUE(4, i, 1, n + 1)
+        float4 m = vload4(i, &bestScore[(bestK + i) % n]) - min;
+        EACH4(mass += m);
+        EACH4(sumX += (f++) * m);
+    VECTOR_FOR_CONTINUE(2, i, 1, n + 1)
+        float2 m = vload2(i, &bestScore[(bestK + i) % n]) - min;
+        EACH2(mass += m);
+        EACH2(sumX += (f++) * m);
+    VECTOR_FOR_TAIL(i, 1, n + 1)
         float m = bestScore[(bestK + i) % n] - min;
         mass += m;
         sumX += m * f;
-    }
+    VECTOR_FOR_END
 
-    disparity = (float)(bestI - n) + (sumX / mass);
+    disparity = (sumX > 0 && mass > 0) ? ((float)(bestI - n) + (sumX / mass)) : (float)bestI;
 
-    return disparity;
+    return fmax(minDisparity / sz, fmin(disparity, maxDisparity / sz));
 }
 
-#define maxFragmentHeight 3
+#define maxFragmentHeight 4
 #define nsz 3
 #define maxRowWidth 1920 * nsz
 #define maxLocalBuffer maxRowWidth * (maxFragmentHeight)
@@ -246,11 +301,13 @@ __kernel void DisparityEvaluator(
     float _q = q0;
     int wsz = w * sz;
 
-    int windowSize0 = 3;
+    int windowSize0 = 4;
 
-    __local char pFrame0[maxLocalBuffer];
-    __local char pFrame1[maxLocalBuffer];
-    __local uchar safety[1000];
+    __local long upFrame0[maxLocalBuffer / 8 + 1];
+    __local long upFrame1[maxLocalBuffer / 8 + 1];
+
+    __local char *pFrame0 = (__local char *)upFrame0;
+    __local char *pFrame1 = (__local char *)upFrame1;
 
     int xLimit = min(x0 + GRANULE_SIZE, w - 1);
     int yLimit = min(y0 + GRANULE_SIZE, h - 1);
@@ -264,10 +321,6 @@ __kernel void DisparityEvaluator(
         for (int i = 0; i < fragmentHeight; ++i) {
             for (int x = x0; x < xLimit; x++) {
                 for (int ch = 0; ch < sz; ch++) {
-                    CHECK_LOCAL_BOUNDARY(&pFrame0[i * nsz + ch + x * nsz * fragmentHeight], pFrame0, maxLocalBuffer);
-                    CHECK_LOCAL_BOUNDARY(&pFrame1[i * nsz + ch + x * nsz * fragmentHeight], pFrame1, maxLocalBuffer);
-                    CHECK_GLOBAL_BOUNDARY(&frame0[(y + i) * wsz + x * sz + ch], frame0, wsz * h);
-                    CHECK_GLOBAL_BOUNDARY(&frame1[(y + i) * wsz + x * sz + ch], frame1, wsz * h);
                     pFrame0[i * nsz + ch + x * nsz * fragmentHeight] = frame0[(y + i) * wsz + x * sz + ch];
                     pFrame1[i * nsz + ch + x * nsz * fragmentHeight] = frame1[(y + i) * wsz + x * sz + ch];
                 }
@@ -277,17 +330,15 @@ __kernel void DisparityEvaluator(
         barrier(CLK_LOCAL_MEM_FENCE);
 
         for (int x = x0; x < min(xLimit, w - MIN_VALID_DISPARITY); x += 1) {
-            int maxDisparity = max(0, min(256 * nsz, (int) (w * nsz - ((x + 1) * nsz + windowSize + nsz)))) * fragmentHeight;
-            float d0 = getDisparity(pFrame1, pFrame0, x * nsz * fragmentHeight, 0, w, 1, 0, maxDisparity, windowSize * fragmentHeight, nsz * fragmentHeight, &_q BC_PASS);
-            short id0 = (int) rint(d0);
-            float xd0 = w * nsz - (x + id0) * nsz < windowSize + nsz
+            int maxDisparity = max(0, min(384 * nsz, (int) (w * nsz - ((x + 1) * nsz + windowSize0 + nsz)))) * fragmentHeight;
+            float d0 = getDisparity(pFrame1, pFrame0, x * nsz * fragmentHeight, 0, w, 1, 0, maxDisparity, windowSize0 * fragmentHeight, nsz * fragmentHeight, &_q, x0==30 && y0 == 40 BC_PASS);
+            short id0 = (short) rint(d0);
+            float xd0 = w * nsz - (x + id0) * nsz < windowSize0 + nsz
                     ? d0
-                    : -getDisparity(pFrame0, pFrame1, (x + id0) * nsz * fragmentHeight, 0, w, 1, -min((x + id0) * nsz * fragmentHeight, 256 * nsz * fragmentHeight), 0, windowSize * fragmentHeight, nsz * fragmentHeight, &_q BC_PASS);
+                    : -getDisparity(pFrame0, pFrame1, (x + id0) * nsz * fragmentHeight, 0, w, 1, -min((x + id0) * nsz * fragmentHeight, 256 * nsz * fragmentHeight), 0, windowSize0 * fragmentHeight, nsz * fragmentHeight, &_q, x0==30 && y0 == 40 BC_PASS);
             float d = d0 * (float) DISPARITY_PRECISION;
             float xd = xd0 * (float) DISPARITY_PRECISION;
             short sxd = (short) rint(xd);
-
-            bool valid = fabs(d0 - xd0) / d0 < 0.1;
 
             disparity[y * w + x] = sxd;
 
