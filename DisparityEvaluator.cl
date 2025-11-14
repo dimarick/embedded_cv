@@ -12,6 +12,12 @@
 #define DEBUG 0
 #endif
 
+#define maxFragmentHeight 4
+#define nsz 3
+#define maxRowWidth 1920 * nsz
+#define maxLocalBuffer maxRowWidth * (maxFragmentHeight)
+#define MIN_VALID_DISPARITY 5
+
 #define EACH2(expr) expr.s0; expr.s1;
 #define EACH3(expr) EACH2(expr) expr.s2;
 #define EACH4(expr) EACH3(expr) expr.s3;
@@ -143,6 +149,10 @@ float8 getDisparity(
     vstore8(xDelta, 0, xDeltaArray);
 
     float8 maxScore = (float8)-1e12;
+
+    float8 scoreVariance = (float8)0;
+    float8 scoreExpectation = (float8)0;
+
     for (int d = minDisparity; d <= maxDisparity; d++) {
         // предположим что окно соответствия равно 4*4, а maxDisparity-minDisparity кратно 16
         // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
@@ -178,12 +188,17 @@ float8 getDisparity(
 
         for (int xi = 1; xi < 8; xi++) {
             float scoreN = 0;
+            char3 c[16 / 3 + 1];
+            float16 cf = (float16)0;
+
             for (int yi = 0; yi < h; yi++) {
-                const char3 c0 = vload3((xi + 4 + xDeltaArray[xi]) * h + yi, &src[0]) - vload3((xi + 4 + d) * h + yi, &dest[0]);
-                float3 cf = convert_float3(c0);
-                cf *= cf;
-                EACH3(scoreN += cf)
+                c[yi] = vload3((xi + 4 + xDeltaArray[xi]) * h + yi, &src[0]) - vload3((xi + 4 + d) * h + yi, &dest[0]);
             }
+            const char16 c16 = vload16(0, (const char *)c);
+            cf = convert_float16(c16);
+            cf *= cf;
+            EACH12(scoreN += cf)
+
             score16 += scoreN - score0[(xi - 1) % 8];
             score0[(xi + 3) % 8] = scoreN;
             scores[xi] = score16;
@@ -241,12 +256,6 @@ float8 getDisparity(
 
     return fmax(minDisparity, fmin(disparity, maxDisparity));
 }
-
-#define maxFragmentHeight 4
-#define nsz 3
-#define maxRowWidth 1920 * nsz
-#define maxLocalBuffer maxRowWidth * (maxFragmentHeight)
-#define MIN_VALID_DISPARITY 5
 
 __kernel void DisparityEvaluator(
         __global char* frame0,
