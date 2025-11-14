@@ -9,7 +9,7 @@
 #endif
 
 #ifndef DEBUG
-#define DEBUG 1
+#define DEBUG 0
 #endif
 
 #define EACH2(expr) expr.s0; expr.s1;
@@ -122,7 +122,7 @@ float8 getDisparity(
     CHECK_LOCAL_BOUNDARY(dest, data2, dataSize);
     CHECK_LOCAL_BOUNDARY(&dest[minDisparity], data2, dataSize);
 
-    const int maxScoreSize = 1;
+    const int maxScoreSize = 3;
     const int scoreSize = max(1, min(maxScoreSize, disparityRange / 6));
     float8 score[maxScoreSize];
     float8 bestScore[maxScoreSize];
@@ -179,7 +179,7 @@ float8 getDisparity(
         for (int xi = 1; xi < 8; xi++) {
             float scoreN = 0;
             for (int yi = 0; yi < h; yi++) {
-                const char3 c0 = vload3((xi + 5 + xDeltaArray[xi]) * h + yi, &src[0]) - vload3((xi + d + 5 + xDeltaArray[xi]) * h + yi, &dest[0]);
+                const char3 c0 = vload3((xi + 4 + xDeltaArray[xi]) * h + yi, &src[0]) - vload3((xi + 4 + d) * h + yi, &dest[0]);
                 float3 cf = convert_float3(c0);
                 cf *= cf;
                 EACH3(scoreN += cf)
@@ -203,7 +203,7 @@ float8 getDisparity(
 //            avgScore += newScore;
 
         int8 needUpdate = isgreater(currentScore, maxScore);
-        bestD = select(bestD, d, needUpdate);
+        bestD = select(bestD, (int8)d - xDelta, needUpdate);
         maxScore = fmax(maxScore, currentScore);
 
         for (int i = 0; i < scoreSize; i++) {
@@ -316,7 +316,8 @@ __kernel void DisparityEvaluator(
             const int maxDisparity = max(0, min(256, (int) (w - ((x + 1) + windowSize0 + 1))));
             const float8 d0 = getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight, (int8)0, 0, maxDisparity, windowSize0, nsz, &_q, x0==960 && y0 == 540 BC_PASS);
             const int8 id0 = convert_int8(rint(d0));
-            const int minDisparity = max(-(x + id0.s0), -256);
+
+            const int minDisparity = max(-x, -256);
             const int maxDisparityX = 0;
             const float8 xd0 = w - (x + id0.s0) < windowSize0 + 1
                     ? d0
