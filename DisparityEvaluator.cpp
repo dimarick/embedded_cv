@@ -4,7 +4,7 @@
 #include <cpptrace/basic.hpp>
 #include "DisparityEvaluator.h"
 namespace ecv {
-    const char kernelSources[] =
+    const unsigned char kernelSources[] =
             {
 #embed "DisparityEvaluator.cl"
             , 0
@@ -331,7 +331,7 @@ namespace ecv {
 
         this->device = devices.front();
 
-        std::string src(kernelSources);
+        std::string src(reinterpret_cast<const char *>(kernelSources));
 
         cl_int err = 0;
         this->context = cl::Context(this->device, nullptr, nullptr, &err);
