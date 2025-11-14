@@ -420,7 +420,7 @@ int main(int argc, const char **argv) {
 //
 //    disparityEvaluator.evaluateDisparity(test, dispMat);
 
-    double minVal = 0, maxVal = 0;
+    double minVal = 0, maxVal = 0, varianceMinVal = 0, varianceMaxVal = 0;
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -704,37 +704,56 @@ int main(int argc, const char **argv) {
             cv::drawMarker(result[1], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
 
             cv::Mat disparity;
+            cv::Mat variance;
+            cv::Mat varianceFp;
             cv::Mat disparityFp;
             cv::Mat disparity8;
+            cv::Mat variance8;
             disparity.setTo(0);
+            variance.setTo(0);
             startDisp = std::chrono::high_resolution_clock::now();
-            disparityEvaluator.evaluateDisparity(result, disparity);
+            disparityEvaluator.evaluateDisparity(result, disparity, variance);
             endDisp = std::chrono::high_resolution_clock::now();
 
-            for (int j = 0; j < frames.size(); ++j) {
-                imshow("Plain best " + std::to_string(j), result[j]);
-//                imshow("src " + std::to_string(j), frames[j]);
-            }
-
             disparity.copyTo(disparityFp);
+            variance.copyTo(varianceFp);
             if (minVal == 0 || maxVal == 0) {
                 cv::minMaxLoc(disparityFp, &minVal, &maxVal);
                 maxVal = 300 * ecv::DisparityEvaluator::DISPARITY_PRECISION;
                 minVal = 0;
             }
 
+            cv::minMaxLoc(variance, &varianceMinVal, &varianceMaxVal);
+
+            varianceFp -= varianceMinVal;
+            varianceFp *= 255.0 / (varianceMaxVal - varianceMinVal);
+
             disparityFp -= minVal;
             disparityFp *= 255.0 / (maxVal - minVal);
 
 
             disparityFp.convertTo(disparity8, CV_8U);
+            varianceFp.convertTo(variance8, CV_8U);
             cv::applyColorMap(disparity8, disparity8, ColormapTypes::COLORMAP_JET);
+            cv::applyColorMap(variance8, variance8, ColormapTypes::COLORMAP_JET);
 
             cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
+            cv::drawMarker(result[0], mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
+            cv::drawMarker(result[1], mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
+            cv::drawMarker(variance8, mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
             auto disparityAtPoint = disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
+            auto varianceAtPoint = variance.at<float>(mouseDisp.y, mouseDisp.x);
             auto dispStr = std::to_string((float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION);
+            auto varStr = std::to_string((float)varianceAtPoint);
             cv::putText(disparity8, dispStr, mouseDisp, FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
+            cv::putText(variance8, varStr, mouseDisp, FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
             imshow("Disparity", disparity8);
+            imshow("Variance", variance8);
+
+            for (int j = 0; j < frames.size(); ++j) {
+                imshow("Plain best " + std::to_string(j), result[j]);
+//                imshow("src " + std::to_string(j), frames[j]);
+            }
 
 //            for (int j = 1; j < 12; ++j) {
 //                auto p1 = Point(0, j * aligned.size().height / 11);

@@ -10,7 +10,7 @@ namespace ecv {
             , 0
             };
 
-    void DisparityEvaluator::evaluateDisparity(const std::vector<cv::Mat> &frames, cv::Mat &disparity) {
+    void DisparityEvaluator::evaluateDisparity(const std::vector<cv::Mat> &frames, cv::Mat &disparity, cv::Mat &variance) {
         for (int i = 1; i < frames.size(); i++) {
             CV_Assert(frames[0].cols == frames[i].cols);
             CV_Assert(frames[0].rows == frames[i].rows);
@@ -50,7 +50,7 @@ namespace ecv {
         }
 
         try {
-            this->evaluateIncrementallyOcl(frames, roughDisparity[0], disparity);
+            this->evaluateIncrementallyOcl(frames, roughDisparity[0], disparity, variance);
         } catch (const cl::Error &e) {
             std::cerr << "OpenCL API exception " << e.err() << " (" << openclErrorString(e.err()) << "), what " << e.what() << std::endl;
 
@@ -59,7 +59,7 @@ namespace ecv {
 //        this->evaluateIncrementally(frames, roughDisparity[0], disparity);
     }
 
-    void DisparityEvaluator::evaluateIncrementallyOcl(const std::vector<cv::Mat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity) {
+    void DisparityEvaluator::evaluateIncrementallyOcl(const std::vector<cv::Mat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity, cv::Mat &variance) {
         this->lazyInitializeOcl();
 
         for (int i = 1; i < frames.size(); i++) {
@@ -84,6 +84,15 @@ namespace ecv {
             CV_Assert(disparity.type() == CV_16S);
         }
 
+        if (variance.empty()) {
+            variance = cv::Mat(frames[0].size(), CV_32F);
+            variance.setTo(0);
+        } else {
+            CV_Assert(variance.cols == frames[0].cols);
+            CV_Assert(variance.rows == frames[0].rows);
+            CV_Assert(variance.type() == CV_16S);
+        }
+
         cv::Mat rd = roughDisparity;
 
         if (!rd.empty()) {
@@ -95,6 +104,7 @@ namespace ecv {
         }
         std::vector<cl::Buffer> gFrames(frames.size());
         cl::Buffer gDisparity(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, disparity.dataend - disparity.datastart);
+        cl::Buffer gVariance(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, variance.dataend - variance.datastart);
         std::vector<cl::Event> events;
         events.reserve(frames.size() + 1);
 
@@ -122,6 +132,7 @@ namespace ecv {
         this->kernel.setArg(a++, gFrames[1]);
         this->kernel.setArg(a++, gRoughDisparity);
         this->kernel.setArg(a++, gDisparity);
+        this->kernel.setArg(a++, gVariance);
         this->kernel.setArg(a++, gQ);
         this->kernel.setArg(a++, _q);
         this->kernel.setArg(a++, windowHeight);
@@ -137,6 +148,7 @@ namespace ecv {
 
         queue.finish();
         queue.enqueueReadBuffer(gDisparity, CL_FALSE, 0, disparity.dataend - disparity.datastart, (void *)disparity.datastart);
+        queue.enqueueReadBuffer(gVariance, CL_FALSE, 0, variance.dataend - variance.datastart, (void *)variance.datastart);
         queue.enqueueReadBuffer(gQ, CL_FALSE, 0, sizeof(_q), (void *)&_q);
         queue.finish();
         this->q = _q;
