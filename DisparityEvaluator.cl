@@ -201,11 +201,6 @@ floatN getDisparity(
         // предположим что окно соответствия равно 4*4, а maxDisparity-minDisparity кратно 16
         // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
         // в score0 поместим стоимость первой колонки пикселей для x
-#if VECTOR_SIZE == 1
-        const int xDeltaS0 = xDelta;
-#else
-        const int xDeltaS0 = xDelta.s0;
-#endif
 
         float score0[VECTOR_SIZE + 4];
         float scores[VECTOR_SIZE];
@@ -218,16 +213,14 @@ floatN getDisparity(
         float score16 = 0;
         // тогда score x1 scoreX1 = score1 + .. + scoreN+1 = score - score0 + scoreN+1
 
+        __attribute__((opencl_unroll_hint(2)))
         for (int i = 0; i < windowSize / 4; ++i) {
-            const char16 ds0 = vload16(i + 0, &src[xDeltaS0 * h * sz]);
-            const char16 ds1 = vload16(i + 1, &src[xDeltaS0 * h * sz]);
-            const char16 ds2 = vload16(i + 2, &src[xDeltaS0 * h * sz]);
-            const char16 dd0 = vload16(i + 0, &dest[d * h * sz + xDeltaS0 * h * sz]);
-            const char16 dd1 = vload16(i + 1, &dest[d * h * sz + xDeltaS0 * h * sz]);
-            const char16 dd2 = vload16(i + 2, &dest[d * h * sz + xDeltaS0 * h * sz]);
-            float16 df0 = convert_float16(ds0 - dd0);
-            float16 df1 = convert_float16(ds1 - dd1);
-            float16 df2 = convert_float16(ds2 - dd2);
+            const char16 ds0 = vload16(i + 0, src) - vload16(i + 0, &dest[d * h * sz]);
+            const char16 ds1 = vload16(i + 1, src) - vload16(i + 1, &dest[d * h * sz]);
+            const char16 ds2 = vload16(i + 2, src) - vload16(i + 2, &dest[d * h * sz]);
+            float16 df0 = convert_float16(ds0);
+            float16 df1 = convert_float16(ds1);
+            float16 df2 = convert_float16(ds2);
             df0 *= df0;
             df1 *= df1;
             df2 *= df2;
@@ -243,7 +236,7 @@ floatN getDisparity(
         scores[0] = score16;
 
         char16 c1[VECTOR_SIZE];
-        char16 c2[VECTOR_SIZE];
+        __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
         for (int xi = 1; xi < VECTOR_SIZE; xi++) {
             c1[xi] = (char16) (
                 vload3((xi + windowSize - 1 + xDeltaArray[xi]) * h + 1, src),
@@ -252,7 +245,10 @@ floatN getDisparity(
                 vload3((xi + windowSize - 1 + xDeltaArray[xi]) * h + 4, src),
                 0, 0, 0, 0
             );
-            c2[xi] = (char16) (
+        }
+        __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
+        for (int xi = 1; xi < VECTOR_SIZE; xi++) {
+            c1[xi] -= (char16) (
                 vload3((xi + windowSize - 1 + d) * h + 1, dest),
                 vload3((xi + windowSize - 1 + d) * h + 2, dest),
                 vload3((xi + windowSize - 1 + d) * h + 3, dest),
@@ -264,7 +260,7 @@ floatN getDisparity(
         __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
         for (int xi = 1; xi < VECTOR_SIZE; xi++) {
             float scoreN = 0;
-            float16 cf = convert_float16(c1[xi] - c2[xi]);
+            float16 cf = convert_float16(c1[xi]);
             cf *= cf;
             EACH12(scoreN += cf)
 
@@ -279,9 +275,8 @@ floatN getDisparity(
         scoreVariance += newScore * newScore;
 
         intN needUpdate = isless(currentScore, minCost);
-        needUpdate = needUpdate;
-        bestD = select(bestD, (intN)d - xDelta, needUpdate);
         minCost = fmin(minCost, currentScore);
+        bestD = select(bestD, (intN)d - xDelta, needUpdate);
     }
 
     disparity = convert_floatN(bestD);
