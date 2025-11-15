@@ -183,18 +183,6 @@ floatN getDisparity(
     CHECK_LOCAL_BOUNDARY(dest, data2, dataSize);
     CHECK_LOCAL_BOUNDARY(&dest[minDisparity], data2, dataSize);
 
-    const int maxScoreSize = 2;
-    const int scoreSize = max(1, min(maxScoreSize, disparityRange / 6));
-    floatN score[maxScoreSize];
-    floatN bestScore[maxScoreSize];
-
-    CHECK_BOUNDARY(&bestScore[scoreSize-1], bestScore, maxScoreSize * sizeof *bestScore);
-    CHECK_BOUNDARY(&score[scoreSize-1], score, maxScoreSize * sizeof *score);
-    for (int i = 0; i < scoreSize; ++i) {
-        bestScore[i] = (floatN)0;
-        score[i] = (floatN)0;
-    }
-
     intN bestD = (intN)0;
 
     floatN scoreSum = (floatN)0;
@@ -261,56 +249,18 @@ floatN getDisparity(
 
         floatN vScores = vloadN(0, scores);
         floatN newScore = vScores / (float)windowSize0;
-
-        int scoreOffset = (d % scoreSize + scoreSize) % scoreSize;
-        floatN prevScore = score[scoreOffset];
-        score[scoreOffset] = newScore;
-
-        scoreSum += newScore - prevScore;
-
-        currentScoreSize = min(currentScoreSize + 1, scoreSize);
-        floatN currentScore = scoreSum / (floatN)currentScoreSize;
+        floatN currentScore = newScore;
 
         scoreExpectation += newScore;
         scoreVariance += newScore * newScore;
 
-        intN needUpdate = isless(currentScore, minCost);
-        needUpdate = needUpdate;// && currentScoreSize >= scoreSize;
+        intN needUpdate = isless(currentScore, minCost * (float8)0.99f);
+        needUpdate = needUpdate;
         bestD = select(bestD, (intN)d - xDelta, needUpdate);
         minCost = fmin(minCost, currentScore);
-
-        for (int i = 0, k = scoreOffset; i < scoreSize; i++, k++) {
-            bestScore[i] = select(bestScore[i], score[k % scoreSize], needUpdate);
-        }
     }
 
-    floatN mass = 0;
-    floatN sumX = 0;
-
-    floatN max = -1e12;
-
-    for (int i = 0; i < scoreSize; i++) {
-        max = fmax(max, bestScore[i]);
-    }
-
-    float f = 1;
-
-    for (int i = 0; i < scoreSize; ++i) {
-        floatN m = max - bestScore[i];
-        mass += m;
-        sumX += (floatN)i * m;
-    }
-
-    floatN massSafe = select(mass, (floatN)1, isequal(mass, (floatN) 0));
-    floatN sumXSafe = select(sumX, (floatN)0, isequal(mass, (floatN) 0));
-    disparity = convert_floatN(bestD) + sumXSafe / massSafe;
-
-    floatN totalMass = scoreExpectation;
-    floatN peakMass = (floatN)0;
-
-    for (int i = 0; i < scoreSize; ++i) {
-        peakMass += bestScore[i];
-    }
+    disparity = convert_floatN(bestD);
 
     scoreExpectation /= disparityRange;
     scoreVariance /= disparityRange;
