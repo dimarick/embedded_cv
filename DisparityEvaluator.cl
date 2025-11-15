@@ -234,27 +234,44 @@ floatN getDisparity(
 
         scores[0] = score16;
 
+        char16 c1[VECTOR_SIZE];
+        char16 c2[VECTOR_SIZE];
+        __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
         for (int xi = 1; xi < VECTOR_SIZE; xi++) {
-            float scoreN = 0;
-            for (int yi = 0; yi < h; yi++) {
-                char3 c = vload3((xi + 4 - 1 + xDeltaArray[xi]) * h + yi, &src[0]) - vload3((xi + 4 - 1 + d) * h + yi, &dest[0]);
-                float3 cf = convert_float3(c);
-                cf *= cf;
-                EACH3(scoreN += cf)
-            }
-
-            scores[xi] = scores[xi - 1] + scoreN - score0[(xi - 1)];
-            score0[(xi + 4 - 1)] = scoreN;
+            c1[xi] = (char16) (
+                vload3((xi + 4 - 1 + xDeltaArray[xi]) * h + 1, src),
+                vload3((xi + 4 - 1 + xDeltaArray[xi]) * h + 2, src),
+                vload3((xi + 4 - 1 + xDeltaArray[xi]) * h + 3, src),
+                vload3((xi + 4 - 1 + xDeltaArray[xi]) * h + 4, src),
+                0, 0, 0, 0
+            );
+            c2[xi] = (char16) (
+                vload3((xi + 4 - 1 + d) * h + 1, dest),
+                vload3((xi + 4 - 1 + d) * h + 2, dest),
+                vload3((xi + 4 - 1 + d) * h + 3, dest),
+                vload3((xi + 4 - 1 + d) * h + 4, dest),
+                0, 0, 0, 0
+            );
         }
 
-        floatN vScores = vloadN(0, scores);
-        floatN newScore = vScores / (float)windowSize0;
+        __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
+        for (int xi = 1; xi < VECTOR_SIZE; xi++) {
+            float scoreN = 0;
+            float16 cf = convert_float16(c1[xi] - c2[xi]);
+            cf *= cf;
+            EACH12(scoreN += cf)
+
+            scores[xi] = scores[xi - 1] + scoreN - score0[(xi - 1) % VECTOR_SIZE];
+            score0[(xi + 4 - 1) % VECTOR_SIZE] = scoreN;
+        }
+
+        floatN newScore = vloadN(0, scores) / (float)windowSize0;
         floatN currentScore = newScore;
 
         scoreExpectation += newScore;
         scoreVariance += newScore * newScore;
 
-        intN needUpdate = isless(currentScore, minCost * (float8)0.99f);
+        intN needUpdate = isless(currentScore, minCost);
         needUpdate = needUpdate;
         bestD = select(bestD, (intN)d - xDelta, needUpdate);
         minCost = fmin(minCost, currentScore);
@@ -267,7 +284,7 @@ floatN getDisparity(
     scoreVariance -= scoreExpectation * scoreExpectation;
     scoreVariance = sqrt(fabs(scoreVariance));
 
-    *resultVariance = fabs(minCost / scoreExpectation);
+    *resultVariance = scoreVariance;
 
     if (debug) printf("%d %d (%f,%f,%f,%f, %f,%f,%f,%f)\n", minDisparity, x, scoreExpectation.s0, scoreExpectation.s1, scoreExpectation.s2, scoreExpectation.s3, scoreExpectation.s4, scoreExpectation.s5, scoreExpectation.s6, scoreExpectation.s7);
 
