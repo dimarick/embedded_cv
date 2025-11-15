@@ -183,13 +183,13 @@ floatN getDisparity(
     CHECK_LOCAL_BOUNDARY(dest, data2, dataSize);
     CHECK_LOCAL_BOUNDARY(&dest[minDisparity], data2, dataSize);
 
-    const int minCostSize = 1;
-    const int scoreSize = max(1, min(minCostSize, disparityRange / 6));
-    floatN score[minCostSize];
-    floatN bestScore[minCostSize];
+    const int maxScoreSize = 2;
+    const int scoreSize = max(1, min(maxScoreSize, disparityRange / 6));
+    floatN score[maxScoreSize];
+    floatN bestScore[maxScoreSize];
 
-    CHECK_BOUNDARY(&bestScore[scoreSize-1], bestScore, minCostSize * sizeof *bestScore);
-    CHECK_BOUNDARY(&score[scoreSize-1], score, minCostSize * sizeof *score);
+    CHECK_BOUNDARY(&bestScore[scoreSize-1], bestScore, maxScoreSize * sizeof *bestScore);
+    CHECK_BOUNDARY(&score[scoreSize-1], score, maxScoreSize * sizeof *score);
     for (int i = 0; i < scoreSize; ++i) {
         bestScore[i] = (floatN)0;
         score[i] = (floatN)0;
@@ -213,16 +213,12 @@ floatN getDisparity(
         // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
         // в score0 поместим стоимость первой колонки пикселей для x
 #if VECTOR_SIZE == 1
-        float score0[4];
         const int xDeltaS0 = xDelta;
-#elif VECTOR_SIZE == 2
-        float score0[4];
-        const int xDeltaS0 = xDelta.s0;
 #else
-        float score0[VECTOR_SIZE];
         const int xDeltaS0 = xDelta.s0;
 #endif
 
+        float score0[VECTOR_SIZE + 4];
         float scores[VECTOR_SIZE];
         vstoreN((floatN) 0, 0, scores);
         // в score0 поместим стоимость всего тайла от 0 до N-1 = scoreX0 = score0 + score1 + .. + scoreN
@@ -252,19 +248,15 @@ floatN getDisparity(
 
         for (int xi = 1; xi < VECTOR_SIZE; xi++) {
             float scoreN = 0;
-            char3 c[16 / 3 + 1];
-            float16 cf = (float16) 0;
-
             for (int yi = 0; yi < h; yi++) {
-                c[yi] = vload3((xi + 4 + xDeltaArray[xi]) * h + yi, &src[0]) - vload3((xi + 4 + d) * h + yi, &dest[0]);
+                char3 c = vload3((xi + 4 - 1 + xDeltaArray[xi]) * h + yi, &src[0]) - vload3((xi + 4 - 1 + d) * h + yi, &dest[0]);
+                float3 cf = convert_float3(c);
+                cf *= cf;
+                EACH3(scoreN += cf)
             }
-            const char16 c16 = vload16(0, (const char *) c);
-            cf = convert_float16(c16);
-            cf *= cf;
-            EACH12(scoreN += cf)
 
-            scores[xi] = scores[xi - 1] + scoreN - score0[(xi - 1) % VECTOR_SIZE];
-            score0[(xi + 4 - 1) % VECTOR_SIZE] = scoreN;
+            scores[xi] = scores[xi - 1] + scoreN - score0[(xi - 1)];
+            score0[(xi + 4 - 1)] = scoreN;
         }
 
         floatN vScores = vloadN(0, scores);
@@ -279,20 +271,17 @@ floatN getDisparity(
         currentScoreSize = min(currentScoreSize + 1, scoreSize);
         floatN currentScore = scoreSum / (floatN)currentScoreSize;
 
-        scoreExpectation += currentScore;
-        scoreVariance += currentScore * currentScore;
+        scoreExpectation += newScore;
+        scoreVariance += newScore * newScore;
 
         intN needUpdate = isless(currentScore, minCost);
-        needUpdate = needUpdate && currentScoreSize >= scoreSize;
+        needUpdate = needUpdate;// && currentScoreSize >= scoreSize;
         bestD = select(bestD, (intN)d - xDelta, needUpdate);
         minCost = fmin(minCost, currentScore);
 
         for (int i = 0, k = scoreOffset; i < scoreSize; i++, k++) {
             bestScore[i] = select(bestScore[i], score[k % scoreSize], needUpdate);
         }
-
-//        if (debug) printf("%d %d %d %d (%d, %d, %d, %d) (%d, %d, %d, %d)\n", scoreOffset, d, minDisparity, x, xDelta.s0, xDelta.s1, xDelta.s2, xDelta.s3, needUpdate.s0, needUpdate.s1, needUpdate.s2, needUpdate.s3);
-
     }
 
     floatN mass = 0;
@@ -313,10 +302,8 @@ floatN getDisparity(
     }
 
     floatN massSafe = select(mass, (floatN)1, isequal(mass, (floatN) 0));
-    floatN sumXSafe = select(sumX, convert_floatN(scoreSize), isequal(mass, (floatN) 0));
+    floatN sumXSafe = select(sumX, (floatN)0, isequal(mass, (floatN) 0));
     disparity = convert_floatN(bestD) + sumXSafe / massSafe;
-
-    if (debug) printf("%d %d (%f,%f,%f,%f, %f,%f,%f,%f) %f %f\n", minDisparity, x, disparity.s0, disparity.s1, disparity.s2, disparity.s3, disparity.s4, disparity.s5, disparity.s6, disparity.s7, bestScore[0].s0, score[0].s0);
 
     floatN totalMass = scoreExpectation;
     floatN peakMass = (floatN)0;
@@ -331,6 +318,8 @@ floatN getDisparity(
     scoreVariance = sqrt(fabs(scoreVariance));
 
     *resultVariance = fabs(minCost / scoreExpectation);
+
+    if (debug) printf("%d %d (%f,%f,%f,%f, %f,%f,%f,%f)\n", minDisparity, x, scoreExpectation.s0, scoreExpectation.s1, scoreExpectation.s2, scoreExpectation.s3, scoreExpectation.s4, scoreExpectation.s5, scoreExpectation.s6, scoreExpectation.s7);
 
     return fmax(minDisparity, fmin(disparity, maxDisparity));
 }
@@ -386,9 +375,10 @@ __kernel void DisparityEvaluator(
         barrier(CLK_LOCAL_MEM_FENCE);
 
         for (int x = x0; x < min(xLimit, w - MIN_VALID_DISPARITY - windowSize0); x += VECTOR_SIZE) {
-            floatN resultVariance;
+            floatN resultVariance0;
+            floatN resultVariance1;
             const int maxDisparity = max(0, min(256, (int) (w - ((x + 1) + windowSize0 + 1))));
-            const floatN d0 = getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight, (intN)0, 0, maxDisparity, windowSize0, nsz, &resultVariance, x0==960 && y0 == 540 BC_PASS);
+            const floatN d0 = getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight, (intN)0, 0, maxDisparity, windowSize0, nsz, &resultVariance0, x==960 && y0 == 540 BC_PASS);
             const intN id0 = convert_intN(floor(d0));
 
             const int minDisparity = max(-x, -256);
@@ -400,12 +390,12 @@ __kernel void DisparityEvaluator(
 #endif
             const floatN xd0 = w - (x + id0s0) < windowSize0 + 1
                     ? d0
-                    : -getDisparity(pFrame0, pFrame1, x + id0s0, 0, w, fragmentHeight, id0 - (intN)id0s0, minDisparity, maxDisparityX, windowSize0, nsz, &resultVariance, x0==320 && y0 == 640 BC_PASS);
+                    : -getDisparity(pFrame0, pFrame1, x + id0s0, 0, w, fragmentHeight, id0 - (intN)id0s0, minDisparity, maxDisparityX, windowSize0, nsz, &resultVariance1, false BC_PASS);
             const floatN xd = xd0 * (float) DISPARITY_PRECISION;
             const shortN sxd = convert_shortN(rint(xd));
             const shortN sd = convert_shortN(rint(d0 * (float) DISPARITY_PRECISION));
 
-            vstoreN(resultVariance, 0, &variance[y * w + x]);
+            vstoreN(resultVariance1, 0, &variance[y * w + x]);
             vstoreN(sxd, 0, &disparity[y * w + x]);
             disparity[y * w + x] = disparity[y * w + x + 1];
         }
