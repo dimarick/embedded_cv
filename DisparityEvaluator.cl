@@ -195,6 +195,7 @@ floatN getDisparity(
 
     floatN scoreVariance = (floatN)0;
     floatN scoreExpectation = (floatN)0;
+    int windowSize = (windowSize0 / 4) * 4;
 
     for (int d = minDisparity; d <= maxDisparity; d++) {
         // предположим что окно соответствия равно 4*4, а maxDisparity-minDisparity кратно 16
@@ -208,48 +209,54 @@ floatN getDisparity(
 
         float score0[VECTOR_SIZE + 4];
         float scores[VECTOR_SIZE];
+        score0[0x0] = 0;
+        score0[0x1] = 0;
+        score0[0x2] = 0;
+        score0[0x3] = 0;
         vstoreN((floatN) 0, 0, scores);
         // в score0 поместим стоимость всего тайла от 0 до N-1 = scoreX0 = score0 + score1 + .. + scoreN
         float score16 = 0;
         // тогда score x1 scoreX1 = score1 + .. + scoreN+1 = score - score0 + scoreN+1
 
-        const char16 d0 = vload16(0, &src[xDeltaS0 * h * sz]) - vload16(0, &dest[d * h * sz + xDeltaS0 * h * sz]);
-        const char16 d1 = vload16(1, &src[xDeltaS0 * h * sz]) - vload16(1, &dest[d * h * sz + xDeltaS0 * h * sz]);
-        const char16 d2 = vload16(2, &src[xDeltaS0 * h * sz]) - vload16(2, &dest[d * h * sz + xDeltaS0 * h * sz]);
-        float16 df0 = convert_float16(d0);
-        float16 df1 = convert_float16(d1);
-        float16 df2 = convert_float16(d2);
-        df0 *= df0;
-        df1 *= df1;
-        df2 *= df2;
+        for (int i = 0; i < windowSize / 4; ++i) {
+            const char16 ds0 = vload16(i + 0, &src[xDeltaS0 * h * sz]);
+            const char16 ds1 = vload16(i + 1, &src[xDeltaS0 * h * sz]);
+            const char16 ds2 = vload16(i + 2, &src[xDeltaS0 * h * sz]);
+            const char16 dd0 = vload16(i + 0, &dest[d * h * sz + xDeltaS0 * h * sz]);
+            const char16 dd1 = vload16(i + 1, &dest[d * h * sz + xDeltaS0 * h * sz]);
+            const char16 dd2 = vload16(i + 2, &dest[d * h * sz + xDeltaS0 * h * sz]);
+            float16 df0 = convert_float16(ds0 - dd0);
+            float16 df1 = convert_float16(ds1 - dd1);
+            float16 df2 = convert_float16(ds2 - dd2);
+            df0 *= df0;
+            df1 *= df1;
+            df2 *= df2;
 
-        score0[0x0] = df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6 + df0.s7 + df0.s8 + df0.s9 + df0.sA + df0.sB;
-        score0[0x1] = df0.sC + df0.sD + df0.sE + df0.sF + df1.s0 + df1.s1 + df1.s2 + df1.s3 + df1.s4 + df1.s5 + df1.s6 + df1.s7;
-        score0[0x2] = df1.s8 + df1.s9 + df1.sA + df1.sB + df1.sC + df1.sD + df1.sE + df1.sF + df2.s0 + df2.s1 + df2.s2 + df2.s3;
-        score0[0x3] = df2.s4 + df2.s5 + df2.s6 + df2.s7 + df2.s8 + df2.s9 + df2.sA + df2.sB + df2.sC + df2.sD + df2.sE + df2.sF;
-
-        EACH16(score16 += df0)
-        EACH16(score16 += df1)
-        EACH16(score16 += df2)
+            score0[0x0] += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6 + df0.s7 + df0.s8 + df0.s9 + df0.sA + df0.sB;
+            score0[0x1] += df0.sC + df0.sD + df0.sE + df0.sF + df1.s0 + df1.s1 + df1.s2 + df1.s3 + df1.s4 + df1.s5 + df1.s6 + df1.s7;
+            score0[0x2] += df1.s8 + df1.s9 + df1.sA + df1.sB + df1.sC + df1.sD + df1.sE + df1.sF + df2.s0 + df2.s1 + df2.s2 + df2.s3;
+            score0[0x3] += df2.s4 + df2.s5 + df2.s6 + df2.s7 + df2.s8 + df2.s9 + df2.sA + df2.sB + df2.sC + df2.sD + df2.sE + df2.sF;
+            float16 df = df0 + df1 + df2;
+            EACH16(score16 += df);
+        }
 
         scores[0] = score16;
 
         char16 c1[VECTOR_SIZE];
         char16 c2[VECTOR_SIZE];
-        __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
         for (int xi = 1; xi < VECTOR_SIZE; xi++) {
             c1[xi] = (char16) (
-                vload3((xi + 4 - 1 + xDeltaArray[xi]) * h + 1, src),
-                vload3((xi + 4 - 1 + xDeltaArray[xi]) * h + 2, src),
-                vload3((xi + 4 - 1 + xDeltaArray[xi]) * h + 3, src),
-                vload3((xi + 4 - 1 + xDeltaArray[xi]) * h + 4, src),
+                vload3((xi + windowSize - 1 + xDeltaArray[xi]) * h + 1, src),
+                vload3((xi + windowSize - 1 + xDeltaArray[xi]) * h + 2, src),
+                vload3((xi + windowSize - 1 + xDeltaArray[xi]) * h + 3, src),
+                vload3((xi + windowSize - 1 + xDeltaArray[xi]) * h + 4, src),
                 0, 0, 0, 0
             );
             c2[xi] = (char16) (
-                vload3((xi + 4 - 1 + d) * h + 1, dest),
-                vload3((xi + 4 - 1 + d) * h + 2, dest),
-                vload3((xi + 4 - 1 + d) * h + 3, dest),
-                vload3((xi + 4 - 1 + d) * h + 4, dest),
+                vload3((xi + windowSize - 1 + d) * h + 1, dest),
+                vload3((xi + windowSize - 1 + d) * h + 2, dest),
+                vload3((xi + windowSize - 1 + d) * h + 3, dest),
+                vload3((xi + windowSize - 1 + d) * h + 4, dest),
                 0, 0, 0, 0
             );
         }

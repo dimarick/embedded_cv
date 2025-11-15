@@ -782,7 +782,7 @@ int main(int argc, const char **argv) {
 
         double time = ((double) (end - start).count()) / 1e6;
         double time2 = ((double) (endDisp - startDisp).count()) / 1e6;
-        double avgA = 2. / ((i < 50 ? 10 : 100) + 1);
+        double avgA = 2. / ((i < 50 ? 5 : 50) + 1);
         avgTime = avgTime == 0. ? time : avgA * time + (1 - avgA) * avgTime;
         avgTime2 = avgTime2 == 0. ? time2 : avgA * time2 + (1 - avgA) * avgTime2;
         avgFps = avgFps == 0. ? fps : avgA * fps + (1 - avgA) * avgFps;
