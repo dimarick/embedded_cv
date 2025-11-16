@@ -230,10 +230,7 @@ floatN getDisparity(
             EACH16(score16 += df);
         }
 
-        scores[0] = score0[0x0] +
-                    score0[0x1] +
-                    score0[0x2] +
-                    score0[0x3];
+        scores[0] = score16;
 
         float16 c1[VECTOR_SIZE];
         __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
