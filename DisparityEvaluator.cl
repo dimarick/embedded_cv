@@ -153,8 +153,8 @@ for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim;
 #endif
 
 floatN getDisparity(
-        __local char *data1,
-        __local char *data2,
+        __local uchar *data1,
+        __local uchar *data2,
         int x,
         int y,
         int w,
@@ -168,8 +168,8 @@ floatN getDisparity(
         bool debug
         BC_ARG
 ) {
-    __local const char *src = data1 + y * sz + x * h * sz;
-    __local const char *dest = data2 + y * sz + x * h * sz;
+    __local const uchar *src = data1 + y * sz + x * h * sz;
+    __local const uchar *dest = data2 + y * sz + x * h * sz;
 
     size_t dataSize = w * sz * h;
 
@@ -187,9 +187,6 @@ floatN getDisparity(
 
     floatN scoreSum = (floatN)0;
     int currentScoreSize = 1;
-
-    int xDeltaArray[VECTOR_SIZE];
-    vstoreN(xDelta, 0, xDeltaArray);
 
     floatN minCost = (floatN)1e12;
 
@@ -214,10 +211,10 @@ floatN getDisparity(
         // тогда score x1 scoreX1 = score1 + .. + scoreN+1 = score - score0 + scoreN+1
 
         __attribute__((opencl_unroll_hint(2)))
-        for (int i = 0; i < windowSize / 4; ++i) {
-            float16 df0 = convert_float16(vload16(i + 0, src) - vload16(i + 0, &dest[d * h * sz]));
-            float16 df1 = convert_float16(vload16(i + 1, src) - vload16(i + 1, &dest[d * h * sz]));
-            float16 df2 = convert_float16(vload16(i + 2, src) - vload16(i + 2, &dest[d * h * sz]));
+        for (int i = 0; i < 1; ++i) {
+            float16 df0 = convert_float16(vload16(i + 0, src)) - convert_float16(vload16(i + 0, &dest[d * h * sz]));
+            float16 df1 = convert_float16(vload16(i + 1, src)) - convert_float16(vload16(i + 1, &dest[d * h * sz]));
+            float16 df2 = convert_float16(vload16(i + 2, src)) - convert_float16(vload16(i + 2, &dest[d * h * sz]));
             df0 *= df0;
             df1 *= df1;
             df2 *= df2;
@@ -235,33 +232,23 @@ floatN getDisparity(
         float16 c1[VECTOR_SIZE];
         __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
         for (int xi = 1; xi < VECTOR_SIZE; xi++) {
-            c1[xi] = (float16) (
-                convert_float3(vload3((xi + windowSize - 1 + xDeltaArray[xi]) * h + 1, src)),
-                convert_float3(vload3((xi + windowSize - 1 + xDeltaArray[xi]) * h + 2, src)),
-                convert_float3(vload3((xi + windowSize - 1 + xDeltaArray[xi]) * h + 3, src)),
-                convert_float3(vload3((xi + windowSize - 1 + xDeltaArray[xi]) * h + 4, src)),
-                0, 0, 0, 0
-            );
+            FATAL_LOCAL_BOUNDARY(&src[(xi + windowSize - 1 + xDelta[xi])*12], data1, dataSize, (floatN)0);
+            c1[xi] = convert_float16(vload16(0, &src[(xi + windowSize - 1 + xDelta[xi])*12]));
         }
         __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
         for (int xi = 1; xi < VECTOR_SIZE; xi++) {
-            c1[xi] -= (float16) (
-                convert_float3(vload3((xi + windowSize - 1 + d) * h + 1, dest)),
-                convert_float3(vload3((xi + windowSize - 1 + d) * h + 2, dest)),
-                convert_float3(vload3((xi + windowSize - 1 + d) * h + 3, dest)),
-                convert_float3(vload3((xi + windowSize - 1 + d) * h + 4, dest)),
-                0, 0, 0, 0
-            );
+            c1[xi] -= (float16) convert_float16(vload16(0, &dest[(xi + windowSize - 1 + d)*12]));
         }
 
         __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
         for (int xi = 1; xi < VECTOR_SIZE; xi++) {
             float scoreN = 0;
-            c1[xi] *= c1[xi];
-            EACH12(scoreN += c1[xi])
+            float16 cf = c1[xi];
+            cf *= cf;
+            EACH12(scoreN += cf)
 
-            scores[xi] = scores[xi - 1] + scoreN - score0[(xi - 1) % VECTOR_SIZE];
-            score0[(xi + 4 - 1) % VECTOR_SIZE] = scoreN;
+            scores[xi] = scores[xi - 1] + scoreN - score0[(xi - 1)];
+            score0[(xi + 4 - 1)] = scoreN;
         }
 
         floatN newScore = vloadN(0, scores) / (float)windowSize0;
@@ -284,14 +271,12 @@ floatN getDisparity(
 
     *resultVariance = scoreVariance;
 
-    if (debug) printf("%d %d (%f,%f,%f,%f, %f,%f,%f,%f)\n", minDisparity, x, scoreExpectation.s0, scoreExpectation.s1, scoreExpectation.s2, scoreExpectation.s3, scoreExpectation.s4, scoreExpectation.s5, scoreExpectation.s6, scoreExpectation.s7);
-
     return fmax(minDisparity, fmin(disparity, maxDisparity));
 }
 
 __kernel void DisparityEvaluator(
-        __global char* frame0,
-        __global char* frame1,
+        __global uchar* frame0,
+        __global uchar* frame1,
         __global float* roughDisparity,
         __global short* disparity,
         __global float* variance,
@@ -313,19 +298,14 @@ __kernel void DisparityEvaluator(
 
     int windowSize0 = 4;
 
-    __local long upFrame0[maxLocalBuffer / sizeof (long) + 1];
-    __local long upFrame1[maxLocalBuffer / sizeof (long) + 1];
+    __local uchar pFrame0[maxLocalBuffer] __attribute__ ((aligned (128)));
+    __local uchar pFrame1[maxLocalBuffer] __attribute__ ((aligned (128)));
 
-    __local char *pFrame0 = (__local char *)upFrame0;
-    __local char *pFrame1 = (__local char *)upFrame1;
-
-    int xLimit = min(x0 + H_GRANULE_SIZE, w - 1);
-    int yLimit = min(y0 + V_GRANULE_SIZE, h - 1);
+    int xLimit = min(x0 + H_GRANULE_SIZE, w - 16*3);
+    int yLimit = min(y0 + V_GRANULE_SIZE, h - 16*3);
 
     int fragmentHeight = min(maxFragmentHeight, windowHeight);
     fragmentHeight = min(fragmentHeight, h - 1 - y0);
-
-    bool debug = true;
 
     for (int y = y0; y < yLimit; ++y) {
         for (int i = 0; i < fragmentHeight; ++i) {
@@ -342,18 +322,26 @@ __kernel void DisparityEvaluator(
         for (int x = x0; x < min(xLimit, w - MIN_VALID_DISPARITY - windowSize0); x += VECTOR_SIZE) {
             floatN resultVariance0;
             floatN resultVariance1;
-            const int maxDisparity = max(0, min(256, (int) (w - ((x + 1) + windowSize0 + 1))));
-            const floatN d0 = getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight, (intN)0, 0, maxDisparity, windowSize0, nsz, &resultVariance0, x==960 && y0 == 540 BC_PASS);
+            const int maxDisparity = max(0, min(256, (int) (w - ((x + 16*3) + windowSize0 + 1))));
+            const floatN d0 = getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight, (intN)0, 0, maxDisparity, windowSize0, nsz, &resultVariance0, (x==960||x==968) && y0 == 540 BC_PASS);
             const intN id0 = convert_intN(floor(d0));
 
-            const int minDisparity = max(-x, -256);
-            const int maxDisparityX = 0;
 #if VECTOR_SIZE == 1
             const int id0s0 = id0;
+            const int id0max = id0;
+            const int id0min = id0;
 #else
             const int id0s0 = id0.s0;
+            int id0max = 0;
+            int id0min = 0;
+            for (int i = 0; i < VECTOR_SIZE; ++i) {
+                id0max = max(id0[i] - id0s0, id0max);
+                id0min = min(id0[i] - id0s0, id0min);
+            }
 #endif
-            const floatN xd0 = w - (x + id0s0) < windowSize0 + 1
+            const int minDisparity = max(-(x+id0min), -256);
+            const int maxDisparityX = 0;
+            const floatN xd0 = w - (x + id0max + 16*3) < windowSize0 + 5
                     ? d0
                     : -getDisparity(pFrame0, pFrame1, x + id0s0, 0, w, fragmentHeight, id0 - (intN)id0s0, minDisparity, maxDisparityX, windowSize0, nsz, &resultVariance1, false BC_PASS);
             const floatN xd = xd0 * (float) DISPARITY_PRECISION;
@@ -362,7 +350,6 @@ __kernel void DisparityEvaluator(
 
             vstoreN(resultVariance1, 0, &variance[y * w + x]);
             vstoreN(sxd, 0, &disparity[y * w + x]);
-            disparity[y * w + x] = disparity[y * w + x + 1];
         }
     }
 

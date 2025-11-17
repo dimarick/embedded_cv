@@ -82,11 +82,11 @@ VECTOR_CONVERT(T, float) \
 VECTOR_CONVERT(T, double)
 
 #define VECTOR_TYPE(T) \
-struct T ## 2 { FIELD2(T) }; \
-struct T ## 3 { FIELD3(T) }; \
-struct T ## 4 { FIELD4(T) }; \
-struct T ## 8 { FIELD8(T) }; \
-struct T ## 16 { FIELD16(T) }; \
+struct T ## 2 { FIELD2(T); T &operator[](size_t); }; \
+struct T ## 3 { FIELD3(T); T &operator[](size_t); }; \
+struct T ## 4 { FIELD4(T); T &operator[](size_t); }; \
+struct T ## 8 { FIELD8(T); T &operator[](size_t); }; \
+struct T ## 16 { FIELD16(T); T &operator[](size_t); }; \
 VECTOR_2FN(T, operator==) \
 VECTOR_2FN(T, operator>) \
 VECTOR_2FN(T, operator<) \
