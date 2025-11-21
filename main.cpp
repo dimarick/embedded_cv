@@ -707,18 +707,20 @@ int main(int argc, const char **argv) {
             cv::drawMarker(frames[1], cv::Point2i((int) plainMap2->x, (int) plainMap2->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_CROSS, 30, 2);
             cv::drawMarker(result[1], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
 
-            cv::Mat disparity;
-            cv::Mat variance;
             cv::Mat varianceFp;
             cv::Mat disparityFp;
             cv::Mat disparity8;
             cv::Mat variance8;
+#endif
+            cv::Mat disparity;
+            cv::Mat variance;
             disparity.setTo(0);
             variance.setTo(0);
             startDisp = std::chrono::high_resolution_clock::now();
             disparityEvaluator.evaluateDisparity(result, disparity, variance);
             endDisp = std::chrono::high_resolution_clock::now();
 
+#ifdef HAVE_OPENCV_HIGHGUI
             disparity.copyTo(disparityFp);
             variance.copyTo(varianceFp);
             if (minVal == 0 || maxVal == 0) {

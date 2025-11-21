@@ -49,13 +49,13 @@ namespace ecv {
             this->evaluateIncrementally(piramids[i - 1], roughDisparity[i], roughDisparity[i - 1]);
         }
 
-        try {
-            this->evaluateIncrementallyOcl(frames, roughDisparity[0], disparity, variance);
-        } catch (const cl::Error &e) {
-            std::cerr << "OpenCL API exception " << e.err() << " (" << openclErrorString(e.err()) << "), what " << e.what() << std::endl;
-
-            throw e;
-        }
+        this->evaluateIncrementallyOcl(frames, roughDisparity[0], disparity, variance);
+//        try {
+//        } catch (const cl::Error &e) {
+//            std::cerr << "OpenCL API exception " << e.err() << " (" << openclErrorString(e.err()) << "), what " << e.what() << std::endl;
+//
+//            throw e;
+//        }
 //        this->evaluateIncrementally(frames, roughDisparity[0], disparity);
     }
 
@@ -108,6 +108,8 @@ namespace ecv {
         std::vector<cl::Event> events;
         events.reserve(frames.size() + 1);
 
+        auto startDisp = std::chrono::high_resolution_clock::now();
+        std::cout << "Starting processing queue " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
         for (int i = 0; i < frames.size(); ++i) {
             gFrames[i] = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, frames[i].dataend - frames[i].datastart);
             auto &event = events.emplace_back();
@@ -125,7 +127,10 @@ namespace ecv {
         auto _q = (float)this->q;
         cl::Buffer gQ(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, sizeof _q);
 
+        std::cout << "Buffers enqueued " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
         queue.finish();
+
+        std::cout << "Buffers written " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
         auto a = 0;
         this->kernel.setArg(a++, gFrames[0]);
@@ -142,15 +147,25 @@ namespace ecv {
         this->kernel.setArg(a++, sz);
         this->kernel.setArg(a++, DISPARITY_PRECISION);
 
+        std::cout << "Kernel args " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+
 //        std::vector<cl::Event> kEvent = {cl::Event()};
         queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 8, h / 2), cl::NDRange(w / 8, 1));
 //        queue.enqueueNDRangeKernel(this->kernel, cl::NullRange, cl::NDRange(frames[0].rows, frames[0].cols), cl::NDRange(frames[0].rows, 1));
 
+        std::cout << "Kernel enqueued " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+
         queue.finish();
+
+        std::cout << "Kernel done " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+
         queue.enqueueReadBuffer(gDisparity, CL_FALSE, 0, disparity.dataend - disparity.datastart, (void *)disparity.datastart);
         queue.enqueueReadBuffer(gVariance, CL_FALSE, 0, variance.dataend - variance.datastart, (void *)variance.datastart);
         queue.enqueueReadBuffer(gQ, CL_FALSE, 0, sizeof(_q), (void *)&_q);
         queue.finish();
+
+        std::cout << "Memory read done " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+
         this->q = _q;
     }
 
@@ -329,25 +344,39 @@ namespace ecv {
         std::vector<cl::Platform> platforms;
         cl::Platform::get(&platforms);
 
-        if (platforms.empty()){
-            throw std::runtime_error("No platforms found!");
+        bool deviceFound = false;
+
+        for (const auto & platform : platforms) {
+            std::cout << "Found platform " << platform.getInfo<CL_PLATFORM_NAME>() << " vendor " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
+
+            std::vector<cl::Device> devices;
+            platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
+
+            if (platforms.empty()){
+                throw std::runtime_error("No platforms found!");
+            }
+
+            for (const auto & dev : devices) {
+                unsigned int status = dev.getInfo<CL_DEVICE_AVAILABLE>();
+                std::cout << "\tFound device " << dev.getInfo<CL_DEVICE_NAME>() << " status " << status << std::endl;
+
+                if (status == 1) {
+                    this->device = dev;
+                    deviceFound = true;
+                    break;
+                }
+            }
         }
 
-        auto platform = platforms.front();
-        std::vector<cl::Device> devices;
-        platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
-
-        if (devices.empty()) {
+        if (!deviceFound) {
             throw std::runtime_error("No devices found!");
         }
-
-        this->device = devices.front();
 
         std::ifstream kernelFile("DisparityEvaluator.cl");
         std::string src(std::istreambuf_iterator<char>(kernelFile), (std::istreambuf_iterator<char>()));
 
         cl_int err = 0;
-        this->context = cl::Context(this->device, nullptr, nullptr, &err);
+        this->context = cl::Context(this->device, nullptr, nullptr, nullptr, &err);
 
         if (err != CL_SUCCESS) {
             std::cerr << "Create context failed " << err << std::endl;
