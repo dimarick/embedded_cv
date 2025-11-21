@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(embedded_cv)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 if(NOT DEFINED ARCH)
     set(ARCH "amd64")
     message("Set default arch to ${ARCH}")
@@ -12,6 +15,7 @@ endif()
 find_package(OpenCL REQUIRED)
 if(OpenCL_FOUND)
     include_directories(${OpenCL_INCLUDE_DIRS})
+    message(STATUS "    libraries: ${OpenCL_LIBRARIES}")
 else(OpenCL_FOUND)
     message(">> OpenCL not found. OpenCL is required for GPGPU/FPGA/Accelerator use.")
 endif(OpenCL_FOUND)
@@ -24,13 +28,12 @@ include_directories("release/${ARCH}/Debug/OpenCV/include/opencv5/opencv2")
 # only for ide analizer
 add_definitions(-include /home/dima/embedded_cv/release/${ARCH}/Debug/OpenCV/include/opencv5/opencv2/cvconfig.h)
 add_definitions(-DCL_TARGET_OPENCL_VERSION=220)
-add_definitions(-DBASE_DIR="lib/PRiMEStereoMatch/")
 
 set(CMAKE_CXX_STANDARD 23)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")
 find_package(OpenCV 5.0.0 REQUIRED)
 
-set(OPT_FLAGS "-O0 -ffast-math -ftree-vectorize -fopt-info-vec-missed=vec.miss.txt -ftree-vectorizer-verbose=5 -mtune=native -mno-avx512f")
+set(OPT_FLAGS "-O0 -ffast-math -ftree-vectorize -pthread")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OPT_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OPT_FLAGS}")
@@ -59,7 +62,7 @@ include(FetchContent)
 FetchContent_Declare(
         cpptrace
         GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
-        GIT_TAG        v1.0.4 # <HASH or TAG>
+        GIT_TAG        v1.0.4
 )
 FetchContent_MakeAvailable(cpptrace)
 
@@ -81,6 +84,6 @@ add_executable(embedded_cv
         DisparityEvaluator.h
 )
 
-target_link_libraries(embedded_cv PRIVATE cpptrace::cpptrace ${OpenCV_LIBS} ${OpenCL_LIBRARIES} mini_server Eigen3::Eigen)
+target_link_libraries(embedded_cv PRIVATE OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS} mini_server Eigen3::Eigen)
 
 install(TARGETS embedded_cv DESTINATION bin)

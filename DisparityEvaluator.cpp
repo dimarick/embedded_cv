@@ -4,11 +4,11 @@
 #include <cpptrace/basic.hpp>
 #include "DisparityEvaluator.h"
 namespace ecv {
-    const unsigned char kernelSources[] =
-            {
-#embed "DisparityEvaluator.cl"
-            , 0
-            };
+//    const unsigned char kernelSources[] =
+//            {
+//#embed "DisparityEvaluator.cl"
+//            , 0
+//            };
 
     void DisparityEvaluator::evaluateDisparity(const std::vector<cv::Mat> &frames, cv::Mat &disparity, cv::Mat &variance) {
         for (int i = 1; i < frames.size(); i++) {
@@ -343,7 +343,8 @@ namespace ecv {
 
         this->device = devices.front();
 
-        std::string src(reinterpret_cast<const char *>(kernelSources));
+        std::ifstream kernelFile("DisparityEvaluator.cl");
+        std::string src(std::istreambuf_iterator<char>(kernelFile), (std::istreambuf_iterator<char>()));
 
         cl_int err = 0;
         this->context = cl::Context(this->device, nullptr, nullptr, &err);

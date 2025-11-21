@@ -395,9 +395,9 @@ int main(int argc, const char **argv) {
 
     std::vector objectPoints(frames.size(), std::vector<std::vector<Point3f>>(3));
     std::vector imagePoints(frames.size(), std::vector<std::vector<Point2f>>(3));
-
-    namedWindow("Disparity", WINDOW_AUTOSIZE);
-    namedWindow("src " + std::to_string(0), WINDOW_AUTOSIZE);
+#ifdef HAVE_OPENCV_HIGHGUI
+    cv::namedWindow("Disparity", cv::WINDOW_AUTOSIZE);
+    cv::namedWindow("src " + std::to_string(0), cv::WINDOW_AUTOSIZE);
 
     auto mouseDisp = cv::Point2i();
     auto mouseSrc = cv::Point2i();
@@ -409,7 +409,7 @@ int main(int argc, const char **argv) {
     };
     cv::setMouseCallback("Disparity", onMouse, &mouseDisp);
     cv::setMouseCallback("src " + std::to_string(0), onMouse, &mouseSrc);
-
+#endif
     ecv::DisparityEvaluator disparityEvaluator;
 
 //    uint8_t im1[]  = {0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0};
@@ -535,12 +535,14 @@ int main(int argc, const char **argv) {
 
 //                    imshow("Plain " + std::to_string(j), plain);
                 }
-                imshow("GL " + std::to_string(j), colorFrame);
-
+#ifdef HAVE_OPENCV_HIGHGUI
+                cv::imshow("GL " + std::to_string(j), colorFrame);
+#endif
                 if (!bestMap1[j].empty()) {
-                    cv::remap(frame, plain[j], bestMap1[j], bestMap2[j], INTER_NEAREST);
-
-                    imshow("Plain best " + std::to_string(j), plain[j]);
+                    cv::remap(frame, plain[j], bestMap1[j], bestMap2[j], cv::INTER_NEAREST);
+#ifdef HAVE_OPENCV_HIGHGUI
+                    cv::imshow("Plain best " + std::to_string(j), plain[j]);
+#endif
                 }
             }
 
@@ -662,8 +664,9 @@ int main(int argc, const char **argv) {
                     }
 
                     cv::remap(frames[1], aligned, alignedMap, noArray(), INTER_NEAREST);
-                    imshow("Aligned", aligned);
-
+#ifdef HAVE_OPENCV_HIGHGUI
+                    cv::imshow("Aligned", aligned);
+#endif
                     for (int i = 0; i < frames.size(); ++i) {
                         invMap(bestMap1[i], invBestMap1[i]);
                     }
@@ -696,6 +699,7 @@ int main(int argc, const char **argv) {
 
             }
 
+#ifdef HAVE_OPENCV_HIGHGUI
             cv::drawMarker(frames[0], mouseSrc, cv::Scalar(255, 0, 255), MarkerTypes::MARKER_CROSS, 30, 2);
             auto plainMap1 = invBestMap1[0].ptr<cv::Point2f>(mouseSrc.y, mouseSrc.x);
             auto plainMap2 = alignedMap.ptr<cv::Point2f>((int)plainMap1->y, (int)plainMap1->x);
@@ -747,14 +751,14 @@ int main(int argc, const char **argv) {
             auto varStr = std::to_string((float)varianceAtPoint);
             cv::putText(disparity8, dispStr, mouseDisp, FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
             cv::putText(variance8, varStr, mouseDisp, FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
-            imshow("Disparity", disparity8);
-            imshow("Variance", variance8);
-
+            cv::imshow("Disparity", disparity8);
+            cv::imshow("Variance", variance8);
             for (int j = 0; j < frames.size(); ++j) {
                 imshow("Plain best " + std::to_string(j), result[j]);
 //                imshow("src " + std::to_string(j), frames[j]);
             }
 
+#endif
 //            for (int j = 1; j < 12; ++j) {
 //                auto p1 = Point(0, j * aligned.size().height / 11);
 //                auto p2 = Point(aligned.size().width, j * aligned.size().height / 11);

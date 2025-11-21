@@ -1,6 +1,8 @@
 #include "CalibrateMapper.h"
 #include <Eigen/Geometry>
+#ifdef HAVE_OPENCV_HIGHGUI
 #include <highgui.hpp>
+#endif
 
 namespace ecv {
     template<typename TP> CalibrateMapper<TP>::CalibrateMapper() {

@@ -23,4 +23,5 @@ docker run \
     -it debian-build bash build_arm_docker.sh || exit -1
 
 rsync -avc --progress ${PROJECT_ROOT}/release/${ARCH}/${BUILD_TYPE}/embedded_cv/bin/* dima@192.168.1.41: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/DisparityEvaluator.cl dima@192.168.1.41: || exit -1
 rsync -avc --progress ${PROJECT_ROOT}/launch.sh dima@192.168.1.41: || exit -1
