@@ -3,7 +3,7 @@
 #endif
 
 #ifndef H_GRANULE_SIZE
-#define H_GRANULE_SIZE 16
+#define H_GRANULE_SIZE 4
 #endif
 
 #ifndef V_GRANULE_SIZE
@@ -15,11 +15,11 @@
 #endif
 
 #ifndef VECTOR_SIZE
-#define VECTOR_SIZE 16
+#define VECTOR_SIZE 1
 #endif
 
 #ifndef BATCH_SIZE
-#define BATCH_SIZE 1
+#define BATCH_SIZE 4
 #endif
 
 #define maxFragmentHeight 4
@@ -211,15 +211,13 @@ void getDisparity(
         // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
         // в prev поместим стоимость первой колонки пикселей для x
 
-        float prev[VECTOR_SIZE * BATCH_SIZE + 4];
+        float prev[VECTOR_SIZE + 4];
         float scores[VECTOR_SIZE * BATCH_SIZE];
         prev[0] = 0;
         prev[1] = 0;
         prev[2] = 0;
         prev[3] = 0;
-        for (int b = 0; b < BATCH_SIZE; ++b) {
-            vstoreN((floatN) 0, b, scores);
-        }
+
         // в prev поместим стоимость всего тайла от 0 до N-1 = scoreX0 = prev + score1 + .. + scoreN
         float score16 = 0;
         // тогда score x1 scoreX1 = score1 + .. + scoreN+1 = score - prev + scoreN+1
@@ -259,15 +257,15 @@ void getDisparity(
                 cf *= cf;
                 EACH12(scoreN += cf)
 
-                scores[b * VECTOR_SIZE + xi] = scores[b * VECTOR_SIZE + xi - 1] + scoreN - prev[(b * VECTOR_SIZE + xi - 1)];
-                prev[(b * VECTOR_SIZE + xi + 4 - 1)] = scoreN;
+                scores[b * VECTOR_SIZE + xi] = scores[b * VECTOR_SIZE + xi - 1] + scoreN - prev[(b * VECTOR_SIZE + xi - 1) % VECTOR_SIZE];
+                prev[(b * VECTOR_SIZE + xi + 4 - 1) % VECTOR_SIZE] = scoreN;
             }
 
             floatN newScore = vloadN(b, scores) / (float)windowSize;
             floatN currentScore = newScore;
 
-//            scoreExpectation[b] += newScore;
-//            scoreVariance[b] += newScore * newScore;
+            scoreExpectation[b] += newScore;
+            scoreVariance[b] += newScore * newScore;
 
             intN needUpdate = isless(currentScore, minCost[b]);
             vstoreN(fmin(vloadN(b, (float *)minCost), currentScore), b, (float *)minCost);
@@ -278,13 +276,13 @@ void getDisparity(
     for (int b = 0; b < BATCH_SIZE; ++b) {
         disparity = convert_floatN(vloadN(b, (int *)bestD));
 
-//        scoreExpectation[b] /= disparityRange;
-//        scoreVariance[b] /= disparityRange;
-//        scoreVariance[b] -= scoreExpectation[b] * scoreExpectation[b];
-//        scoreVariance[b] = sqrt(fabs(scoreVariance[b]));
+        scoreExpectation[b] /= disparityRange;
+        scoreVariance[b] /= disparityRange;
+        scoreVariance[b] -= scoreExpectation[b] * scoreExpectation[b];
+        scoreVariance[b] = sqrt(fabs(scoreVariance[b]));
 
         vstoreN(fmax(minDisparity, fmin(disparity, maxDisparity)), b, result);
-//        vstoreN(scoreVariance[b], b, resultVariance);
+        vstoreN(scoreVariance[b], b, resultVariance);
     }
 }
 
@@ -371,7 +369,6 @@ __kernel void DisparityEvaluator(
 
                 for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
                     disparity[y * w + x + i] = -(short)rint(xResult[i] * DISPARITY_PRECISION);
-//                    disparity[y * w + x + i] = (short)rint(result[i] * DISPARITY_PRECISION);
                 }
             }
         }
