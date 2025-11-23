@@ -150,7 +150,7 @@ namespace ecv {
         std::cout << "Kernel args " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
 //        std::vector<cl::Event> kEvent = {cl::Event()};
-        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 8, h / 2), cl::NDRange(w / 8, 1));
+        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 16, h / 2), cl::NDRange(w / 16, 1));
 //        queue.enqueueNDRangeKernel(this->kernel, cl::NullRange, cl::NDRange(frames[0].rows, frames[0].cols), cl::NDRange(frames[0].rows, 1));
 
         std::cout << "Kernel enqueued " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
