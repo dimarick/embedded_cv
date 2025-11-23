@@ -3,7 +3,7 @@
 #endif
 
 #ifndef H_GRANULE_SIZE
-#define H_GRANULE_SIZE 4
+#define H_GRANULE_SIZE 2
 #endif
 
 #ifndef V_GRANULE_SIZE
@@ -19,7 +19,11 @@
 #endif
 
 #ifndef BATCH_SIZE
-#define BATCH_SIZE 4
+#define BATCH_SIZE 2
+#endif
+
+#ifndef HALF_FP_AVAILABLE
+#define HALF_FP_AVAILABLE 1
 #endif
 
 #define maxFragmentHeight 4
@@ -106,48 +110,63 @@ for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim;
 
 #define VECTOR_FOR_END }}
 
+#if HALF_FP_AVAILABLE
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+#else
+#define half16 float16
+#define half8 float8
+#define half4 float4
+#define half2 float2
+#define half float
+
+#define convert_half16 convert_float16
+#define convert_half8 convert_float8
+#define convert_half4 convert_float4
+#define convert_half2 convert_float2
+#endif
+
 #if VECTOR_SIZE == 16
-#define floatN float16
+#define floatN half16
 #define intN int16
 #define shortN short16
 #define charN char16
-#define  convert_floatN(...) convert_float16(__VA_ARGS__)
+#define  convert_floatN(...) convert_half16(__VA_ARGS__)
 #define  convert_intN(...) convert_int16(__VA_ARGS__)
 #define  convert_shortN(...) convert_short16(__VA_ARGS__)
 #define  vstoreN(...) vstore16(__VA_ARGS__)
 #define  vloadN(...) vload16(__VA_ARGS__)
 #elif VECTOR_SIZE == 8
-#define floatN float8
+#define floatN half8
 #define intN int8
 #define shortN short8
 #define charN char8
-#define  convert_floatN(...) convert_float8(__VA_ARGS__)
+#define  convert_floatN(...) convert_half8(__VA_ARGS__)
 #define  convert_intN(...) convert_int8(__VA_ARGS__)
 #define  convert_shortN(...) convert_short8(__VA_ARGS__)
 #define  vstoreN(...) vstore8(__VA_ARGS__)
 #define  vloadN(...) vload8(__VA_ARGS__)
 #elif VECTOR_SIZE == 4
-#define floatN float4
+#define floatN half4
 #define intN int4
 #define shortN short4
 #define charN char4
-#define  convert_floatN(...) convert_float4(__VA_ARGS__)
+#define  convert_floatN(...) convert_half4(__VA_ARGS__)
 #define  convert_intN(...) convert_int4(__VA_ARGS__)
 #define  convert_shortN(...) convert_short4(__VA_ARGS__)
 #define  vstoreN(...) vstore4(__VA_ARGS__)
 #define  vloadN(...) vload4(__VA_ARGS__)
 #elif VECTOR_SIZE == 2
-#define floatN float2
+#define floatN half2
 #define intN int2
 #define shortN short2
 #define charN char2
-#define  convert_floatN(...) convert_float2(__VA_ARGS__)
+#define  convert_floatN(...) convert_half2(__VA_ARGS__)
 #define  convert_intN(...) convert_int2(__VA_ARGS__)
 #define  convert_shortN(...) convert_short2(__VA_ARGS__)
 #define  vstoreN(...) vstore2(__VA_ARGS__)
 #define  vloadN(...) vload2(__VA_ARGS__)
 #elif VECTOR_SIZE == 1
-#define floatN float
+#define floatN half
 #define intN int
 #define shortN short
 #define charN char
@@ -181,7 +200,7 @@ void getDisparity(
     size_t dataSize = w * sz * h;
 
     floatN disparity;
-    float avgScore;
+    half avgScore;
     maxDisparity = max(minDisparity, maxDisparity);
     minDisparity = min(minDisparity, maxDisparity);
     int disparityRange = maxDisparity - minDisparity;
@@ -200,8 +219,8 @@ void getDisparity(
         vstoreN((intN)0, b, (int *)bestD);
         vstoreN((floatN)0, b, (float *)scoreSum);
         vstoreN((floatN)1e12f, b, (float *)minCost);
-        vstoreN((floatN)0, b, (float *)scoreVariance);
-        vstoreN((floatN)0, b, (float *)scoreExpectation);
+//        vstoreN((floatN)0, b, (float *)scoreVariance);
+//        vstoreN((floatN)0, b, (float *)scoreExpectation);
     }
 
     int windowSize = (windowSize0 / 4) * 4;
@@ -211,8 +230,8 @@ void getDisparity(
         // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
         // в prev поместим стоимость первой колонки пикселей для x
 
-        float prev[VECTOR_SIZE + 4];
-        float scores[VECTOR_SIZE * BATCH_SIZE];
+        half prev[VECTOR_SIZE + 4];
+        half scores[VECTOR_SIZE * BATCH_SIZE];
         prev[0] = 0;
         prev[1] = 0;
         prev[2] = 0;
@@ -224,9 +243,9 @@ void getDisparity(
 
         __attribute__((opencl_unroll_hint(2)))
         for (int i = 0; i < windowSize / 4; ++i) {
-            float16 df0 = convert_float16(vload16(i + 0, src)) - convert_float16(vload16(i + 0, &dest[d * h * sz]));
-            float16 df1 = convert_float16(vload16(i + 1, src)) - convert_float16(vload16(i + 1, &dest[d * h * sz]));
-            float16 df2 = convert_float16(vload16(i + 2, src)) - convert_float16(vload16(i + 2, &dest[d * h * sz]));
+            half16 df0 = convert_half16(vload16(i + 0, src)) - convert_half16(vload16(i + 0, &dest[d * h * sz]));
+            half16 df1 = convert_half16(vload16(i + 1, src)) - convert_half16(vload16(i + 1, &dest[d * h * sz]));
+            half16 df2 = convert_half16(vload16(i + 2, src)) - convert_half16(vload16(i + 2, &dest[d * h * sz]));
             df0 *= df0;
             df1 *= df1;
             df2 *= df2;
@@ -239,21 +258,21 @@ void getDisparity(
 
         scores[0] = prev[0] + prev[1] + prev[2] + prev[3];
 
-        float16 c1[VECTOR_SIZE];
+        half16 c1[VECTOR_SIZE];
 
         for (int b = 0; b < BATCH_SIZE; ++b) {
             __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
             for (int xi = (int)(b == 0); xi < VECTOR_SIZE; xi++) {
                 size_t srcIndex = (b * VECTOR_SIZE + xi + windowSize - 1 + xDelta[b * VECTOR_SIZE + xi]) * 12;
                 FATAL_LOCAL_BOUNDARY(&src[srcIndex], data1, dataSize, (floatN)0);
-                c1[xi] = convert_float16(vload16(0, &src[srcIndex]))
-                         - convert_float16(vload16(0, &dest[(b * VECTOR_SIZE + xi + windowSize - 1 + d) * 12]));
+                c1[xi] = convert_half16(vload16(0, &src[srcIndex]))
+                         - convert_half16(vload16(0, &dest[(b * VECTOR_SIZE + xi + windowSize - 1 + d) * 12]));
             }
 
             __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
             for (int xi = (int)(b == 0); xi < VECTOR_SIZE; xi++) {
-                float scoreN = 0;
-                float16 cf = c1[xi];
+                half scoreN = 0;
+                half16 cf = c1[xi];
                 cf *= cf;
                 EACH12(scoreN += cf)
 
@@ -264,11 +283,11 @@ void getDisparity(
             floatN newScore = vloadN(b, scores) / (float)windowSize;
             floatN currentScore = newScore;
 
-            scoreExpectation[b] += newScore;
-            scoreVariance[b] += newScore * newScore;
+//            scoreExpectation[b] += newScore;
+//            scoreVariance[b] += newScore * newScore;
 
             intN needUpdate = isless(currentScore, minCost[b]);
-            vstoreN(fmin(vloadN(b, (float *)minCost), currentScore), b, (float *)minCost);
+            vstoreN(fmin(vloadN(b, (half *)minCost), currentScore), b, (half *)minCost);
             vstoreN(select(vloadN(b, (int *)bestD), (intN)d - vloadN(b, xDelta), needUpdate), b, (int *)bestD);
         }
     }
@@ -276,13 +295,13 @@ void getDisparity(
     for (int b = 0; b < BATCH_SIZE; ++b) {
         disparity = convert_floatN(vloadN(b, (int *)bestD));
 
-        scoreExpectation[b] /= disparityRange;
-        scoreVariance[b] /= disparityRange;
-        scoreVariance[b] -= scoreExpectation[b] * scoreExpectation[b];
-        scoreVariance[b] = sqrt(fabs(scoreVariance[b]));
+//        scoreExpectation[b] /= disparityRange;
+//        scoreVariance[b] /= disparityRange;
+//        scoreVariance[b] -= scoreExpectation[b] * scoreExpectation[b];
+//        scoreVariance[b] = sqrt(fabs(scoreVariance[b]));
 
         vstoreN(fmax(minDisparity, fmin(disparity, maxDisparity)), b, result);
-        vstoreN(scoreVariance[b], b, resultVariance);
+//        vstoreN(scoreVariance[b], b, resultVariance);
     }
 }
 
@@ -355,9 +374,9 @@ __kernel void DisparityEvaluator(
             const int minDisparity = max(-(x + rMin), -256);
             const int maxDisparityX = 0;
 
-            for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-                variance[y * w + x + i] = resultVariance[i];
-            }
+//            for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
+//                variance[y * w + x + i] = resultVariance[i];
+//            }
             
             if (w - (x + rMax + 16*3) < windowSize0 + 5) {
                 for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
