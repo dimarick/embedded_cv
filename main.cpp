@@ -422,6 +422,8 @@ int main(int argc, const char **argv) {
 
     double minVal = 0, maxVal = 0, varianceMinVal = 0, varianceMaxVal = 0;
 
+    cv::Mat disparity8;
+
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
         if (readerLeftCount == frameCount || readerRightCount == frameCount || readingImLeft.empty() || readingImRight.empty()) {
@@ -708,39 +710,40 @@ int main(int argc, const char **argv) {
             cv::drawMarker(result[1], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
 
             cv::Mat varianceFp;
-            cv::Mat disparityFp;
-            cv::Mat disparity8;
             cv::Mat variance8;
 #endif
+            cv::Mat disparityFp;
             cv::Mat disparity;
             cv::Mat variance;
             disparity.setTo(0);
-            variance.setTo(0);
+//            variance.setTo(0);
             startDisp = std::chrono::high_resolution_clock::now();
             disparityEvaluator.evaluateDisparity(result, disparity, variance);
             endDisp = std::chrono::high_resolution_clock::now();
 
-#ifdef HAVE_OPENCV_HIGHGUI
             disparity.copyTo(disparityFp);
-            variance.copyTo(varianceFp);
             if (minVal == 0 || maxVal == 0) {
                 cv::minMaxLoc(disparityFp, &minVal, &maxVal);
                 maxVal = 300 * ecv::DisparityEvaluator::DISPARITY_PRECISION;
                 minVal = 0;
             }
 
-            cv::minMaxLoc(variance, &varianceMinVal, &varianceMaxVal);
-
-            varianceFp -= varianceMinVal;
-            varianceFp *= 255.0 / (varianceMaxVal - varianceMinVal);
-
             disparityFp -= minVal;
             disparityFp *= 255.0 / (maxVal - minVal);
 
 
             disparityFp.convertTo(disparity8, CV_8U);
-            varianceFp.convertTo(variance8, CV_8U);
             cv::applyColorMap(disparity8, disparity8, ColormapTypes::COLORMAP_JET);
+#ifdef HAVE_OPENCV_HIGHGUI
+            variance.copyTo(varianceFp);
+            variance.copyTo(varianceFp);
+
+            cv::minMaxLoc(variance, &varianceMinVal, &varianceMaxVal);
+
+            varianceFp -= varianceMinVal;
+            varianceFp *= 255.0 / (varianceMaxVal - varianceMinVal);
+
+            varianceFp.convertTo(variance8, CV_8U);
             cv::applyColorMap(variance8, variance8, ColormapTypes::COLORMAP_JET);
 
             cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
@@ -807,12 +810,12 @@ int main(int argc, const char **argv) {
 //
 //            writerIsRunning = true;
 //
-//            writer = std::thread([](auto *resultLeft, auto *pipe, auto *isRunning, auto *tm) {
+//            writer = std::thread([](auto *disparity8, auto *pipe, auto *isRunning, auto *tm) {
 //                broadcastingServer.broadcast(tm->str());
 //
-//                fwrite(resultLeft->data, sizeof(char), resultLeft->dataend - resultLeft->datastart, *pipe);
+//                fwrite(disparity8->data, sizeof(char), disparity8->dataend - disparity8->datastart, *pipe);
 //                *isRunning = false;
-//            }, &resultLeft, &pipe, &writerIsRunning, &tm);
+//            }, &disparity8, &pipe, &writerIsRunning, &tm);
 //        }
 
 #ifdef HAVE_OPENCV_HIGHGUI

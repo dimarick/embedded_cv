@@ -3,7 +3,7 @@
 #endif
 
 #ifndef H_GRANULE_SIZE
-#define H_GRANULE_SIZE 2
+#define H_GRANULE_SIZE 8
 #endif
 
 #ifndef V_GRANULE_SIZE
@@ -15,15 +15,15 @@
 #endif
 
 #ifndef VECTOR_SIZE
-#define VECTOR_SIZE 1
+#define VECTOR_SIZE 4
 #endif
 
 #ifndef BATCH_SIZE
-#define BATCH_SIZE 2
+#define BATCH_SIZE 1
 #endif
 
 #ifndef HALF_FP_AVAILABLE
-#define HALF_FP_AVAILABLE 1
+#define HALF_FP_AVAILABLE 0
 #endif
 
 #define maxFragmentHeight 4
@@ -61,17 +61,17 @@ struct __bounds_checker {
 #define _CHECK_BOUNDARY(type, typeId, _ptr, dataStart, dataSize) \
     if (((type char *)(_ptr) < ((type char *)(dataStart)) || (type char *)(_ptr) >= (((type char *)(dataStart)) + (size_t)(dataSize)))) {\
         __bc->n++; __bc->t = typeId; __bc->ptr = (uintptr_t)(_ptr); __bc->start = (uintptr_t)(dataStart); __bc->end = (uintptr_t)(dataStart) + (size_t)(dataSize); __bc->line = __LINE__;}
-#define _FATAL_BOUNDARY(type, typeId, _ptr, dataStart, dataSize, result) \
+#define _FATAL_BOUNDARY(type, typeId, _ptr, dataStart, dataSize) \
     if (((type char *)(_ptr) < ((type char *)(dataStart)) || (type char *)(_ptr) >= (((type char *)(dataStart)) + (size_t)(dataSize)))) {\
-        __bc->n++; __bc->t = typeId; __bc->ptr = (uintptr_t)(_ptr); __bc->start = (uintptr_t)(dataStart); __bc->end = (uintptr_t)(dataStart) + (size_t)(dataSize); __bc->line = __LINE__;return result;}
+        __bc->n++; __bc->t = typeId; __bc->ptr = (uintptr_t)(_ptr); __bc->start = (uintptr_t)(dataStart); __bc->end = (uintptr_t)(dataStart) + (size_t)(dataSize); __bc->line = __LINE__;return;}
 
 #define CHECK_GLOBAL_BOUNDARY(_ptr, dataStart, dataSize) _CHECK_BOUNDARY(__global, 'g', _ptr, dataStart, dataSize)
 #define CHECK_LOCAL_BOUNDARY(_ptr, dataStart, dataSize) _CHECK_BOUNDARY(__local, 'l', _ptr, dataStart, dataSize)
 #define CHECK_BOUNDARY(_ptr, dataStart, dataSize) _CHECK_BOUNDARY(__private, 'p', _ptr, dataStart, dataSize)
 
-#define FATAL_GLOBAL_BOUNDARY(_ptr, dataStart, dataSize, result) _FATAL_BOUNDARY(__global, 'g', _ptr, dataStart, dataSize, result)
-#define FATAL_LOCAL_BOUNDARY(_ptr, dataStart, dataSize, result) _FATAL_BOUNDARY(__local, 'l', _ptr, dataStart, dataSize, result)
-#define FATAL_BOUNDARY(_ptr, dataStart, dataSize, result) _FATAL_BOUNDARY(__private, 'p', _ptr, dataStart, dataSize, result)
+#define FATAL_GLOBAL_BOUNDARY(_ptr, dataStart, dataSize) _FATAL_BOUNDARY(__global, 'g', _ptr, dataStart, dataSize)
+#define FATAL_LOCAL_BOUNDARY(_ptr, dataStart, dataSize) _FATAL_BOUNDARY(__local, 'l', _ptr, dataStart, dataSize)
+#define FATAL_BOUNDARY(_ptr, dataStart, dataSize) _FATAL_BOUNDARY(__private, 'p', _ptr, dataStart, dataSize)
 
 #define BC_START \
     __private struct __bounds_checker __bc0 = {0,0,0,0}; \
@@ -89,9 +89,9 @@ struct __bounds_checker {
 #define CHECK_GLOBAL_BOUNDARY(_ptr, dataStart, dataSize)
 #define CHECK_LOCAL_BOUNDARY(_ptr, dataStart, dataSize)
 #define CHECK_BOUNDARY(_ptr, dataStart, dataSize)
-#define FATAL_GLOBAL_BOUNDARY(_ptr, dataStart, dataSize, result)
-#define FATAL_LOCAL_BOUNDARY(_ptr, dataStart, dataSize, result)
-#define FATAL_BOUNDARY(_ptr, dataStart, dataSize, result)
+#define FATAL_GLOBAL_BOUNDARY(_ptr, dataStart, dataSize)
+#define FATAL_LOCAL_BOUNDARY(_ptr, dataStart, dataSize)
+#define FATAL_BOUNDARY(_ptr, dataStart, dataSize)
 #define BC_START
 #define BC_PASS
 #define BC_ARG
@@ -112,12 +112,22 @@ for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim;
 
 #if HALF_FP_AVAILABLE
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable
+#define half_int16 short16
+#define half_int8 short8
+#define half_int4 short4
+#define half_int2 short2
+#define half_int short
 #else
 #define half16 float16
 #define half8 float8
 #define half4 float4
 #define half2 float2
 #define half float
+#define half_int16 int16
+#define half_int8 int8
+#define half_int4 int4
+#define half_int2 int2
+#define half_int int
 
 #define convert_half16 convert_float16
 #define convert_half8 convert_float8
@@ -128,6 +138,7 @@ for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim;
 #if VECTOR_SIZE == 16
 #define floatN half16
 #define intN int16
+#define half_intN half_int16
 #define shortN short16
 #define charN char16
 #define  convert_floatN(...) convert_half16(__VA_ARGS__)
@@ -138,6 +149,7 @@ for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim;
 #elif VECTOR_SIZE == 8
 #define floatN half8
 #define intN int8
+#define half_intN half_int8
 #define shortN short8
 #define charN char8
 #define  convert_floatN(...) convert_half8(__VA_ARGS__)
@@ -148,6 +160,7 @@ for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim;
 #elif VECTOR_SIZE == 4
 #define floatN half4
 #define intN int4
+#define half_intN half_int4
 #define shortN short4
 #define charN char4
 #define  convert_floatN(...) convert_half4(__VA_ARGS__)
@@ -158,6 +171,7 @@ for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim;
 #elif VECTOR_SIZE == 2
 #define floatN half2
 #define intN int2
+#define half_intN half_int2
 #define shortN short2
 #define charN char2
 #define  convert_floatN(...) convert_half2(__VA_ARGS__)
@@ -168,6 +182,7 @@ for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim;
 #elif VECTOR_SIZE == 1
 #define floatN half
 #define intN int
+#define half_intN half_int
 #define shortN short
 #define charN char
 #define  convert_floatN(...) (float)(__VA_ARGS__)
@@ -184,12 +199,12 @@ void getDisparity(
         int y,
         int w,
         int h,
-        int *xDelta,
+        half_int *xDelta,
         int minDisparity,
         int maxDisparity,
         int windowSize0,
         int sz,
-        float* result,
+        half* result,
         float* resultVariance,
         bool debug
         BC_ARG
@@ -209,18 +224,18 @@ void getDisparity(
     CHECK_LOCAL_BOUNDARY(dest, data2, dataSize);
     CHECK_LOCAL_BOUNDARY(&dest[minDisparity], data2, dataSize);
 
-    intN bestD[BATCH_SIZE];
-    floatN scoreSum[BATCH_SIZE];
+    half_intN bestD[BATCH_SIZE];
     floatN minCost[BATCH_SIZE];
-    floatN scoreVariance[BATCH_SIZE];
-    floatN scoreExpectation[BATCH_SIZE];
+    floatN scoreSum[BATCH_SIZE];
+//    floatN scoreVariance[BATCH_SIZE];
+//    floatN scoreExpectation[BATCH_SIZE];
 
     for (int b = 0; b < BATCH_SIZE; ++b) {
         vstoreN((intN)0, b, (int *)bestD);
-        vstoreN((floatN)0, b, (float *)scoreSum);
-        vstoreN((floatN)1e12f, b, (float *)minCost);
-//        vstoreN((floatN)0, b, (float *)scoreVariance);
-//        vstoreN((floatN)0, b, (float *)scoreExpectation);
+        vstoreN((floatN)0, b, (half *)scoreSum);
+        vstoreN((floatN)1e12f, b, (half *)minCost);
+//        vstoreN((floatN)0, b, (half *)scoreVariance);
+//        vstoreN((floatN)0, b, (half *)scoreExpectation);
     }
 
     int windowSize = (windowSize0 / 4) * 4;
@@ -230,7 +245,7 @@ void getDisparity(
         // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
         // в prev поместим стоимость первой колонки пикселей для x
 
-        half prev[VECTOR_SIZE + 4];
+        half prev[VECTOR_SIZE];
         half scores[VECTOR_SIZE * BATCH_SIZE];
         prev[0] = 0;
         prev[1] = 0;
@@ -264,7 +279,8 @@ void getDisparity(
             __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
             for (int xi = (int)(b == 0); xi < VECTOR_SIZE; xi++) {
                 size_t srcIndex = (b * VECTOR_SIZE + xi + windowSize - 1 + xDelta[b * VECTOR_SIZE + xi]) * 12;
-                FATAL_LOCAL_BOUNDARY(&src[srcIndex], data1, dataSize, (floatN)0);
+                FATAL_LOCAL_BOUNDARY(&src[srcIndex], data1, dataSize);
+                FATAL_LOCAL_BOUNDARY(&dest[(b * VECTOR_SIZE + xi + windowSize - 1 + d) * 12], data2, dataSize);
                 c1[xi] = convert_half16(vload16(0, &src[srcIndex]))
                          - convert_half16(vload16(0, &dest[(b * VECTOR_SIZE + xi + windowSize - 1 + d) * 12]));
             }
@@ -280,27 +296,27 @@ void getDisparity(
                 prev[(b * VECTOR_SIZE + xi + 4 - 1) % VECTOR_SIZE] = scoreN;
             }
 
-            floatN newScore = vloadN(b, scores) / (float)windowSize;
+            floatN newScore = vloadN(b, scores) / (half)windowSize;
             floatN currentScore = newScore;
 
 //            scoreExpectation[b] += newScore;
 //            scoreVariance[b] += newScore * newScore;
 
-            intN needUpdate = isless(currentScore, minCost[b]);
+            half_intN needUpdate = isless(currentScore, minCost[b]);
             vstoreN(fmin(vloadN(b, (half *)minCost), currentScore), b, (half *)minCost);
-            vstoreN(select(vloadN(b, (int *)bestD), (intN)d - vloadN(b, xDelta), needUpdate), b, (int *)bestD);
+            vstoreN(select(vloadN(b, (half_int *)bestD), (half_intN)d - vloadN(b, xDelta), needUpdate), b, (half_int *)bestD);
         }
     }
 
     for (int b = 0; b < BATCH_SIZE; ++b) {
-        disparity = convert_floatN(vloadN(b, (int *)bestD));
+        disparity = convert_floatN(vloadN(b, (half_int *)bestD));
 
 //        scoreExpectation[b] /= disparityRange;
 //        scoreVariance[b] /= disparityRange;
 //        scoreVariance[b] -= scoreExpectation[b] * scoreExpectation[b];
 //        scoreVariance[b] = sqrt(fabs(scoreVariance[b]));
 
-        vstoreN(fmax(minDisparity, fmin(disparity, maxDisparity)), b, result);
+        vstoreN(fmax((floatN)minDisparity, fmin(disparity, (floatN)maxDisparity)), b, result);
 //        vstoreN(scoreVariance[b], b, resultVariance);
     }
 }
@@ -322,8 +338,9 @@ __kernel void DisparityEvaluator(
 ) {
     BC_START;
 
-    int x0 = get_local_id(0) * H_GRANULE_SIZE;
+    int x0 = (get_local_id(0) / 2) * H_GRANULE_SIZE;
     int y0 = get_global_id(1) * V_GRANULE_SIZE;
+    y0 += get_local_id(0) & 1;
 
     int wsz = w * sz;
 
@@ -333,7 +350,7 @@ __kernel void DisparityEvaluator(
     __local uchar pFrame1[maxLocalBuffer] __attribute__ ((aligned (128)));
 
     int xLimit = min(x0 + H_GRANULE_SIZE, w - 16*3);
-    int yLimit = min(y0 + V_GRANULE_SIZE, h - 4);
+    int yLimit = min(y0 + V_GRANULE_SIZE / 2, h - V_GRANULE_SIZE / 2 - 8);
 
     int fragmentHeight = min(maxFragmentHeight, windowHeight);
     fragmentHeight = min(fragmentHeight, h - 1 - y0);
@@ -351,21 +368,20 @@ __kernel void DisparityEvaluator(
         barrier(CLK_LOCAL_MEM_FENCE);
 
         for (int x = x0; x < min(xLimit, w - MIN_VALID_DISPARITY - windowSize0); x += BATCH_SIZE * VECTOR_SIZE) {
-            float resultVariance[BATCH_SIZE * VECTOR_SIZE];
-            float result[BATCH_SIZE * VECTOR_SIZE];
-            float xResult[BATCH_SIZE * VECTOR_SIZE];
-            int xDeltaArray[BATCH_SIZE * VECTOR_SIZE];
+            half resultVariance[1];
+            half result[BATCH_SIZE * VECTOR_SIZE];
+            half_int xDeltaArray[BATCH_SIZE * VECTOR_SIZE];
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
                 xDeltaArray[i] = 0;
             }
             const int maxDisparity = max(0, min(256, (int) (w - ((x + 16*3) + windowSize0 + 1))));
             getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight, xDeltaArray, 0, maxDisparity, windowSize0, nsz, result, resultVariance, (x==960||x==968) && y0 == 540 BC_PASS);
 
-            const float r0 = result[0];
+            const half r0 = result[0];
             int rMax = 0;
             int rMin = 1e6f;
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-                float d = result[i] - r0;
+                half d = result[i] - r0;
                 xDeltaArray[i] = rint(d);
                 rMax = fmax(d, rMax);
                 rMin = fmin(d, rMin);
@@ -384,10 +400,10 @@ __kernel void DisparityEvaluator(
                 }
             } else {
                 getDisparity(pFrame0, pFrame1, x + rint(r0), 0, w, fragmentHeight, xDeltaArray, minDisparity,
-                              maxDisparityX, windowSize0, nsz, xResult, resultVariance, false BC_PASS);
+                              maxDisparityX, windowSize0, nsz, result, resultVariance, false BC_PASS);
 
                 for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-                    disparity[y * w + x + i] = -(short)rint(xResult[i] * DISPARITY_PRECISION);
+                    disparity[y * w + x + i] = -(short)rint(result[i] * DISPARITY_PRECISION);
                 }
             }
         }
