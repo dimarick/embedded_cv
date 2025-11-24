@@ -70,8 +70,8 @@ include_directories( ${OpenCV_INCLUDE_DIRS} )
 
 include_directories(./mini_server)
 add_subdirectory(./mini_server)
-add_subdirectory(./hw_ctl)
-add_subdirectory(./ws_ctl)
+#add_subdirectory(./hw_ctl)
+#add_subdirectory(./ws_ctl)
 
 add_executable(embedded_cv
         main.cpp

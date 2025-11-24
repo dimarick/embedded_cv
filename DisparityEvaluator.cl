@@ -3,7 +3,7 @@
 #endif
 
 #ifndef H_GRANULE_SIZE
-#define H_GRANULE_SIZE 8
+#define H_GRANULE_SIZE 4
 #endif
 
 #ifndef V_GRANULE_SIZE
@@ -23,7 +23,7 @@
 #endif
 
 #ifndef HALF_FP_AVAILABLE
-#define HALF_FP_AVAILABLE 0
+#define HALF_FP_AVAILABLE 1
 #endif
 
 #define maxFragmentHeight 4
@@ -205,7 +205,7 @@ void getDisparity(
         int windowSize0,
         int sz,
         half* result,
-        float* resultVariance,
+        half* resultVariance,
         bool debug
         BC_ARG
 ) {

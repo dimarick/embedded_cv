@@ -1,5 +1,6 @@
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
+#include "opencv2/imgcodecs.hpp"
 #ifdef HAVE_OPENCV_HIGHGUI
 #include "opencv2/highgui.hpp"
 #endif
@@ -802,21 +803,26 @@ int main(int argc, const char **argv) {
         std::ostringstream tm;
 
         tm << "PERF " << fps << " " << time << std::endl;
-//
-//        if (!writerIsRunning) {
-//            if (writer.joinable()) {
-//                writer.join();
-//            }
-//
-//            writerIsRunning = true;
-//
-//            writer = std::thread([](auto *disparity8, auto *pipe, auto *isRunning, auto *tm) {
-//                broadcastingServer.broadcast(tm->str());
-//
-//                fwrite(disparity8->data, sizeof(char), disparity8->dataend - disparity8->datastart, *pipe);
-//                *isRunning = false;
-//            }, &disparity8, &pipe, &writerIsRunning, &tm);
-//        }
+
+        Mat preview;
+        cv::resize(disparity8, preview, outputSize);
+
+        if (!writerIsRunning) {
+            if (writer.joinable()) {
+                writer.join();
+            }
+
+            writerIsRunning = true;
+
+            writer = std::thread([](auto *preview, auto *pipe, auto *isRunning, auto *tm) {
+                broadcastingServer.broadcast(tm->str());
+
+                fwrite(preview->data, sizeof(char), preview->dataend - preview->datastart, *pipe);
+                *isRunning = false;
+            }, &preview, &pipe, &writerIsRunning, &tm);
+
+            cv::imwrite("d.jpg", disparity8);
+        }
 
 #ifdef HAVE_OPENCV_HIGHGUI
 //        imshow("Left", resultLeft);

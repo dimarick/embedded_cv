@@ -3,11 +3,11 @@
   <head>
     <title>Hello, world</title>
     <script src='/app.js'></script>
-    <script type="text/javascript" src="http://192.168.1.39:8080/players/js/jquery-1.12.2.min.js"></script>
-    <script type="text/javascript" src="http://192.168.1.39:8080/players/js/adapter-7.4.0.min.js"></script>
-    <script type="text/javascript" src="http://192.168.1.39:8080/players/js/srs.sdk.js"></script>
-    <script type="text/javascript" src="http://192.168.1.39:8080/players/js/winlin.utility.js"></script>
-    <script type="text/javascript" src="http://192.168.1.39:8080/players/js/srs.page.js"></script>
+    <script type="text/javascript" src="http://192.168.1.41:8080/players/js/jquery-1.12.2.min.js"></script>
+    <script type="text/javascript" src="http://192.168.1.41:8080/players/js/adapter-7.4.0.min.js"></script>
+    <script type="text/javascript" src="http://192.168.1.41:8080/players/js/srs.sdk.js"></script>
+    <script type="text/javascript" src="http://192.168.1.41:8080/players/js/winlin.utility.js"></script>
+    <script type="text/javascript" src="http://192.168.1.41:8080/players/js/srs.page.js"></script>
   </head>
   <body>
     <video id="rtc_media_player" autoplay></video>
@@ -56,7 +56,7 @@
                 // sdk.ontrack = function (event) { console.log('Got track', event); sdk.stream.addTrack(event.track); };
 
                 // For example: webrtc://r.ossrs.net/live/livestream
-                sdk.play('http://192.168.1.39:1985/rtc/v1/whep/?app=live&stream=livestream.flv', {
+                sdk.play('http://192.168.1.41:1985/rtc/v1/whep/?app=live&stream=livestream.flv', {
                     videoOnly: $('#ch_videoonly').prop('checked'),
                     audioOnly: $('#ch_audioonly').prop('checked'),
                 }).then(function(session){

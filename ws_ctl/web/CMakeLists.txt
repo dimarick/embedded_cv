@@ -1,5 +1,12 @@
 set(SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/seasocks/scripts/gen_embedded.py")
 
+find_package(Python COMPONENTS Interpreter)
+
+if (NOT Python_FOUND)
+        message(SEND_ERROR "Python not found")
+else()
+        message(STATUS "Using Python: '${Python_EXECUTABLE}'")
+endif ()
 
 set(EMBEDDED_FILES
 #        "${CMAKE_CURRENT_SOURCE_DIR}/app.js"
@@ -10,11 +17,11 @@ set(EMBEDDED_FILES
 )
 
 
-add_custom_command(OUTPUT Embedded.cpp
-        COMMAND "${PYTHON_EXECUTABLE}" "${SCRIPT}" -o Embedded.cpp -f ${EMBEDDED_FILES}
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/Embedded.cpp
+        COMMAND "${Python_EXECUTABLE}" "${SCRIPT}" -o ${CMAKE_CURRENT_SOURCE_DIR}/Embedded.cpp -f ${EMBEDDED_FILES}
         COMMENT "Generating embedded content"
         DEPENDS "${SCRIPT}" "${EMBEDDED_FILES}"
-        )
+)
 
 add_library(embedded2 OBJECT Embedded.cpp)
 target_include_directories(embedded2 PUBLIC $<TARGET_PROPERTY:seasocks,INTERFACE_INCLUDE_DIRECTORIES>)

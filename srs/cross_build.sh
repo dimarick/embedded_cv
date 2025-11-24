@@ -2,6 +2,7 @@
 
 BUILD_DIR=`pwd`
 
+docker build -t debian-build . || exit -1
 cd ../srs
 
 PROJECT_DIR=`pwd`
