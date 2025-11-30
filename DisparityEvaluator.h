@@ -1,7 +1,3 @@
-//
-// Created by dima on 03.11.25.
-//
-
 #ifndef EMBEDDED_CV_DISPARITYEVALUATOR_H
 #define EMBEDDED_CV_DISPARITYEVALUATOR_H
 

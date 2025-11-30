@@ -3,6 +3,7 @@ project(embedded_cv)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 
 if(NOT DEFINED ARCH)
     set(ARCH "amd64")
@@ -71,19 +72,29 @@ include_directories( ${OpenCV_INCLUDE_DIRS} )
 include_directories(./mini_server)
 add_subdirectory(./mini_server)
 #add_subdirectory(./hw_ctl)
-#add_subdirectory(./ws_ctl)
+add_subdirectory(./ws_ctl)
 
-add_executable(embedded_cv
-        main.cpp
+add_executable(calibrator
+        calibrator.cpp
         ImageProcessor.cpp
         CvCommandHandler.cpp
         CalibrateMapper.cpp
         Calibrator.cpp
         Calibrator.h
+)
+
+target_link_libraries(calibrator PUBLIC OpenCL::OpenCL mini_server cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
+
+install(TARGETS calibrator DESTINATION bin)
+
+add_executable(cv
+        cv.cpp
+        CvCommandHandler.cpp
+        ImageProcessor.cpp
         DisparityEvaluator.cpp
         DisparityEvaluator.h
 )
 
-target_link_libraries(embedded_cv PRIVATE OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS} mini_server Eigen3::Eigen)
+target_link_libraries(cv PUBLIC OpenCL::OpenCL mini_server cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
 
-install(TARGETS embedded_cv DESTINATION bin)
+install(TARGETS cv DESTINATION bin)

@@ -245,7 +245,7 @@ void getDisparity(
         // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
         // в prev поместим стоимость первой колонки пикселей для x
 
-        half prev[VECTOR_SIZE];
+        half prev[VECTOR_SIZE + 4];
         half scores[VECTOR_SIZE * BATCH_SIZE];
         prev[0] = 0;
         prev[1] = 0;

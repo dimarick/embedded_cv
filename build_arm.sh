@@ -23,6 +23,7 @@ docker run \
     -it debian-build bash build_arm_docker.sh || exit -1
 
 rsync -avc --progress ${PROJECT_ROOT}/release/${ARCH}/${BUILD_TYPE}/embedded_cv/bin/* dima@192.168.1.41: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/release/${ARCH}/${BUILD_TYPE}/OpenCV/lib/*.so* dima@192.168.1.41: || exit -1
 rsync -avc --progress ${PROJECT_ROOT}/DisparityEvaluator.cl dima@192.168.1.41: || exit -1
 rsync -avc --progress ${PROJECT_ROOT}/map0.bin dima@192.168.1.41: || exit -1
 rsync -avc --progress ${PROJECT_ROOT}/map1.bin dima@192.168.1.41: || exit -1
