@@ -136,22 +136,47 @@ void CommandServer::run() {
 }
 
 void CommandServer::broadcast(const std::string &message) {
+    this->broadcast(message.c_str(), message.size());
+}
+
+void CommandServer::broadcast(const void *buffer, size_t bufferSize) {
     acceptedSocketsMutex.lock();
     auto threadSafeAcceptedSockets = acceptedSockets;
     acceptedSocketsMutex.unlock();
 
+    size_t frameSize = bufferSize + sizeof (MessageHeader);
+    const char *frame = (char *)malloc(frameSize);
+    auto header = (MessageHeader *)frame;
+    auto data = &frame[sizeof (MessageHeader)];
+    memcpy((void *) data, buffer, bufferSize);
+    header->magick = 'MsgS';
+    header->size = bufferSize;
+
     for (auto acceptedSocket : threadSafeAcceptedSockets) {
-        auto n = send(acceptedSocket, message.c_str(), message.size(), MSG_NOSIGNAL);
+        size_t sent = 0;
+        while (true) {
+            auto n = send(acceptedSocket, frame + sent, frameSize - sent, MSG_NOSIGNAL);
 
-        if (n < 0) {
-            perror("ERROR writing to socket");
+            if (n < 0) {
+                perror("ERROR writing to socket");
 
-            acceptedSocketsMutex.lock();
-            acceptedSockets.erase(acceptedSocket);
-            acceptedSocketsMutex.unlock();
+                acceptedSocketsMutex.lock();
+                acceptedSockets.erase(acceptedSocket);
+                close(acceptedSocket);
+                acceptedSocketsMutex.unlock();
 
-            std::cerr << "socket released: " << acceptedSocket << ". Connections count: " << acceptedSockets.size() << std::endl;
+                std::cerr << "socket released: " << acceptedSocket << ". Connections count: " << acceptedSockets.size()
+                          << std::endl;
+            }
+
+            sent += n;
+
+            if (sent == frameSize) {
+                break;
+            }
         }
-        std::cerr << "Message : " << message << " sent to " << acceptedSocket << std::endl;
+        std::cerr << "Message : " << buffer << " sent to " << acceptedSocket << std::endl;
     }
+
+    free((void *)frame);
 }

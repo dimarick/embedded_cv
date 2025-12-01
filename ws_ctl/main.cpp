@@ -13,6 +13,7 @@ int main(int argc, const char* argv[]) {
     server.addWebSocketHandler("/hw_tm", std::make_shared<SocketProxy>("/tmp/hw_tm"));
     server.addWebSocketHandler("/cv_ctl", std::make_shared<SocketProxy>("/tmp/cv_ctl"));
     server.addWebSocketHandler("/cv_tm", std::make_shared<SocketProxy>("/tmp/cv_tm"));
+    server.addWebSocketHandler("/cv_s", std::make_shared<SocketProxy>("/tmp/cv_s"));
 
     server.serve("web", 9090);
 

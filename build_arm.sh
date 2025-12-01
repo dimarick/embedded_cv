@@ -29,3 +29,4 @@ rsync -avc --progress ${PROJECT_ROOT}/map0.bin dima@192.168.1.41: || exit -1
 rsync -avc --progress ${PROJECT_ROOT}/map1.bin dima@192.168.1.41: || exit -1
 rsync -avc --progress ${PROJECT_ROOT}/mapa.bin dima@192.168.1.41: || exit -1
 rsync -avc --progress ${PROJECT_ROOT}/launch.sh dima@192.168.1.41: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/ws_ctl/web/* --exclude=CMakeLists.txt dima@192.168.1.41:web || exit -1

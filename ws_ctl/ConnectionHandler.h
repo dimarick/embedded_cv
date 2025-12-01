@@ -10,6 +10,10 @@
 using namespace seasocks;
 
 class ConnectionHandler {
+    struct MessageHeader {
+        unsigned int magick;
+        unsigned int size;
+    };
     WebSocket *connection;
     int socketFd = -1;
     std::thread readingThread;
@@ -18,7 +22,7 @@ public:
     ConnectionHandler(WebSocket *connection, int socketFd) : connection(connection), socketFd(socketFd) {}
     void start();
     void stop();
-    void onData(const char* data);
+    void onData(const uint8_t *data, size_t dataSize);
 };
 
 

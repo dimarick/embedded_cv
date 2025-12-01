@@ -8,6 +8,11 @@
 
 namespace mini_server {
     class BroadcastingServer {
+        struct MessageHeader {
+            unsigned int magick;
+            unsigned int size;
+        };
+
         int socket = -1;
         std::mutex acceptedSocketsMutex;
         std::set<int> acceptedSockets;
@@ -22,6 +27,7 @@ namespace mini_server {
         }
 
         void broadcast(const std::string &message);
+        void broadcast(const void *buffer, size_t bufferSize);
     };
 }
 

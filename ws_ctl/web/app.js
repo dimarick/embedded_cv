@@ -3,17 +3,26 @@
  */
 let videoDrawContext;
 /**
+ * @var videoDrawHiddenContext CanvasRenderingContext2D
+ */
+let videoDrawHiddenContext;
+/**
+ * @var videoDrawHiddenCanvas HTMLCanvasElement
+ */
+let videoDrawHiddenCanvas = null;
+/**
  * @var perfDrawContext CanvasRenderingContext2D
  */
 let perfDrawContext;
 let videoScene = {
     changed: false,
     frameSize: {
-        w: 0,
-        h: 0,
+        w: 300,
+        h: 200,
     },
     points: [],
     mouse: {x: null, y: null},
+    image: null,
 }
 
 let perfScene = {
@@ -77,10 +86,15 @@ function drawPerfScene() {
 }
 
 function drawVideoScene() {
-    const ctx = videoDrawContext;
+    const ctx = videoDrawHiddenContext;
 
     if (!ctx) {
         window.requestAnimationFrame(drawVideoScene);
+        return;
+    }
+
+    if (ctx.isContextLost()) {
+        console.log("ctx.isContextLost()");
         return;
     }
 
@@ -89,12 +103,12 @@ function drawVideoScene() {
         return;
     }
 
-    ctx.canvas.height = ctx.canvas.offsetHeight;
-    ctx.canvas.width = ctx.canvas.offsetWidth;
-
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     const xScale = ctx.canvas.width / videoScene.frameSize.w;
     const yScale = ctx.canvas.height / videoScene.frameSize.h;
+
+    if (videoScene.image !== null) {
+        ctx.drawImage(videoScene.image, 0, 0);
+    }
 
     const mouse = videoScene.mouse;
     for (const p of videoScene.points) {
@@ -127,6 +141,8 @@ function drawVideoScene() {
     }
 
     videoScene.changed = false;
+
+    videoDrawContext.drawImage(videoDrawHiddenCanvas, 0, 0);
 
     window.requestAnimationFrame(drawVideoScene)
 }
@@ -200,6 +216,10 @@ function processMessage(text) {
     } else if (matches = text.match(/^CONFIG (?<data>.*)$/m)) {
         processConfig(matches.groups.data);
     }
+}
+
+function processStreaming(text) {
+    console.log("Frame received " + text.length);
 }
 
 document.onreadystatechange = function() {
@@ -343,6 +363,44 @@ document.onreadystatechange = function() {
         return cvTm;
     }
 
+    function connectCvS() {
+        const cvS = new WebSocket('ws://' + document.location.host + '/cv_s');
+        cvS.binaryType = 'blob';
+        cvS.onerror = function (error) {
+            document.getElementById('message-cv_s').textContent = 'Error: ' + error;
+            console.log(error);
+        };
+        cvS.onopen = function () {
+            console.log('onopen');
+            document.getElementById('message-cv_s').textContent = 'Connected.';
+        };
+        cvS.onmessage = async function (message) {
+            const data = message.data;
+            if (data instanceof Blob) {
+                let image = null;
+                try {
+                    image = await createImageBitmap(data);
+                } catch (e) {
+                    if (videoScene.image === null) {
+                        console.log(e);
+                    }
+                }
+                if (image !== null) {
+                    videoScene.image = image;
+                    videoScene.changed = true;
+                }
+            } else {
+                throw "!data instanceof Blob";
+            }
+        };
+        cvS.onclose = function () {
+            document.getElementById('message-cv_s').textContent = 'Lost connection.';
+            console.log('onclose');
+        };
+
+        return cvS;
+    }
+
     window.hwTm;
     window.hwCtl;
 
@@ -363,20 +421,37 @@ document.onreadystatechange = function() {
             window.cvCtl = connectCvCtl();
             console.log("Try to connect cvCtl")
         }
+        if (!window.cvS || window.cvS.readyState === window.cvS.CLOSED) {
+            window.cvS = connectCvS();
+            console.log("Try to connect cvS")
+        }
         initVideoCanvas();
-    }, 50);
+    }, 500);
 
     function initVideoCanvas() {
         const canvas = document.getElementById('video_canvas');
-        const video = document.getElementById('rtc_media_player');
-        video.style = "position:relative;display:flex;";
-        const style = canvas.style.cssText;
-        canvas.style = "position:relative;display:flex;height:" + video.offsetHeight + "px;top:-" + video.offsetHeight + "px;margin-bottom:-" + video.offsetHeight + "px;width:" + video.offsetWidth + "px";
+        const hiddenCanvas = videoDrawHiddenCanvas === null
+            ? document.createElement('canvas')
+            : videoDrawHiddenCanvas;
 
-        if (canvas.style.cssText !== style) {
-            videoDrawContext = canvas.getContext("2d");
-            videoScene.changed = true;
+        if (videoScene.image !== null) {
+            videoScene.frameSize = {
+                w: videoScene.image.width,
+                h: videoScene.image.height,
+            }
         }
+
+        const frameSize = videoScene.frameSize;
+
+        canvas.width = frameSize.w;
+        canvas.height = frameSize.h;
+        hiddenCanvas.width = frameSize.w;
+        hiddenCanvas.height = frameSize.h;
+        videoDrawContext = canvas.getContext("2d", { alpha: false });
+        videoDrawHiddenContext = hiddenCanvas.getContext("2d", { alpha: false });
+        videoScene.changed = true;
+
+        videoDrawHiddenCanvas = hiddenCanvas;
     }
 
     initVideoCanvas();

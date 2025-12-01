@@ -23,7 +23,7 @@
 #endif
 
 #ifndef HALF_FP_AVAILABLE
-#define HALF_FP_AVAILABLE 1
+#define HALF_FP_AVAILABLE 0
 #endif
 
 #define maxFragmentHeight 4
@@ -240,7 +240,7 @@ void getDisparity(
 
     int windowSize = (windowSize0 / 4) * 4;
 
-    for (int d = minDisparity; d <= maxDisparity; d++) {
+    for (int d = minDisparity; d <= maxDisparity; d+=1) {
         // предположим что окно соответствия равно 4*4, а maxDisparity-minDisparity кратно 16
         // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
         // в prev поместим стоимость первой колонки пикселей для x

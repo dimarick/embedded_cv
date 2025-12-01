@@ -1,8 +1,8 @@
 #include <seasocks/StringUtil.h>
 #include "SocketProxy.h"
 
-void SocketProxy::onData(WebSocket *connection, const char *data) {
-    connectionHandlers.find(connection)->second->onData(data);
+void SocketProxy::onData(WebSocket *connection, const uint8_t *data, size_t dataSize) {
+    connectionHandlers.find(connection)->second->onData(data, dataSize);
 }
 
 void SocketProxy::onConnect(WebSocket *connection) {
@@ -44,4 +44,5 @@ void SocketProxy::onDisconnect(WebSocket *connection) {
 
     std::cout << "Disconnected: " << connection->getRequestUri()
               << " : " << formatAddress(connection->getRemoteAddress()) << "\n";
+    connection->close();
 }

@@ -12,6 +12,11 @@
 namespace mini_server {
     static const size_t BUFFER_SIZE = 256;
     class CommandServer {
+        struct MessageHeader {
+            unsigned int magick;
+            unsigned int size;
+        };
+
         int socket = -1;
         HandlerInterface *handler = nullptr;
         std::atomic<bool> running;
@@ -31,6 +36,7 @@ namespace mini_server {
             handler = &_handler;
         }
         void broadcast(const std::string &message);
+        void broadcast(const void *buffer, size_t bufferSize);
         void run();
         void stop() {
             running = false;

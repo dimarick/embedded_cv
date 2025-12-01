@@ -28,6 +28,7 @@ using namespace cv;
 static std::atomic running = true;
 
 static BroadcastingServer broadcastingServer;
+static BroadcastingServer streamingServer;
 static CommandServer commandServer;
 
 void matread(const std::string& filename, Mat &mat)
@@ -85,6 +86,7 @@ int main(int argc, const char **argv) {
     }
 
     broadcastingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
+    streamingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_s", 10));
     commandServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_ctl", 1));
     auto handler = CvCommandHandler(commandServer);
     commandServer.setHandler(handler);
@@ -101,6 +103,10 @@ int main(int argc, const char **argv) {
 
     std::thread broadcastingServerThread = std::thread([]() {
         broadcastingServer.run();
+    });
+
+    std::thread streamingServerThread = std::thread([]() {
+        streamingServer.run();
     });
 
     auto capFps = captureLeft.get(cv::CAP_PROP_FPS);
@@ -164,19 +170,7 @@ int main(int argc, const char **argv) {
     cv::Size outputSize(capWidth / 2, capHeight / 2);
     cv::Size processingSize(capWidth, capHeight);
 
-    const char command[] = "ffmpeg -f rawvideo -pixel_format bgr24 -s %dx%d -re  -i - %s %s";
     const char inputCommand[] = "ffmpeg -loglevel fatal -f v4l2 -input_format mjpeg -s %dx%d -re  -i %s -f rawvideo -filter:v 'format=bgr24' -fflags nobuffer -avioflags direct -fflags discardcorrupt -g 15 -threads 7 -";
-    size_t bufferSize = sizeof(command) + strlen(argv[3]) + strlen(argv[4]) + 50;
-
-    char *formattedCommand = (char *) malloc(bufferSize);
-    snprintf(formattedCommand, bufferSize, command, outputSize.width, outputSize.height, argv[3], argv[4]);
-
-    std::cerr << formattedCommand << std::endl;
-    std::cerr.flush();
-
-    auto pipe = popen(formattedCommand, "w");
-
-    free(formattedCommand);
 
     size_t inputBufferSize = sizeof(inputCommand) + strlen(argv[1]) + strlen(argv[2]) + 50;
     char *formattedInputCommand = (char *) malloc(inputBufferSize);
@@ -209,12 +203,6 @@ int main(int argc, const char **argv) {
     }
 
     free(formattedInputCommand);
-
-    if (pipe == nullptr) {
-        std::cerr << "Failed to start " << formattedCommand << " errno " << strerror(errno) << std::endl;
-
-        return -1;
-    }
 
     ImageProcessor processor(processingSize.width, processingSize.height, broadcastingServer);
 
@@ -298,6 +286,10 @@ int main(int argc, const char **argv) {
     double minVal = 0, maxVal = 0, varianceMinVal = 0, varianceMaxVal = 0;
 
     cv::Mat disparity8;
+
+    Mat preview;
+    std::mutex sendingLock;
+    std::ostringstream tm;
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -432,12 +424,10 @@ int main(int argc, const char **argv) {
         std::cerr << "fps " << avgFps << " time " << time << " time2 " << time2 << " load " << avgTime * 100 / ((double)us / 1e6) << " %, avg " << avgTime << " %, avg2 " << avgTime2 << " size "
                   << resultLeft.dataend - resultLeft.datastart << std::endl;
 
-        std::ostringstream tm;
-
+        sendingLock.lock();
         tm << "PERF " << fps << " " << time << std::endl;
-
-        Mat preview;
         cv::resize(disparity8, preview, outputSize);
+        sendingLock.unlock();
 
         if (!writerIsRunning) {
             if (writer.joinable()) {
@@ -446,14 +436,30 @@ int main(int argc, const char **argv) {
 
             writerIsRunning = true;
 
-            writer = std::thread([](auto *preview, auto *pipe, auto *isRunning, auto *tm) {
-                broadcastingServer.broadcast(tm->str());
+            writer = std::thread([](auto *preview, auto *isRunning, std::ostringstream *tm, auto *sendingLock) {
+                sendingLock->lock();
+                const std::string message = tm->str();
+                tm->str("");
+                tm->clear();
+                Mat frame;
+                preview->copyTo(frame);
+                sendingLock->unlock();
 
-                fwrite(preview->data, sizeof(char), preview->dataend - preview->datastart, *pipe);
+                std::vector<uchar> jpgData;
+
+                cv::imencode(".jpg", frame, jpgData, {
+                        ImwriteFlags::IMWRITE_JPEG_QUALITY, 80,
+                        ImwriteFlags::IMWRITE_JPEG_OPTIMIZE, 1,
+                        ImwriteFlags::IMWRITE_JPEG_SAMPLING_FACTOR, cv::ImwriteJPEGSamplingFactorParams::IMWRITE_JPEG_SAMPLING_FACTOR_444,
+                });
+
+                broadcastingServer.broadcast(message);
+
+                std::cerr << "Sending jpeg size " << jpgData.size() << "/" << frame.dataend - frame.datastart << "(" << (float)jpgData.size() / (float)(frame.dataend - frame.datastart) << ")" << std::endl;
+
+                streamingServer.broadcast(jpgData.data(), jpgData.size());
                 *isRunning = false;
-            }, &preview, &pipe, &writerIsRunning, &tm);
-
-            cv::imwrite("d.jpg", disparity8);
+            }, &preview, &writerIsRunning, &tm, &sendingLock);
         }
     }
 

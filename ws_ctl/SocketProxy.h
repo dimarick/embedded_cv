@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <string>
+#include <utility>
 #include <unistd.h>
 
 using namespace seasocks;
@@ -16,9 +17,9 @@ private:
     const std::string socketName;
     std::unordered_map<WebSocket *, ConnectionHandler *> connectionHandlers;
 public:
-    explicit SocketProxy(const std::string socketName) : socketName(socketName) {}
+    explicit SocketProxy(std::string socketName) : socketName(std::move(socketName)) {}
     void onConnect(WebSocket* connection) override;
-    void onData(WebSocket* connection, const char* data) override;
+    void onData(WebSocket* connection, const uint8_t *data, size_t) override;
     void onDisconnect(WebSocket* connection) override;
 };
 
