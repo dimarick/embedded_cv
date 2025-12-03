@@ -15,10 +15,12 @@ using namespace seasocks;
 class SocketProxy : public WebSocket::Handler {
 private:
     const std::string socketName;
+    const int sendingQueueDepth;
     std::unordered_map<WebSocket *, ConnectionHandler *> connectionHandlers;
 public:
-    explicit SocketProxy(std::string socketName) : socketName(std::move(socketName)) {}
+    explicit SocketProxy(std::string socketName, int sendingQueueDepth = -1) : socketName(std::move(socketName)), sendingQueueDepth(sendingQueueDepth) {}
     void onConnect(WebSocket* connection) override;
+    void onData(WebSocket* connection, const char*) override;
     void onData(WebSocket* connection, const uint8_t *data, size_t) override;
     void onDisconnect(WebSocket* connection) override;
 };

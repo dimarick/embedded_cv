@@ -11,6 +11,7 @@ namespace mini_server {
         struct MessageHeader {
             unsigned int magick;
             unsigned int size;
+            unsigned long ttl;
         };
 
         int socket = -1;
@@ -27,7 +28,7 @@ namespace mini_server {
         }
 
         void broadcast(const std::string &message);
-        void broadcast(const void *buffer, size_t bufferSize);
+        void broadcast(const void *buffer, size_t bufferSize, unsigned long ttl = 0);
     };
 }
 

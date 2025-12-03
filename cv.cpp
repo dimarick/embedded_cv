@@ -219,6 +219,9 @@ int main(int argc, const char **argv) {
     std::thread writer;
     std::atomic writerIsRunning = false;
 
+    std::thread imageWriter;
+    std::atomic imageWriterIsRunning = false;
+
     std::mutex readerLeftLock;
     std::mutex readerRightLock;
     std::atomic readerLeftCount = 0l;
@@ -436,11 +439,29 @@ int main(int argc, const char **argv) {
 
             writerIsRunning = true;
 
-            writer = std::thread([](auto *preview, auto *isRunning, std::ostringstream *tm, auto *sendingLock) {
+            writer = std::thread([](auto *isRunning, std::ostringstream *tm, auto *sendingLock) {
                 sendingLock->lock();
                 const std::string message = tm->str();
                 tm->str("");
                 tm->clear();
+                sendingLock->unlock();
+
+                std::vector<uchar> jpgData;
+
+                broadcastingServer.broadcast(message);
+                *isRunning = false;
+            }, &writerIsRunning, &tm, &sendingLock);
+        }
+
+        if (!imageWriterIsRunning) {
+            if (imageWriter.joinable()) {
+                imageWriter.join();
+            }
+
+            imageWriterIsRunning = true;
+
+            imageWriter = std::thread([](auto *preview, auto *isRunning, auto *sendingLock) {
+                sendingLock->lock();
                 Mat frame;
                 preview->copyTo(frame);
                 sendingLock->unlock();
@@ -448,18 +469,16 @@ int main(int argc, const char **argv) {
                 std::vector<uchar> jpgData;
 
                 cv::imencode(".jpg", frame, jpgData, {
-                        ImwriteFlags::IMWRITE_JPEG_QUALITY, 80,
+                        ImwriteFlags::IMWRITE_JPEG_QUALITY, 70,
                         ImwriteFlags::IMWRITE_JPEG_OPTIMIZE, 1,
-                        ImwriteFlags::IMWRITE_JPEG_SAMPLING_FACTOR, cv::ImwriteJPEGSamplingFactorParams::IMWRITE_JPEG_SAMPLING_FACTOR_444,
+                        ImwriteFlags::IMWRITE_JPEG_SAMPLING_FACTOR, cv::ImwriteJPEGSamplingFactorParams::IMWRITE_JPEG_SAMPLING_FACTOR_420,
                 });
-
-                broadcastingServer.broadcast(message);
 
                 std::cerr << "Sending jpeg size " << jpgData.size() << "/" << frame.dataend - frame.datastart << "(" << (float)jpgData.size() / (float)(frame.dataend - frame.datastart) << ")" << std::endl;
 
-                streamingServer.broadcast(jpgData.data(), jpgData.size());
+                streamingServer.broadcast(jpgData.data(), jpgData.size(), 100);
                 *isRunning = false;
-            }, &preview, &writerIsRunning, &tm, &sendingLock);
+            }, &preview, &imageWriterIsRunning, &sendingLock);
         }
     }
 

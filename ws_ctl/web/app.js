@@ -375,6 +375,7 @@ document.onreadystatechange = function() {
             document.getElementById('message-cv_s').textContent = 'Connected.';
         };
         cvS.onmessage = async function (message) {
+            cvS.send("ACK");
             const data = message.data;
             if (data instanceof Blob) {
                 let image = null;
@@ -413,14 +414,14 @@ document.onreadystatechange = function() {
         //     window.hwCtl = connectHwCtl();
         //     console.log("Try to connect hwCtl")
         // }
-        if (!window.cvTm || window.cvTm.readyState === window.cvTm.CLOSED) {
-            window.cvTm = connectCvTm();
-            console.log("Try to connect cvTm")
-        }
-        if (!window.cvCtl || window.cvCtl.readyState === window.cvCtl.CLOSED) {
-            window.cvCtl = connectCvCtl();
-            console.log("Try to connect cvCtl")
-        }
+        // if (!window.cvTm || window.cvTm.readyState === window.cvTm.CLOSED) {
+        //     window.cvTm = connectCvTm();
+        //     console.log("Try to connect cvTm")
+        // }
+        // if (!window.cvCtl || window.cvCtl.readyState === window.cvCtl.CLOSED) {
+        //     window.cvCtl = connectCvCtl();
+        //     console.log("Try to connect cvCtl")
+        // }
         if (!window.cvS || window.cvS.readyState === window.cvS.CLOSED) {
             window.cvS = connectCvS();
             console.log("Try to connect cvS")

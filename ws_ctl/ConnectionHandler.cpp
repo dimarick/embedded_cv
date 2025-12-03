@@ -1,5 +1,6 @@
 #include "ConnectionHandler.h"
 #include <unistd.h>
+#include <semaphore>
 #include <seasocks/StringUtil.h>
 
 void ConnectionHandler::start() {
@@ -61,14 +62,41 @@ void ConnectionHandler::start() {
             }
 
             if (messageSize > 0) {
-                _server.execute(std::function{[c, buffer, data, messageSize, &that]() {
-                    std::cerr << "sending data " << data << std::endl;
-                    if (!that->running) {
-                        free((void *)buffer);
-                        return;
+                if (that->sendingQueueDepth != -1) {
+                    that->sendingMutex.try_acquire_until(std::chrono::time_point<std::chrono::system_clock>(std::chrono::milliseconds(header->ttl)));
+
+                    auto now = duration_cast<std::chrono::milliseconds>(
+                            std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+                    if (header->ttl == 0 || header->ttl > now) {
+
+                        std::cerr << "Sending frame size " << messageSize << " ttl remaining " << header->ttl - now << std::endl;
+
+                        const uint8_t *copyOfData = (uint8_t *)malloc(messageSize);
+                        memcpy((void *)copyOfData, data, messageSize);
+
+                        _server.execute(std::function{[c, copyOfData, messageSize, &that]() {
+                            if (!that->running) {
+                                that->sendingMutex.release();
+
+                                return;
+                            }
+
+                            c->send(copyOfData, messageSize);
+                            free((void *)copyOfData);
+                        }});
+                    } else {
+                        std::cerr << "Dropped frame size " << messageSize << " ttl expired " << now - header->ttl << std::endl;
                     }
-                    c->send(data, messageSize);
-                }});
+                } else {
+                    _server.execute(std::function{[c, data, messageSize, &that]() {
+                        if (!that->running) {
+                            return;
+                        }
+
+                        c->send(data, messageSize);
+                    }});
+                }
+
                 messageSize = 0;
             }
         }
@@ -77,12 +105,22 @@ void ConnectionHandler::start() {
 
         shutdown(_socketFd, SHUT_RDWR);
         close(_socketFd);
+        free((void *) buffer);
     }, connection, socketFd, this);
 
     running = true;
 }
 
 void ConnectionHandler::onData(const uint8_t *data, size_t dataSize) {
+    if (this->sendingQueueDepth != -1) {
+        if (dataSize == 3 && strncmp((const char *)(data), "ACK", 3) == 0) {
+            std::cerr << "ACK received" << std::endl;
+
+            sendingMutex.release();
+            return;
+        }
+    }
+
     auto n = send(socketFd, data, dataSize, MSG_NOSIGNAL);
 
     if (n == 0) {

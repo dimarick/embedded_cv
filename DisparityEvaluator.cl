@@ -3,7 +3,7 @@
 #endif
 
 #ifndef H_GRANULE_SIZE
-#define H_GRANULE_SIZE 4
+#define H_GRANULE_SIZE 8
 #endif
 
 #ifndef V_GRANULE_SIZE

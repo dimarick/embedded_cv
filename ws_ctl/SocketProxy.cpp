@@ -5,6 +5,10 @@ void SocketProxy::onData(WebSocket *connection, const uint8_t *data, size_t data
     connectionHandlers.find(connection)->second->onData(data, dataSize);
 }
 
+void SocketProxy::onData(WebSocket *connection, const char *data) {
+    connectionHandlers.find(connection)->second->onData((const uint8_t *)data, strlen(data));
+}
+
 void SocketProxy::onConnect(WebSocket *connection) {
     sockaddr addr = {AF_UNIX};
     socketName.copy(addr.sa_data, sizeof(addr.sa_data), 0);
@@ -20,7 +24,7 @@ void SocketProxy::onConnect(WebSocket *connection) {
         return;
     }
 
-    auto pHandler = new ConnectionHandler(connection, socketFd);
+    auto pHandler = new ConnectionHandler(connection, socketFd, sendingQueueDepth);
     connectionHandlers.insert({connection, pHandler});
 
     pHandler->start();

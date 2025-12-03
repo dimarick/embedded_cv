@@ -9,6 +9,7 @@
 #include <poll.h>
 #include <iostream>
 #include <cassert>
+#include <chrono>
 
 using namespace mini_server;
 
@@ -139,7 +140,7 @@ void CommandServer::broadcast(const std::string &message) {
     this->broadcast(message.c_str(), message.size());
 }
 
-void CommandServer::broadcast(const void *buffer, size_t bufferSize) {
+void CommandServer::broadcast(const void *buffer, size_t bufferSize, unsigned long ttl) {
     acceptedSocketsMutex.lock();
     auto threadSafeAcceptedSockets = acceptedSockets;
     acceptedSocketsMutex.unlock();
@@ -151,6 +152,12 @@ void CommandServer::broadcast(const void *buffer, size_t bufferSize) {
     memcpy((void *) data, buffer, bufferSize);
     header->magick = 'MsgS';
     header->size = bufferSize;
+    if (ttl > 0) {
+        header->ttl = duration_cast<std::chrono::milliseconds>(
+                std::chrono::high_resolution_clock::now().time_since_epoch()).count() + ttl;
+    } else {
+        header->ttl = 0;
+    }
 
     for (auto acceptedSocket : threadSafeAcceptedSockets) {
         size_t sent = 0;

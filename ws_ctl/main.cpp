@@ -9,11 +9,11 @@ static Server server(std::make_shared<PrintfLogger>(Logger::Level::Debug));
 int main(int argc, const char* argv[]) {
     cpptrace::register_terminate_handler();
 
-    server.addWebSocketHandler("/hw_ctl", std::make_shared<SocketProxy>("/tmp/hw_ctl"));
-    server.addWebSocketHandler("/hw_tm", std::make_shared<SocketProxy>("/tmp/hw_tm"));
-    server.addWebSocketHandler("/cv_ctl", std::make_shared<SocketProxy>("/tmp/cv_ctl"));
-    server.addWebSocketHandler("/cv_tm", std::make_shared<SocketProxy>("/tmp/cv_tm"));
-    server.addWebSocketHandler("/cv_s", std::make_shared<SocketProxy>("/tmp/cv_s"));
+//    server.addWebSocketHandler("/hw_ctl", std::make_shared<SocketProxy>("/tmp/hw_ctl"));
+//    server.addWebSocketHandler("/hw_tm", std::make_shared<SocketProxy>("/tmp/hw_tm"));
+//    server.addWebSocketHandler("/cv_ctl", std::make_shared<SocketProxy>("/tmp/cv_ctl"));
+//    server.addWebSocketHandler("/cv_tm", std::make_shared<SocketProxy>("/tmp/cv_tm"));
+    server.addWebSocketHandler("/cv_s", std::make_shared<SocketProxy>("/tmp/cv_s", 2));
 
     server.serve("web", 9090);
 
