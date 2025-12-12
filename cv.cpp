@@ -31,6 +31,23 @@ static BroadcastingServer broadcastingServer;
 static BroadcastingServer streamingServer;
 static CommandServer commandServer;
 
+void invMap(const cv::Mat &src, cv::Mat &dest) {
+    if (dest.empty()) {
+        dest = Mat(src.size(), src.type());
+    }
+
+    for (int y = 0; y < src.rows; y++) {
+        for (int x = 0; x < src.cols; x++) {
+            const auto &p = src.at<cv::Point2f>(y, x);
+            int row = (int) std::round(p.y);
+            int col = (int) std::round(p.x);
+            auto &p2 = dest.at<cv::Point2f>(std::max(0, std::min(row, dest.rows - 1)), std::max(0, std::min(col, dest.cols - 1)));
+            p2.x = (float)x;
+            p2.y = (float)y;
+        }
+    }
+}
+
 void matread(const std::string& filename, Mat &mat)
 {
     std::ifstream fs(filename, std::fstream::binary);
@@ -71,7 +88,7 @@ int main(int argc, const char **argv) {
             cv::VideoCaptureProperties::CAP_PROP_BUFFERSIZE, 10,
     };
 
-    if (argc < 4) {
+    if (argc < 2) {
         std::cout << "too less command arguments";
 
         return -1;
@@ -167,7 +184,7 @@ int main(int argc, const char **argv) {
     captureLeft.release();
     captureRight.release();
 
-    cv::Size outputSize(capWidth / 2, capHeight / 2);
+    cv::Size outputSize(capWidth, capHeight);
     cv::Size processingSize(capWidth, capHeight);
 
     const char inputCommand[] = "ffmpeg -loglevel fatal -f v4l2 -input_format mjpeg -s %dx%d -re  -i %s -f rawvideo -filter:v 'format=bgr24' -fflags nobuffer -avioflags direct -fflags discardcorrupt -g 15 -threads 7 -";
@@ -260,6 +277,11 @@ int main(int argc, const char **argv) {
     matread("map0.bin", bestMap1[0]);
     matread("map1.bin", bestMap1[1]);
     matread("mapa.bin", alignedMap);
+
+    for (int i = 0; i < frames.size(); ++i) {
+        invMap(bestMap1[i], invBestMap1[i]);
+    }
+    invMap(alignedMap, invAlignedMap);
 
 #ifdef HAVE_OPENCV_HIGHGUI
     cv::namedWindow("Disparity", cv::WINDOW_AUTOSIZE);
@@ -446,8 +468,6 @@ int main(int argc, const char **argv) {
                 tm->clear();
                 sendingLock->unlock();
 
-                std::vector<uchar> jpgData;
-
                 broadcastingServer.broadcast(message);
                 *isRunning = false;
             }, &writerIsRunning, &tm, &sendingLock);
@@ -480,6 +500,14 @@ int main(int argc, const char **argv) {
                 *isRunning = false;
             }, &preview, &imageWriterIsRunning, &sendingLock);
         }
+
+
+#ifdef HAVE_OPENCV_HIGHGUI
+
+        if (cv::waitKey(1) >= 0) {
+            break;
+        }
+#endif
     }
 
     if (writer.joinable()) {

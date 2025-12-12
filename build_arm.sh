@@ -1,3 +1,9 @@
+#!/bin/bash
+
+if [[ "$SSH_SERVER" == "" ]]; then
+  export SSH_SERVER=dima@192.168.3.40
+fi
+
 export ARCH=arm
 export PROJECT_ROOT=`pwd`
 export BUILD_TYPE=Debug
@@ -22,11 +28,11 @@ docker run \
     -w /home/dima/embedded_cv/ \
     -it debian-build bash build_arm_docker.sh || exit -1
 
-rsync -avc --progress ${PROJECT_ROOT}/release/${ARCH}/${BUILD_TYPE}/embedded_cv/bin/* dima@192.168.1.41: || exit -1
-rsync -avc --progress ${PROJECT_ROOT}/release/${ARCH}/${BUILD_TYPE}/OpenCV/lib/*.so* dima@192.168.1.41: || exit -1
-rsync -avc --progress ${PROJECT_ROOT}/DisparityEvaluator.cl dima@192.168.1.41: || exit -1
-rsync -avc --progress ${PROJECT_ROOT}/map0.bin dima@192.168.1.41: || exit -1
-rsync -avc --progress ${PROJECT_ROOT}/map1.bin dima@192.168.1.41: || exit -1
-rsync -avc --progress ${PROJECT_ROOT}/mapa.bin dima@192.168.1.41: || exit -1
-rsync -avc --progress ${PROJECT_ROOT}/launch.sh dima@192.168.1.41: || exit -1
-rsync -avc --progress ${PROJECT_ROOT}/ws_ctl/web/* --exclude=CMakeLists.txt dima@192.168.1.41:web || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/release/${ARCH}/${BUILD_TYPE}/embedded_cv/bin/* ${SSH_SERVER}: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/release/${ARCH}/${BUILD_TYPE}/OpenCV/lib/*.so* ${SSH_SERVER}: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/DisparityEvaluator.cl ${SSH_SERVER}: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/map0.bin ${SSH_SERVER}: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/map1.bin ${SSH_SERVER}: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/mapa.bin ${SSH_SERVER}: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/launch.sh ${SSH_SERVER}: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/ws_ctl/web/* --exclude=CMakeLists.txt ${SSH_SERVER}:web || exit -1

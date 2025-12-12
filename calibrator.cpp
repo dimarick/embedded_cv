@@ -323,15 +323,6 @@ int main(int argc, const char **argv) {
     matread("map1.bin", bestMap1[1]);
     matread("mapa.bin", alignedMap);
 
-    bool needsCalibration1 = bestMap1[0].empty() || bestMap1[1].empty() || alignedMap.empty();
-
-    if (!needsCalibration1) {
-        for (int i = 0; i < frames.size(); ++i) {
-            invMap(bestMap1[i], invBestMap1[i]);
-        }
-        invMap(alignedMap, invAlignedMap);
-    }
-
     std::vector<double> avgDistCoeff(14);
     std::vector<double> prevStdRmseUndistorted(frames.size(), 1e6);
     std::vector<size_t> nextFrameId(frames.size());
@@ -650,7 +641,7 @@ int main(int argc, const char **argv) {
 #ifdef HAVE_OPENCV_HIGHGUI
 
         if (cv::waitKey(1) >= 0) {
-            needsCalibration1 = !needsCalibration1;
+            break;
         }
 #endif
     }
