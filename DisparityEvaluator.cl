@@ -199,13 +199,11 @@ void getDisparity(
         int y,
         int w,
         int h,
-        half_int *xDelta,
         int minDisparity,
         int maxDisparity,
         int windowSize0,
         int sz,
         half_int* result,
-        half* resultVariance,
         int step,
         bool debug
         BC_ARG
@@ -228,15 +226,125 @@ void getDisparity(
     half_intN bestD[BATCH_SIZE];
     floatN minCost[BATCH_SIZE];
     floatN scoreSum[BATCH_SIZE];
-//    floatN scoreVariance[BATCH_SIZE];
-//    floatN scoreExpectation[BATCH_SIZE];
 
     for (int b = 0; b < BATCH_SIZE; ++b) {
         vstoreN((intN)0, b, (int *)bestD);
         vstoreN((floatN)0, b, (half *)scoreSum);
         vstoreN((floatN)1e12f, b, (half *)minCost);
-//        vstoreN((floatN)0, b, (half *)scoreVariance);
-//        vstoreN((floatN)0, b, (half *)scoreExpectation);
+    }
+
+    int windowSize = (windowSize0 / 4) * 4;
+
+    for (int d = minDisparity; d <= maxDisparity; d += step) {
+        // предположим что окно соответствия равно 4*4, а maxDisparity-minDisparity кратно 16
+        // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
+        // в prev поместим стоимость первой колонки пикселей для x
+
+        half prev[VECTOR_SIZE + 4];
+        half scores[VECTOR_SIZE * BATCH_SIZE];
+        prev[0] = 0;
+        prev[1] = 0;
+        prev[2] = 0;
+        prev[3] = 0;
+
+        // в prev поместим стоимость всего тайла от 0 до N-1 = scoreX0 = prev + score1 + .. + scoreN
+        float score16 = 0;
+        // тогда score x1 scoreX1 = score1 + .. + scoreN+1 = score - prev + scoreN+1
+
+        __attribute__((opencl_unroll_hint(2)))
+        for (int i = 0; i < windowSize / 4; ++i) {
+            half16 df0 = convert_half16(vload16(i + 0, src)) - convert_half16(vload16(i + 0, &dest[d * h * sz]));
+            half16 df1 = convert_half16(vload16(i + 1, src)) - convert_half16(vload16(i + 1, &dest[d * h * sz]));
+            half16 df2 = convert_half16(vload16(i + 2, src)) - convert_half16(vload16(i + 2, &dest[d * h * sz]));
+            df0 *= df0;
+            df1 *= df1;
+            df2 *= df2;
+
+            prev[0x0] += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6 + df0.s7 + df0.s8 + df0.s9 + df0.sA + df0.sB;
+            prev[0x1] += df0.sC + df0.sD + df0.sE + df0.sF + df1.s0 + df1.s1 + df1.s2 + df1.s3 + df1.s4 + df1.s5 + df1.s6 + df1.s7;
+            prev[0x2] += df1.s8 + df1.s9 + df1.sA + df1.sB + df1.sC + df1.sD + df1.sE + df1.sF + df2.s0 + df2.s1 + df2.s2 + df2.s3;
+            prev[0x3] += df2.s4 + df2.s5 + df2.s6 + df2.s7 + df2.s8 + df2.s9 + df2.sA + df2.sB + df2.sC + df2.sD + df2.sE + df2.sF;
+        }
+
+        scores[0] = prev[0] + prev[1] + prev[2] + prev[3];
+
+        half16 c1[VECTOR_SIZE];
+
+        for (int b = 0; b < BATCH_SIZE; ++b) {
+            __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
+            for (int xi = (int)(b == 0); xi < VECTOR_SIZE; xi++) {
+                size_t srcIndex = (b * VECTOR_SIZE + xi + windowSize - 1) * 12;
+                FATAL_LOCAL_BOUNDARY(&src[srcIndex], data1, dataSize);
+                FATAL_LOCAL_BOUNDARY(&dest[(b * VECTOR_SIZE + xi + windowSize - 1 + d) * 12], data2, dataSize);
+                c1[xi] = convert_half16(vload16(0, &src[srcIndex]))
+                         - convert_half16(vload16(0, &dest[(b * VECTOR_SIZE + xi + windowSize - 1 + d) * 12]));
+            }
+
+            __attribute__((opencl_unroll_hint(VECTOR_SIZE)))
+            for (int xi = (int)(b == 0); xi < VECTOR_SIZE; xi++) {
+                half scoreN = 0;
+                half16 cf = c1[xi];
+                cf *= cf;
+                EACH12(scoreN += cf)
+
+                scores[b * VECTOR_SIZE + xi] = scores[b * VECTOR_SIZE + xi - 1] + scoreN - prev[(b * VECTOR_SIZE + xi - 1) % VECTOR_SIZE];
+                prev[(b * VECTOR_SIZE + xi + 4 - 1) % VECTOR_SIZE] = scoreN;
+            }
+
+            floatN newScore = vloadN(b, scores) / (half)windowSize;
+            floatN currentScore = newScore;
+
+            half_intN needUpdate = isless(currentScore, minCost[b]);
+            vstoreN(fmin(vloadN(b, (half *)minCost), currentScore), b, (half *)minCost);
+            vstoreN(select(vloadN(b, (half_int *)bestD), (half_intN)d, needUpdate), b, (half_int *)bestD);
+        }
+    }
+
+    for (int b = 0; b < BATCH_SIZE; ++b) {
+        vstoreN(max((half_intN)minDisparity, min(bestD[b], (half_intN)maxDisparity)), b, result);
+    }
+}
+
+void getDisparityWithDelta(
+        __local uchar *data1,
+        __local uchar *data2,
+        int x,
+        int y,
+        int w,
+        int h,
+        half_int *xDelta,
+        int minDisparity,
+        int maxDisparity,
+        int windowSize0,
+        int sz,
+        half_int* result,
+        int step,
+        bool debug
+        BC_ARG
+) {
+    __local const uchar *src = data1 + y * sz + x * h * sz;
+    __local const uchar *dest = data2 + y * sz + x * h * sz;
+
+    size_t dataSize = w * sz * h;
+
+    floatN disparity;
+    half avgScore;
+    maxDisparity = max(minDisparity, maxDisparity);
+    minDisparity = min(minDisparity, maxDisparity);
+    int disparityRange = maxDisparity - minDisparity;
+
+    CHECK_LOCAL_BOUNDARY(src, data1, dataSize);
+    CHECK_LOCAL_BOUNDARY(dest, data2, dataSize);
+    CHECK_LOCAL_BOUNDARY(&dest[minDisparity], data2, dataSize);
+
+    half_intN bestD[BATCH_SIZE];
+    floatN minCost[BATCH_SIZE];
+    floatN scoreSum[BATCH_SIZE];
+
+    for (int b = 0; b < BATCH_SIZE; ++b) {
+        vstoreN((intN)0, b, (int *)bestD);
+        vstoreN((floatN)0, b, (half *)scoreSum);
+        vstoreN((floatN)1e12f, b, (half *)minCost);
     }
 
     int windowSize = (windowSize0 / 4) * 4;
@@ -300,9 +408,6 @@ void getDisparity(
             floatN newScore = vloadN(b, scores) / (half)windowSize;
             floatN currentScore = newScore;
 
-//            scoreExpectation[b] += newScore;
-//            scoreVariance[b] += newScore * newScore;
-
             half_intN needUpdate = isless(currentScore, minCost[b]);
             vstoreN(fmin(vloadN(b, (half *)minCost), currentScore), b, (half *)minCost);
             vstoreN(select(vloadN(b, (half_int *)bestD), (half_intN)d - vloadN(b, xDelta), needUpdate), b, (half_int *)bestD);
@@ -310,15 +415,7 @@ void getDisparity(
     }
 
     for (int b = 0; b < BATCH_SIZE; ++b) {
-//        disparity = convert_floatN(vloadN(b, (half_int *)bestD));
-
-//        scoreExpectation[b] /= disparityRange;
-//        scoreVariance[b] /= disparityRange;
-//        scoreVariance[b] -= scoreExpectation[b] * scoreExpectation[b];
-//        scoreVariance[b] = sqrt(fabs(scoreVariance[b]));
-
         vstoreN(max((half_intN)minDisparity, min(bestD[b], (half_intN)maxDisparity)), b, result);
-//        vstoreN(scoreVariance[b], b, resultVariance);
     }
 }
 
@@ -369,51 +466,27 @@ __kernel void DisparityEvaluator(
         barrier(CLK_LOCAL_MEM_FENCE);
 
         for (int x = x0; x < min(xLimit, w - MIN_VALID_DISPARITY - windowSize0); x += BATCH_SIZE * VECTOR_SIZE) {
-            half resultVariance[1];
             half_int result[BATCH_SIZE * VECTOR_SIZE];
             half_int xDeltaArray[BATCH_SIZE * VECTOR_SIZE];
-            for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-                xDeltaArray[i] = 0;
-            }
+
             const int maxDisparity = max(0, min(256, (int) (w - ((x + 16*3) + windowSize0 + 1))));
-            getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight, xDeltaArray, 0, maxDisparity, windowSize0, nsz, result, resultVariance, 1, (x==960||x==968) && y0 == 540 BC_PASS);
+            getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight, 0, maxDisparity, windowSize0, nsz, result, 1, (x==960||x==968) && y0 == 540 BC_PASS);
 
             const half_int r0 = result[0];
-            half_int rMax = 0;
-            half_int rMin = 0x7fff;
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
                 half_int d = result[i] - r0;
                 xDeltaArray[i] = d;
-                rMax = max(d, rMax);
-                rMin = min(d, rMin);
             }
 
-            int minDisparity = max(-(x + rMax + 12), -maxDisparity);
-            const int maxDisparityX = max(-(x - rMin - 12), 0);
-            minDisparity = max(-x, minDisparity);
+            const int minDisparity = max(-r0 - 64, -256);
+            const int maxDisparityX = min(-r0 + 64, 0);
 
-            getDisparity(pFrame0, pFrame1, x + r0, 0, w, fragmentHeight, xDeltaArray, minDisparity,
-                         maxDisparityX, windowSize0, nsz, result, resultVariance, 1, false BC_PASS);
+            getDisparityWithDelta(pFrame0, pFrame1, x + r0, 0, w, fragmentHeight, xDeltaArray, minDisparity,
+                         maxDisparityX, windowSize0, nsz, result, 1, false BC_PASS);
 
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-                disparity[y * w + x + i] = -(short)result[i]*DISPARITY_PRECISION;
+                disparity[y * w + x + i] = -(short)result[i] * DISPARITY_PRECISION;
             }
-//            for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-//                variance[y * w + x + i] = resultVariance[i];
-//            }
-            
-//            if (w - (x + rMax + 16*3) < windowSize0 + 5) {
-//                for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-//                    disparity[y * w + x + i] = (short)result[i]*DISPARITY_PRECISION;
-//                }
-//            } else {
-//                getDisparity(pFrame0, pFrame1, x + r0, 0, w, fragmentHeight, xDeltaArray, minDisparity,
-//                              maxDisparityX, windowSize0, nsz, result, resultVariance, 1, false BC_PASS);
-//
-//                for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-//                    disparity[y * w + x + i] = -(short)result[i]*DISPARITY_PRECISION;
-//                }
-//            }
         }
     }
 
