@@ -30,6 +30,10 @@
 #define MAX_WINDOW_WIDTH 12
 #endif
 
+#ifndef MAX_DISPARITY
+#define MAX_DISPARITY 256
+#endif
+
 #define maxFragmentHeight 4
 #define nsz 3
 #define maxRowWidth 1920 * nsz
@@ -282,11 +286,12 @@ void getDisparity(
 
                 appendScore4x4x3(&src[iw * h * sz], &dest[(iw + d) * h * sz], scoreN);
 
-                __attribute__((opencl_unroll_hint(4)))
+                __attribute__((opencl_unroll_hint(3)))
                 for (int j = (int)(b == 0); j < 4; ++j) {
-                    scores[i + j] = scores[i + j - 1] + scoreN[j] - prev[(i + j - 1) % (VECTOR_SIZE + windowSize)];
-                    prev[(i + j + windowSize - 1) % (VECTOR_SIZE + windowSize)] = scoreN[j];
+                    scores[i + j] = scores[i + j - 1] + scoreN[j] - prev[(i + j - 1)];
                 }
+
+                vstore4(vload4(0, scoreN), 0, &prev[(i + windowSize - 1)]);
             }
 
             halfN currentScore = vloadN(b, scores);
@@ -334,15 +339,34 @@ void inline getDisparityB1(
     short bestD = 0;
     half minCost = 1e12f;
 
-    for (short d = minDisparity; d <= maxDisparity; d += step) {
+    half16 sf[MAX_WINDOW_WIDTH / 4 * 3];
+
+    for (int i = 0; i < windowSize / 4; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            sf[i * 3 + j] = convert_half16(vload16(i * 3 + j, src));
+        }
+    }
+
+    for (short d = minDisparity; d <= maxDisparity; d += step * 4) {
         // предположим что окно соответствия равно 4*4, а maxDisparity-minDisparity кратно 16
         // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
         // в prev поместим стоимость каждого пикселя первой колонки тайла для текущего d (сумму разностей 16 пикселей для окна 4х4)
 
-        half prev[1 + MAX_WINDOW_WIDTH];
-        half scores;
+        half scores = 0;
+        __attribute__((opencl_unroll_hint(2)))
+        for (int i = 0; i < windowSize / 4; ++i) {
+            half16 df0 = sf[i * 3 + 0] - convert_half16(vload16(i * 3 + 0, &dest[d * h * sz]));
+            half16 df1 = sf[i * 3 + 1] - convert_half16(vload16(i * 3 + 1, &dest[d * h * sz]));
+            half16 df2 = sf[i * 3 + 2] - convert_half16(vload16(i * 3 + 2, &dest[d * h * sz]));
+            df0 *= df0;
+            df1 *= df1;
+            df2 *= df2;
 
-        scores = getWindowColumnsScore4x4(src, &dest[d * h * sz], windowSize, prev);
+            scores += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6 + df0.s7 + df0.s8 + df0.s9 + df0.sA + df0.sB;
+            scores += df0.sC + df0.sD + df0.sE + df0.sF + df1.s0 + df1.s1 + df1.s2 + df1.s3 + df1.s4 + df1.s5 + df1.s6 + df1.s7;
+            scores += df1.s8 + df1.s9 + df1.sA + df1.sB + df1.sC + df1.sD + df1.sE + df1.sF + df2.s0 + df2.s1 + df2.s2 + df2.s3;
+            scores += df2.s4 + df2.s5 + df2.s6 + df2.s7 + df2.s8 + df2.s9 + df2.sA + df2.sB + df2.sC + df2.sD + df2.sE + df2.sF;
+        }
 
         half currentScore = scores;
 
@@ -404,18 +428,15 @@ __kernel void DisparityEvaluator(
         for (int x = x0; x < min(xLimit, w - MIN_VALID_DISPARITY - windowSize0); x += BATCH_SIZE * VECTOR_SIZE) {
             short result[BATCH_SIZE * VECTOR_SIZE];
 
-            const int maxDisparity = max(0, min(256, (int) (w - ((x + 16*3) + windowSize0 + 1))));
+            const int maxDisparity = max(0, min(MAX_DISPARITY, (int) (w - ((x + 16*3) + windowSize0 + 1))));
             getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight,
                          0, maxDisparity, windowSize0, nsz, result, 1, false BC_PASS);
 
-            const short r0 = result[0];
-            short rMin = r0;
-            short rMax = r0;
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
                 short r;
 
                 getDisparityB1(pFrame0, pFrame1, x + i + result[i], 0, w, fragmentHeight,
-                               max(-x - i - result[i], -result[i] - 64), min(-result[i] + 64, 0), windowSize0, nsz, &r, 1, false BC_PASS);
+                               max(-x - i - result[i], -result[i] - MAX_DISPARITY / 4), min(-result[i] + MAX_DISPARITY / 4, 0), windowSize0, nsz, &r, 1, false BC_PASS);
                 result[i] = r;
             }
 
