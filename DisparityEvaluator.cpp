@@ -10,7 +10,7 @@ namespace ecv {
 //            , 0
 //            };
 
-    void DisparityEvaluator::evaluateDisparity(const std::vector<cv::Mat> &frames, cv::Mat &disparity, cv::Mat &variance) {
+    void DisparityEvaluator::evaluateDisparity(const std::vector<cv::UMat> &frames, cv::Mat &disparity, cv::Mat &variance) {
         for (int i = 1; i < frames.size(); i++) {
             CV_Assert(frames[0].cols == frames[i].cols);
             CV_Assert(frames[0].rows == frames[i].rows);
@@ -27,30 +27,30 @@ namespace ecv {
             CV_Assert(disparity.rows == frames[0].rows);
             CV_Assert(disparity.type() == CV_16S);
         }
-
-        /** last image in piramid should not less 100px width */
-        auto pyramidSize = std::min((size_t)0, (size_t)std::max(0., std::floor(std::log(frames[0].cols / 400.0) / std::log(2))));
-        std::vector piramids(pyramidSize, std::vector<cv::Mat> (frames.size()));
-        std::vector<cv::Mat> roughDisparity(pyramidSize + 1);
-
-        if (pyramidSize > 0) {
-            for (int j = 0; j < frames.size(); j++) {
-                cv::resize(frames[j], piramids[0][j], cv::Size(frames[j].cols / 2, frames[j].rows / 2));
-            }
-        }
-
-        for (int i = 1; i < pyramidSize; ++i) {
-            for (int j = 0; j < frames.size(); j++) {
-                cv::resize(piramids[i - 1][j], piramids[i][j], cv::Size(piramids[i - 1][j].cols / 2, piramids[i - 1][j].rows / 2));
-            }
-        }
-
-        for (size_t i = pyramidSize; i > 0; i--) {
-            this->evaluateIncrementally(piramids[i - 1], roughDisparity[i], roughDisparity[i - 1]);
-        }
+//
+//        /** last image in piramid should not less 100px width */
+//        auto pyramidSize = std::min((size_t)0, (size_t)std::max(0., std::floor(std::log(frames[0].cols / 400.0) / std::log(2))));
+//        std::vector piramids(pyramidSize, std::vector<cv::Mat> (frames.size()));
+//        std::vector<cv::Mat> roughDisparity(pyramidSize + 1);
+//
+//        if (pyramidSize > 0) {
+//            for (int j = 0; j < frames.size(); j++) {
+//                cv::resize(frames[j], piramids[0][j], cv::Size(frames[j].cols / 2, frames[j].rows / 2));
+//            }
+//        }
+//
+//        for (int i = 1; i < pyramidSize; ++i) {
+//            for (int j = 0; j < frames.size(); j++) {
+//                cv::resize(piramids[i - 1][j], piramids[i][j], cv::Size(piramids[i - 1][j].cols / 2, piramids[i - 1][j].rows / 2));
+//            }
+//        }
+//
+//        for (size_t i = pyramidSize; i > 0; i--) {
+//            this->evaluateIncrementally(piramids[i - 1], roughDisparity[i], roughDisparity[i - 1]);
+//        }
 
         try {
-            this->evaluateIncrementallyOcl(frames, roughDisparity[0], disparity, variance);
+            this->evaluateIncrementallyOcl(frames, cv::Mat(), disparity, variance);
         } catch (const cl::Error &e) {
             std::cerr << "OpenCL API exception " << e.err() << " (" << openclErrorString(e.err()) << "), what " << e.what() << std::endl;
 
@@ -59,7 +59,7 @@ namespace ecv {
 //        this->evaluateIncrementally(frames, roughDisparity[0], disparity);
     }
 
-    void DisparityEvaluator::evaluateIncrementallyOcl(const std::vector<cv::Mat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity, cv::Mat &variance) {
+    void DisparityEvaluator::evaluateIncrementallyOcl(const std::vector<cv::UMat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity, cv::Mat &variance) {
         this->lazyInitializeOcl();
 
         for (int i = 1; i < frames.size(); i++) {
@@ -102,22 +102,17 @@ namespace ecv {
         } else {
             rd = cv::Mat(frames[0].cols / 2, std::max(1, frames[0].rows / 2), CV_16S);
         }
-        std::vector<cl::Buffer> gFrames(frames.size());
         cl::Buffer gDisparity(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, disparity.dataend - disparity.datastart);
         cl::Buffer gVariance(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, variance.dataend - variance.datastart);
-        std::vector<cl::Event> events;
-        events.reserve(frames.size() + 1);
 
         auto startDisp = std::chrono::high_resolution_clock::now();
         std::cout << "Starting processing queue " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+        std::vector<cl::Buffer> gFrames(frames.size());
         for (int i = 0; i < frames.size(); ++i) {
-            gFrames[i] = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, frames[i].dataend - frames[i].datastart);
-            auto &event = events.emplace_back();
-            queue.enqueueWriteBuffer(gFrames[i], CL_FALSE, 0, frames[i].dataend - frames[i].datastart, (void *)frames[i].datastart, nullptr, &event);
+            gFrames[i] = cl::Buffer((cl_mem)frames[i].handle(cv::ACCESS_READ), true);
         }
         cl::Buffer gRoughDisparity(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, rd.dataend - rd.datastart);
-        auto &event = events.emplace_back();
-        queue.enqueueWriteBuffer(gRoughDisparity, CL_FALSE, 0, rd.dataend - rd.datastart, (void *)rd.datastart, nullptr, &event);
+        queue.enqueueWriteBuffer(gRoughDisparity, CL_FALSE, 0, rd.dataend - rd.datastart, (void *)rd.datastart, nullptr);
 
         auto sz = (int)frames[0].elemSize();
         auto w = frames[0].cols;
@@ -149,7 +144,6 @@ namespace ecv {
 
         std::cout << "Kernel args " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
-//        std::vector<cl::Event> kEvent = {cl::Event()};
         queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 2, h / 2), cl::NDRange(w / 2, 1));
 //        queue.enqueueNDRangeKernel(this->kernel, cl::NullRange, cl::NDRange(frames[0].rows, frames[0].cols), cl::NDRange(frames[0].rows, 1));
 
@@ -341,48 +335,48 @@ namespace ecv {
         if (this->oclInitialized) {
             return;
         }
-        std::vector<cl::Platform> platforms;
-        cl::Platform::get(&platforms);
+        cl_int err = 0;
+        if (!this->hasContext) {
+            std::vector<cl::Platform> platforms;
+            cl::Platform::get(&platforms);
 
-        bool deviceFound = false;
+            bool deviceFound = false;
 
-        for (const auto & platform : platforms) {
-            std::cout << "Found platform " << platform.getInfo<CL_PLATFORM_NAME>() << " vendor " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
+            for (const auto & platform : platforms) {
+                std::cout << "Found platform " << platform.getInfo<CL_PLATFORM_NAME>() << " vendor " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
 
-            std::vector<cl::Device> devices;
-            platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
+                std::vector<cl::Device> devices;
+                platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
 
-            if (platforms.empty()){
-                throw std::runtime_error("No platforms found!");
-            }
+                if (platforms.empty()){
+                    throw std::runtime_error("No platforms found!");
+                }
 
-            for (const auto & dev : devices) {
-                unsigned int status = dev.getInfo<CL_DEVICE_AVAILABLE>();
-                std::cout << "\tFound device " << dev.getInfo<CL_DEVICE_NAME>() << " status " << status << std::endl;
+                for (const auto & dev : devices) {
+                    unsigned int status = dev.getInfo<CL_DEVICE_AVAILABLE>();
+                    std::cout << "\tFound device " << dev.getInfo<CL_DEVICE_NAME>() << " status " << status << std::endl;
 
-                if (status == 1) {
-                    this->device = dev;
-                    deviceFound = true;
-                    break;
+                    if (status == 1) {
+                        this->device = dev;
+                        deviceFound = true;
+                        break;
+                    }
                 }
             }
-        }
 
-        if (!deviceFound) {
-            throw std::runtime_error("No devices found!");
+            if (!deviceFound) {
+                throw std::runtime_error("No devices found!");
+            }
+
+            this->context = cl::Context(this->device, nullptr, nullptr, nullptr, &err);
+            if (err != CL_SUCCESS) {
+                std::cerr << "Create context failed " << err << std::endl;
+                throw std::runtime_error("Create context failed");
+            }
         }
 
         std::ifstream kernelFile("DisparityEvaluator.cl");
         std::string src(std::istreambuf_iterator<char>(kernelFile), (std::istreambuf_iterator<char>()));
-
-        cl_int err = 0;
-        this->context = cl::Context(this->device, nullptr, nullptr, nullptr, &err);
-
-        if (err != CL_SUCCESS) {
-            std::cerr << "Create context failed " << err << std::endl;
-            throw std::runtime_error("Create context failed");
-        }
-
 
         this->program = cl::Program(this->context, src, false, &err);
 

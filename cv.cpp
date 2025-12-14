@@ -19,6 +19,7 @@
 #include <csignal>
 #include <core/opencl/ocl_defs.hpp>
 #include <fstream>
+#include <core/ocl.hpp>
 
 #include "DisparityEvaluator.h"
 
@@ -298,7 +299,7 @@ int main(int argc, const char **argv) {
     cv::setMouseCallback("Disparity", onMouse, &mouseDisp);
     cv::setMouseCallback("src " + std::to_string(0), onMouse, &mouseSrc);
 #endif
-    ecv::DisparityEvaluator disparityEvaluator;
+    ecv::DisparityEvaluator disparityEvaluator((cl_context)cv::ocl::Context::getDefault().ptr());
 
 //    uint8_t im1[]  = {0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0};
 //    uint8_t im2[]  = {0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0};
@@ -315,6 +316,7 @@ int main(int argc, const char **argv) {
     Mat preview;
     std::mutex sendingLock;
     std::ostringstream tm;
+    std::vector<cv::UMat> result(frames.size());
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -351,7 +353,6 @@ int main(int argc, const char **argv) {
             break;
         }
 
-        std::vector<cv::Mat> result(frames.size());
         for (int j = 0; j < frames.size(); ++j) {
             for (int k = 1; k < 12; ++k) {
                 auto p1 = Point(0, k * frames[j].size().height / 11);
@@ -359,7 +360,7 @@ int main(int argc, const char **argv) {
 //                    cv::line(frames[j], p1, p2, cv::Scalar(255, 0, 255), 1);
             }
             if (j != 1) {
-                cv::remap(frames[j], result[j], bestMap1[j], cv::Mat(), INTER_NEAREST);
+                cv::remap(frames[j], result[j], bestMap1[j], noArray(), INTER_NEAREST);
             } else {
                 cv::remap(frames[1], result[j], alignedMap, noArray(), INTER_NEAREST);
             }
@@ -373,12 +374,16 @@ int main(int argc, const char **argv) {
         }
 
 #ifdef HAVE_OPENCV_HIGHGUI
+        std::vector<cv::Mat> result2(result.size());
+        for (auto j = 0; j < result2.size(); j++) {
+            result[j].getMat(ACCESS_RW).copyTo(result2[j]);
+        }
         cv::drawMarker(frames[0], mouseSrc, cv::Scalar(255, 0, 255), MarkerTypes::MARKER_CROSS, 30, 2);
         auto plainMap1 = invBestMap1[0].ptr<cv::Point2f>(mouseSrc.y, mouseSrc.x);
         auto plainMap2 = alignedMap.ptr<cv::Point2f>((int)plainMap1->y, (int)plainMap1->x);
-        cv::drawMarker(result[0], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
+        cv::drawMarker(result2[0], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
         cv::drawMarker(frames[1], cv::Point2i((int) plainMap2->x, (int) plainMap2->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_CROSS, 30, 2);
-        cv::drawMarker(result[1], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
+        cv::drawMarker(result2[1], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
 
         cv::Mat varianceFp;
         cv::Mat variance8;
@@ -419,8 +424,8 @@ int main(int argc, const char **argv) {
         cv::applyColorMap(variance8, variance8, ColormapTypes::COLORMAP_JET);
 
         cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
-        cv::drawMarker(result[0], mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
-        cv::drawMarker(result[1], mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
+        cv::drawMarker(result2[0], mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
+        cv::drawMarker(result2[1], mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
         cv::drawMarker(variance8, mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
         auto disparityAtPoint = disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
         auto varianceAtPoint = variance.at<float>(mouseDisp.y, mouseDisp.x);
@@ -430,8 +435,8 @@ int main(int argc, const char **argv) {
         cv::putText(variance8, varStr, mouseDisp, FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         cv::imshow("Disparity", disparity8);
         cv::imshow("Variance", variance8);
-        for (int j = 0; j < frames.size(); ++j) {
-            imshow("Plain best " + std::to_string(j), result[j]);
+        for (int j = 0; j < result2.size(); ++j) {
+            cv::imshow("Plain best " + std::to_string(j), result2[j]);
 //                imshow("src " + std::to_string(j), frames[j]);
         }
 

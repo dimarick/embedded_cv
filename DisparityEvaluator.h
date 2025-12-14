@@ -1,6 +1,7 @@
 #ifndef EMBEDDED_CV_DISPARITYEVALUATOR_H
 #define EMBEDDED_CV_DISPARITYEVALUATOR_H
 
+#include <utility>
 #include <vector>
 #include <atomic>
 #include "opencv2/core.hpp"
@@ -15,6 +16,7 @@ namespace ecv {
     class DisparityEvaluator {
     private:
         bool oclInitialized = false;
+        bool hasContext = false;
         cl::Device device;
         cl::Context context;
         cl::Program program;
@@ -26,13 +28,19 @@ namespace ecv {
         const char *openclErrorString(cl_int err);
 
         void evaluateIncrementally(const std::vector<cv::Mat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity);
-        void evaluateIncrementallyOcl(const std::vector<cv::Mat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity, cv::Mat &variance);
+        void evaluateIncrementallyOcl(const std::vector<cv::UMat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity, cv::Mat &variance);
     public:
+        explicit DisparityEvaluator(cl_context c) {
+            context = cl::Context(c);
+            std::vector<cl::Device> devices;
+            context.getInfo(CL_CONTEXT_DEVICES, &devices);
+            device = devices[0];
+            hasContext = true;
+        }
+        explicit DisparityEvaluator() = default;
         static constexpr const int DISPARITY_PRECISION = 16;
-        void evaluateDisparity(const std::vector<cv::Mat> &frames, cv::Mat &disparity, cv::Mat &variance);
-
+        void evaluateDisparity(const std::vector<cv::UMat> &frames, cv::Mat &disparity, cv::Mat &variance);
         void lazyInitializeOcl();
-
     };
 
 } // ecv
