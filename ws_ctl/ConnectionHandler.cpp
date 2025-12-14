@@ -99,6 +99,7 @@ void ConnectionHandler::start() {
 
                 messageSize = 0;
             }
+            usleep(100);
         }
 
         std::cerr << "Performing graceful shutdown for " << formatAddress(c->getRemoteAddress()) << std::endl;
