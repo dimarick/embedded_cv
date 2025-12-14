@@ -182,6 +182,20 @@ for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim;
 #define  select(ifFalse, ifTrue, condition) ((condition) != 0 ? (ifTrue) : (ifFalse))
 #endif
 
+void inline appendScore4x4x3(const __local uchar *src, const __local uchar *dest, half *perColumnScore) {
+    half16 df0 = convert_half16(vload16(0, src)) - convert_half16(vload16(0, dest));
+    half16 df1 = convert_half16(vload16(1, src)) - convert_half16(vload16(1, dest));
+    half16 df2 = convert_half16(vload16(2, src)) - convert_half16(vload16(2, dest));
+    df0 *= df0;
+    df1 *= df1;
+    df2 *= df2;
+
+    perColumnScore[0] += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6 + df0.s7 + df0.s8 + df0.s9 + df0.sA + df0.sB;
+    perColumnScore[1] += df0.sC + df0.sD + df0.sE + df0.sF + df1.s0 + df1.s1 + df1.s2 + df1.s3 + df1.s4 + df1.s5 + df1.s6 + df1.s7;
+    perColumnScore[2] += df1.s8 + df1.s9 + df1.sA + df1.sB + df1.sC + df1.sD + df1.sE + df1.sF + df2.s0 + df2.s1 + df2.s2 + df2.s3;
+    perColumnScore[3] += df2.s4 + df2.s5 + df2.s6 + df2.s7 + df2.s8 + df2.s9 + df2.sA + df2.sB + df2.sC + df2.sD + df2.sE + df2.sF;
+}
+
 // предположим что окно соответствия равно 4*4, а maxDisparity-minDisparity кратно 16
 // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
 // в perColumnScore поместим стоимость каждого пикселя первой колонки тайла для текущего d (сумму разностей 16 пикселей для окна 4х4)
@@ -192,17 +206,7 @@ half inline getWindowColumnsScore4x4(const __local uchar *src, const __local uch
 
     __attribute__((opencl_unroll_hint(2)))
     for (int i = 0; i < windowSize / 4; ++i) {
-        half16 df0 = convert_half16(vload16(i * 3 + 0, src)) - convert_half16(vload16(i * 3 + 0, dest));
-        half16 df1 = convert_half16(vload16(i * 3 + 1, src)) - convert_half16(vload16(i * 3 + 1, dest));
-        half16 df2 = convert_half16(vload16(i * 3 + 2, src)) - convert_half16(vload16(i * 3 + 2, dest));
-        df0 *= df0;
-        df1 *= df1;
-        df2 *= df2;
-
-        perColumnScore[i * 4 + 0] += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6 + df0.s7 + df0.s8 + df0.s9 + df0.sA + df0.sB;
-        perColumnScore[i * 4 + 1] += df0.sC + df0.sD + df0.sE + df0.sF + df1.s0 + df1.s1 + df1.s2 + df1.s3 + df1.s4 + df1.s5 + df1.s6 + df1.s7;
-        perColumnScore[i * 4 + 2] += df1.s8 + df1.s9 + df1.sA + df1.sB + df1.sC + df1.sD + df1.sE + df1.sF + df2.s0 + df2.s1 + df2.s2 + df2.s3;
-        perColumnScore[i * 4 + 3] += df2.s4 + df2.s5 + df2.s6 + df2.s7 + df2.s8 + df2.s9 + df2.sA + df2.sB + df2.sC + df2.sD + df2.sE + df2.sF;
+        appendScore4x4x3(&src[i * 4 * 4 * 3], &dest[i * 4 * 4 * 3], &perColumnScore[i * 4]);
     }
 
     half scores = 0;
@@ -271,23 +275,18 @@ void getDisparity(
         for (int b = 0; b < BATCH_SIZE; ++b) {
             // вычисляем score для каждого b <= x < b + VECTOR_SIZE
             // на первом проходе, где b == 0, пропускаем первую итерацию, так как scores[0] уже вычислен
-            for (int xi = (int)(b == 0); xi < VECTOR_SIZE; xi++) {
+            for (int xi = 0; xi < VECTOR_SIZE / 4; xi++) {
                 int i = b * VECTOR_SIZE + xi;
                 int iw = i + windowSize - 1;
-                half scoreN = 0;
-//                for (int j = 0; j < h * sz; ++j) {
-//                    half c = (half)(src[iw * h * sz + j] - dest[(iw + d) * h * sz + j]);
-//                    scoreN += c * c;
-//                }
-                half8 c8 = convert_half8(vload8(0, &src[iw * h * sz + 0])) - convert_half8(vload8(0, &dest[(iw + d) * h * sz + 0]));
-                half4 c4 = convert_half4(vload4(0, &src[iw * h * sz + 8])) - convert_half4(vload4(0, &dest[(iw + d) * h * sz + 8]));
-                c8 *= c8;
-                c4 *= c4;
-                c4 += c8.lo + c8.hi;
-                EACH4(scoreN += c4);
+                half scoreN[4] = {0,0,0,0};
 
-                scores[i] = scores[i - 1] + scoreN - prev[(i - 1) % (VECTOR_SIZE + windowSize)];
-                prev[(i + windowSize - 1) % (VECTOR_SIZE + windowSize)] = scoreN;
+                appendScore4x4x3(&src[iw * h * sz], &dest[(iw + d) * h * sz], scoreN);
+
+                __attribute__((opencl_unroll_hint(4)))
+                for (int j = (int)(b == 0); j < 4; ++j) {
+                    scores[i + j] = scores[i + j - 1] + scoreN[j] - prev[(i + j - 1) % (VECTOR_SIZE + windowSize)];
+                    prev[(i + j + windowSize - 1) % (VECTOR_SIZE + windowSize)] = scoreN[j];
+                }
             }
 
             halfN currentScore = vloadN(b, scores);
@@ -404,7 +403,6 @@ __kernel void DisparityEvaluator(
 
         for (int x = x0; x < min(xLimit, w - MIN_VALID_DISPARITY - windowSize0); x += BATCH_SIZE * VECTOR_SIZE) {
             short result[BATCH_SIZE * VECTOR_SIZE];
-//            short result2[BATCH_SIZE * VECTOR_SIZE];
 
             const int maxDisparity = max(0, min(256, (int) (w - ((x + 16*3) + windowSize0 + 1))));
             getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight,
@@ -414,15 +412,6 @@ __kernel void DisparityEvaluator(
             short rMin = r0;
             short rMax = r0;
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-//                getDisparity(pFrame1, pFrame0, x, 0, w, fragmentHeight, xDeltaArray,
-//                             0, maxDisparity, windowSize0, nsz, &result[i], 1, false BC_PASS);
-//                short d = result[i] - r0;
-//                rMin = min(d, rMin);
-//                rMax = max(d, rMax);
-//                xDeltaArray[i] = d;
-
-//                const int minDisparity = max(-rMax, -256);
-//                const int maxDisparityX = min(64, (int) (w - ((x + result[i] + 16*3) + windowSize0 + 1)));
                 short r;
 
                 getDisparityB1(pFrame0, pFrame1, x + i + result[i], 0, w, fragmentHeight,
@@ -430,27 +419,10 @@ __kernel void DisparityEvaluator(
                 result[i] = r;
             }
 
-//            getDisparity(pFrame0, pFrame1, x + r0, 0, w, fragmentHeight, xDeltaArray,
-//                           max(-x - r0, -rMax - 64), min(-rMin + 64, 0), windowSize0, nsz, result, 1, false BC_PASS);
-
-//            const short r01 = result[0];
-//            for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-//                short d = result[i] - r01;
-//                xDeltaArray[i] = d;
-//            }
-//
-//            const int minDisparity1 = -min(x + r01, 5);
-//            int maxDisparityX1 = 5;
-//
-//            maxDisparityX1 = max(0, min(maxDisparityX1, (int) (w - ((x + 16*3) + windowSize0 + 1))));
-//
-//            getDisparity(pFrame1, pFrame0, x + r01, 0, w, fragmentHeight, xDeltaArray, minDisparity1,
-//                                  maxDisparityX1, windowSize0, nsz, result2, 1, false BC_PASS);
-
-            for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-                short d = -(result[i]) * DISPARITY_PRECISION;
-//                disparity[y * w + x + i] = d * (short)(d < 255 * DISPARITY_PRECISION) + disparity[y * w + x + i - 1] * !(short)(d < 255 * DISPARITY_PRECISION);
-                disparity[y * w + x + i] = abs(d);
+            disparity[y * w + x + 0] = abs((result[0]) * DISPARITY_PRECISION);
+            for (int i = 1; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
+                short d = abs((result[i]) * DISPARITY_PRECISION);
+                disparity[y * w + x + i] = d * (short)(d < 255 * DISPARITY_PRECISION) + disparity[y * w + x + i - 1] * !(short)(d < 255 * DISPARITY_PRECISION);
             }
         }
     }
