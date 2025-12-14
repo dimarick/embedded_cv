@@ -200,6 +200,23 @@ void inline appendScore4x4x3(const __local uchar *src, const __local uchar *dest
     perColumnScore[3] += df2.s4 + df2.s5 + df2.s6 + df2.s7 + df2.s8 + df2.s9 + df2.sA + df2.sB + df2.sC + df2.sD + df2.sE + df2.sF;
 }
 
+half inline getScore4x4x3(const __local uchar *src, const __local uchar *dest) {
+    half16 df0 = convert_half16(vload16(0, src)) - convert_half16(vload16(0, dest));
+    half16 df1 = convert_half16(vload16(1, src)) - convert_half16(vload16(1, dest));
+    half16 df2 = convert_half16(vload16(2, src)) - convert_half16(vload16(2, dest));
+    df0 *= df0;
+    df1 *= df1;
+    df2 *= df2;
+
+    half scores = 0;
+
+    EACH16(scores += df0)
+    EACH16(scores += df1)
+    EACH16(scores += df2)
+
+    return scores;
+}
+
 // предположим что окно соответствия равно 4*4, а maxDisparity-minDisparity кратно 16
 // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
 // в perColumnScore поместим стоимость каждого пикселя первой колонки тайла для текущего d (сумму разностей 16 пикселей для окна 4х4)
@@ -216,6 +233,19 @@ half inline getWindowColumnsScore4x4(const __local uchar *src, const __local uch
     half scores = 0;
     for (int i = 0; i < windowSize; ++i) {
         scores += perColumnScore[i];
+    }
+
+    return scores;
+}
+
+// предположим что окно соответствия равно 4*4, а maxDisparity-minDisparity кратно 16
+// а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
+// в perColumnScore поместим стоимость каждого пикселя первой колонки тайла для текущего d (сумму разностей 16 пикселей для окна 4х4)
+half inline getScore4x4(const __local uchar *src, const __local uchar *dest, int windowSize) {
+    half scores = 0;
+    __attribute__((opencl_unroll_hint(2)))
+    for (int i = 0; i < windowSize / 4; ++i) {
+        scores += getScore4x4x3(&src[i * 4 * 4 * 3], &dest[i * 4 * 4 * 3]);
     }
 
     return scores;
@@ -307,7 +337,7 @@ void getDisparity(
     }
 }
 
-void inline getDisparityB1(
+void inline getDisparitySingleValue(
         __local uchar *data1,
         __local uchar *data2,
         int x,
@@ -339,34 +369,10 @@ void inline getDisparityB1(
     short bestD = 0;
     half minCost = 1e12f;
 
-    half16 sf[MAX_WINDOW_WIDTH / 4 * 3];
+    for (short d = minDisparity; d <= maxDisparity; d += step) {
+        half scores;
 
-    for (int i = 0; i < windowSize / 4; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            sf[i * 3 + j] = convert_half16(vload16(i * 3 + j, src));
-        }
-    }
-
-    for (short d = minDisparity; d <= maxDisparity; d += step * 4) {
-        // предположим что окно соответствия равно 4*4, а maxDisparity-minDisparity кратно 16
-        // а формат входных данных: src[tileNo][x1..xn][y1..y4][ch]
-        // в prev поместим стоимость каждого пикселя первой колонки тайла для текущего d (сумму разностей 16 пикселей для окна 4х4)
-
-        half scores = 0;
-        __attribute__((opencl_unroll_hint(2)))
-        for (int i = 0; i < windowSize / 4; ++i) {
-            half16 df0 = sf[i * 3 + 0] - convert_half16(vload16(i * 3 + 0, &dest[d * h * sz]));
-            half16 df1 = sf[i * 3 + 1] - convert_half16(vload16(i * 3 + 1, &dest[d * h * sz]));
-            half16 df2 = sf[i * 3 + 2] - convert_half16(vload16(i * 3 + 2, &dest[d * h * sz]));
-            df0 *= df0;
-            df1 *= df1;
-            df2 *= df2;
-
-            scores += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6 + df0.s7 + df0.s8 + df0.s9 + df0.sA + df0.sB;
-            scores += df0.sC + df0.sD + df0.sE + df0.sF + df1.s0 + df1.s1 + df1.s2 + df1.s3 + df1.s4 + df1.s5 + df1.s6 + df1.s7;
-            scores += df1.s8 + df1.s9 + df1.sA + df1.sB + df1.sC + df1.sD + df1.sE + df1.sF + df2.s0 + df2.s1 + df2.s2 + df2.s3;
-            scores += df2.s4 + df2.s5 + df2.s6 + df2.s7 + df2.s8 + df2.s9 + df2.sA + df2.sB + df2.sC + df2.sD + df2.sE + df2.sF;
-        }
+        scores = getScore4x4(src, &dest[d * h * sz], windowSize);
 
         half currentScore = scores;
 
@@ -435,7 +441,7 @@ __kernel void DisparityEvaluator(
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
                 short r;
 
-                getDisparityB1(pFrame0, pFrame1, x + i + result[i], 0, w, fragmentHeight,
+                getDisparitySingleValue(pFrame0, pFrame1, x + i + result[i], 0, w, fragmentHeight,
                                max(-x - i - result[i], -result[i] - MAX_DISPARITY / 4), min(-result[i] + MAX_DISPARITY / 4, 0), windowSize0, nsz, &r, 1, false BC_PASS);
                 result[i] = r;
             }
