@@ -144,7 +144,7 @@ namespace ecv {
 
         std::cout << "Kernel args " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
-        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 2, h / 2), cl::NDRange(w / 2, 1));
+        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 4, h / 2), cl::NDRange(w / 4, 1));
 //        queue.enqueueNDRangeKernel(this->kernel, cl::NullRange, cl::NDRange(frames[0].rows, frames[0].cols), cl::NDRange(frames[0].rows, 1));
 
         std::cout << "Kernel enqueued " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
