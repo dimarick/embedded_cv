@@ -85,7 +85,8 @@ KitDisparityBenchmark::ImageMetrics KitDisparityBenchmark::computeMetrics(
     
     // Маска валидных пикселей (в GT диспарити > 0)
     cv::Mat validMask = gtDisparity > 0.0f;
-    
+    validMask &= predDisparity > 0.0f;
+
     if (cv::countNonZero(validMask) == 0) {
         return metrics;
     }
@@ -162,62 +163,81 @@ KitDisparityBenchmark::evaluateImage(int index,
         disparity.convertTo(disparity, CV_32F);
     }
 
-// --- ДИАГНОСТИКА ---
-// 1. Проверьте тип данных
-    std::cout << "[DEBUG] Disparity type: " << disparity.type()
-              << " (CV_32F = " << CV_32F << ")" << std::endl;
-
-// 2. Проверьте диапазон значений
-    double minVal, maxVal, maxValGt;
-    cv::minMaxLoc(disparity, &minVal, &maxVal);
-    std::cout << "[DEBUG] Disparity range: min=" << minVal << ", max=" << maxVal << std::endl;
-
-// 3. Для сравнения - проверьте Ground Truth
-    cv::minMaxLoc(gt, &minVal, &maxValGt);
-    std::cout << "[DEBUG] GT range: min=" << minVal << ", max=" << maxValGt << std::endl;
-    std::cout << "[DEBUG] GT type: " << gt.type() << std::endl;
-
-
-    double scale = maxValGt / maxVal;
-
     // Вычисление метрик
     ImageMetrics metrics = computeMetrics(disparity, gt);
 
     if (config_.debug) {
-        cv::Mat disparity8;
-        cv::Mat disparityFp;
-        cv::Mat gtFp;
-        cv::Mat gt8;
+        cv::namedWindow("Disparity", cv::WINDOW_AUTOSIZE);
 
-        disparity.copyTo(disparityFp);
-        if (minVal == 0 || maxVal == 0) {
-            cv::minMaxLoc(disparityFp, &minVal, &maxVal);
+        auto mouseDisp = cv::Point2i();
+
+        void (*onMouse)(int, int, int, int, void *) = [](int event, int x, int y, int flags, void *userdata) {
+            auto mouse = (cv::Point2i *) userdata;
+            mouse->x = x;
+            mouse->y = y;
+        };
+        cv::setMouseCallback("Disparity", onMouse, &mouseDisp);
+
+        double minVal = 0, maxVal = 0;
+
+        while(true) {
+            cv::Mat disparity8;
+            cv::Mat disparityFp;
+            cv::Mat gtFp;
+            cv::Mat gt8;
+            cv::Mat left2;
+            cv::Mat right2;
+
+            left.copyTo(left2);
+            right.copyTo(right2);
+
+            disparity.copyTo(disparityFp);
+
+            gt.copyTo(gtFp);
+
+            if (minVal == 0 || maxVal == 0) {
+                cv::minMaxLoc(gtFp, &minVal, &maxVal);
+            }
+
+            gtFp -= minVal;
+            gtFp *= 255.0 / (maxVal - minVal);
+
+            disparityFp -= minVal;
+            disparityFp *= 255.0 / (maxVal - minVal);
+
+            disparityFp.convertTo(disparity8, CV_8U);
+
+            cv::Mat validMask = gt > 0.0f;
+            cv::bitwise_and(disparity8, validMask, disparity8, cv::noArray());
+
+            cv::applyColorMap(disparity8, disparity8, cv::ColormapTypes::COLORMAP_JET);
+
+            gtFp.convertTo(gt8, CV_8U);
+            cv::applyColorMap(gt8, gt8, cv::ColormapTypes::COLORMAP_JET);
+
+            auto disparityAtPoint = disparity.at<float>(mouseDisp.y, mouseDisp.x);
+            auto dispStr = std::to_string((float)disparityAtPoint);
+
+            auto gtAtPoint = gt.at<float>(mouseDisp.y, mouseDisp.x);
+            auto gtStr = std::to_string((float)gtAtPoint);
+
+            cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
+            cv::putText(gt8, gtStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
+            cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
+            cv::drawMarker(gt8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
+            cv::drawMarker(left2, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
+            cv::drawMarker(right2, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
+
+
+            cv::imshow("Left", left2);
+            cv::imshow("Right", right2);
+            cv::imshow("GT", gt8);
+            cv::imshow("Disparity", disparity8);
+
+            if (cv::waitKey(10) >= 0) {
+                break;
+            }
         }
-
-        disparityFp -= minVal;
-        disparityFp *= 255.0 / (maxVal - minVal);
-
-        disparityFp.convertTo(disparity8, CV_8U);
-        cv::applyColorMap(disparity8, disparity8, cv::ColormapTypes::COLORMAP_JET);
-
-        gt.copyTo(gtFp);
-        if (minVal == 0 || maxVal == 0) {
-            cv::minMaxLoc(gtFp, &minVal, &maxVal);
-        }
-
-        gtFp -= minVal;
-        gtFp *= 255.0 / (maxVal - minVal);
-
-        gtFp.convertTo(gt8, CV_8U);
-        cv::applyColorMap(gt8, gt8, cv::ColormapTypes::COLORMAP_JET);
-
-        cv::imshow("GT", gt8);
-        cv::imshow("Disparity", disparity8);
-
-        cv::imshow("Left", left);
-        cv::imshow("Right", right);
-
-        cv::waitKey(0);
     }
 
     return {metrics, elapsed};

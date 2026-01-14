@@ -380,7 +380,7 @@ void getDisparityCandidates(
     short stepScale = 1;
 
     for (short d = minDisparity; d <= maxDisparity; d += step * stepScale) {
-        stepScale = max((short)1, (short)(clz((short)0) - clz(d) - 6));
+        stepScale = max((short)1, (short)(clz((short)0) - clz(abs(d)) - 6));
         half prev[VECTOR_SIZE + MAX_WINDOW_WIDTH];
         half scores[VECTOR_SIZE * BATCH_SIZE];
 
@@ -527,20 +527,20 @@ __kernel void DisparityEvaluator(
             short result[BATCH_SIZE * VECTOR_SIZE];
 
             const int maxDisparity = max(0, min(MAX_DISPARITY, (int) (w - ((x + 16*3) + windowSize0 + 1))));
-            getDisparityCandidates(pFrame1, pFrame0, x, 0, w, fragmentHeight,
-                         0, maxDisparity, windowSize0, nsz, result, 4, false BC_PASS);
+            getDisparityCandidates(pFrame0, pFrame1, x, 0, w, fragmentHeight,
+                         max(-x, -MAX_DISPARITY), 0, windowSize0, nsz, result, 4, false BC_PASS);
 
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
                 short r;
 
-                getDisparitySingleValue(pFrame0, pFrame1, x + i + result[i], 0, w, fragmentHeight,
-                               max(-x - i - result[i], -result[i] - 7), min(-result[i] + 7, 0), windowSize0 * 2, nsz, &r, 1, false BC_PASS);
-                result[i] = abs(-r - result[i]) > 5 ? 0 : r;
+                getDisparitySingleValue(pFrame1, pFrame0, x, 0, w, fragmentHeight,
+                                        max(-x, -result[i] - 7), min(-result[i] + 7, maxDisparity), windowSize0 * 2, nsz, &r, 1, false BC_PASS);
+                result[i] = abs(r + result[i]) > 5 ? 0 : r;
             }
 
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
                 short d = abs(result[i]);
-                disparity[y * w + x + i] = d > (MAX_DISPARITY - 50) ? d * DISPARITY_PRECISION : d * DISPARITY_PRECISION;
+                disparity[y * w + x + i] = d > (MAX_DISPARITY - 50) ? 0 : d * DISPARITY_PRECISION;
             }
         }
     }
