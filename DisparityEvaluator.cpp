@@ -373,6 +373,7 @@ namespace ecv {
                 std::cerr << "Create context failed " << err << std::endl;
                 throw std::runtime_error("Create context failed");
             }
+            this->hasContext = true;
         }
 
         std::ifstream kernelFile("DisparityEvaluator.cl");

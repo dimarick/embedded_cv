@@ -97,4 +97,13 @@ add_executable(cv
 
 target_link_libraries(cv PUBLIC OpenCL::OpenCL mini_server cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
 
+add_executable(benchmark
+        benchmark/benchmark.cpp
+        benchmark/KitDisparityBenchmark.cpp
+        DisparityEvaluator.cpp
+        DisparityEvaluator.h
+)
+
+target_link_libraries(benchmark PUBLIC OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS})
+
 install(TARGETS cv DESTINATION bin)
