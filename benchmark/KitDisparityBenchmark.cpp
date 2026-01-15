@@ -208,7 +208,7 @@ KitDisparityBenchmark::evaluateImage(int index,
             disparityFp.convertTo(disparity8, CV_8U);
 
             cv::Mat validMask = gt > 0.0f;
-            cv::bitwise_and(disparity8, validMask, disparity8, cv::noArray());
+//            cv::bitwise_and(disparity8, validMask, disparity8, cv::noArray());
 
             cv::applyColorMap(disparity8, disparity8, cv::ColormapTypes::COLORMAP_JET);
 

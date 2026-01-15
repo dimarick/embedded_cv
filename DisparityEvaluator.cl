@@ -200,10 +200,112 @@ void inline appendScore4x4x3(const __local uchar *src, const __local uchar *dest
     perColumnScore[3] += df2.s4 + df2.s5 + df2.s6 + df2.s7 + df2.s8 + df2.s9 + df2.sA + df2.sB + df2.sC + df2.sD + df2.sE + df2.sF;
 }
 
+half inline mean(half16 v) {
+    half r = 0;
+    EACH16(r += v);
+
+    return r / 16;
+}
+
+half inline zstddev(half16 v) {
+    half r = 0;
+    v *= v;
+    EACH16(r += v);
+
+    return sqrt(r) + 1e-3;
+}
+
+void inline centeredRGB(half16 a1, half16 a2, half16 a3, half16 b1, half16 b2, half16 b3, half16 *r1, half16 *r2, half16 *r3) {
+    half maR = mean((half16)(a1.s0, a1.s3, a1.s6, a1.s9, a1.sC, a1.sF, a2.s2, a2.s5, a2.s8, a2.sB, a2.sE, a3.s1, a3.s4, a3.s7, a3.sA, a3.sD));
+    half maG = mean((half16)(a1.s1, a1.s4, a1.s7, a1.sA, a1.sD, a2.s0, a2.s3, a2.s6, a2.s9, a2.sC, a2.sF, a3.s2, a3.s5, a3.s8, a3.sB, a3.sE));
+    half maB = mean((half16)(a1.s2, a1.s5, a1.s8, a1.sB, a1.sE, a2.s1, a2.s4, a2.s7, a2.sA, a2.sD, a3.s0, a3.s3, a3.s6, a3.s9, a3.sC, a3.sF));
+
+    a1 -= (half16)(maR, maG, maB, maR, maG, maB, maR, maG, maB, maR, maG, maB, maR, maG, maB, maR);
+    a2 -= (half16)(maG, maB, maR, maG, maB, maR, maG, maB, maR, maG, maB, maR, maG, maB, maR, maG);
+    a3 -= (half16)(maB, maR, maG, maB, maR, maG, maB, maR, maG, maB, maR, maG, maB, maR, maG, maB);
+
+    half mbR = mean((half16)(b1.s0, b1.s3, b1.s6, b1.s9, b1.sC, b1.sF, b2.s2, b2.s5, b2.s8, b2.sB, b2.sE, b3.s1, b3.s4, b3.s7, b3.sA, b3.sD));
+    half mbG = mean((half16)(b1.s1, b1.s4, b1.s7, b1.sA, b1.sD, b2.s0, b2.s3, b2.s6, b2.s9, b2.sC, b2.sF, b3.s2, b3.s5, b3.s8, b3.sB, b3.sE));
+    half mbB = mean((half16)(b1.s2, b1.s5, b1.s8, b1.sB, b1.sE, b2.s1, b2.s4, b2.s7, b2.sA, b2.sD, b3.s0, b3.s3, b3.s6, b3.s9, b3.sC, b3.sF));
+
+    b1 -= (half16)(mbR, mbG, mbB, mbR, mbG, mbB, mbR, mbG, mbB, mbR, mbG, mbB, mbR, mbG, mbB, mbR);
+    b2 -= (half16)(mbG, mbB, mbR, mbG, mbB, mbR, mbG, mbB, mbR, mbG, mbB, mbR, mbG, mbB, mbR, mbG);
+    b3 -= (half16)(mbB, mbR, mbG, mbB, mbR, mbG, mbB, mbR, mbG, mbB, mbR, mbG, mbB, mbR, mbG, mbB);
+
+    *r1 = (a1 - b1);
+    *r2 = (a2 - b2);
+    *r3 = (a3 - b3);
+
+    half dR = 0.299;
+    half dG = 0.587;
+    half dB = 0.114;
+
+    *r1 *= (half16)(dR, dG, dB, dR, dG, dB, dR, dG, dB, dR, dG, dB, dR, dG, dB, dR);
+    *r2 *= (half16)(dG, dB, dR, dG, dB, dR, dG, dB, dR, dG, dB, dR, dG, dB, dR, dG);
+    *r3 *= (half16)(dB, dR, dG, dB, dR, dG, dB, dR, dG, dB, dR, dG, dB, dR, dG, dB);
+}
+
+void appendScore4x4x3Centered(const __local uchar *src, const __local uchar *dest, half *perColumnScore) {
+    half16 df0;
+    half16 df1;
+    half16 df2;
+
+    centeredRGB(
+        convert_half16(vload16(0, src)),
+        convert_half16(vload16(1, src)),
+        convert_half16(vload16(2, src)),
+        convert_half16(vload16(0, dest)),
+        convert_half16(vload16(1, dest)),
+        convert_half16(vload16(2, dest)),
+        &df0,
+        &df1,
+        &df2
+    );
+
+    df0 *= df0;
+    df1 *= df1;
+    df2 *= df2;
+
+    perColumnScore[0] += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6 + df0.s7 + df0.s8 + df0.s9 + df0.sA + df0.sB;
+    perColumnScore[1] += df0.sC + df0.sD + df0.sE + df0.sF + df1.s0 + df1.s1 + df1.s2 + df1.s3 + df1.s4 + df1.s5 + df1.s6 + df1.s7;
+    perColumnScore[2] += df1.s8 + df1.s9 + df1.sA + df1.sB + df1.sC + df1.sD + df1.sE + df1.sF + df2.s0 + df2.s1 + df2.s2 + df2.s3;
+    perColumnScore[3] += df2.s4 + df2.s5 + df2.s6 + df2.s7 + df2.s8 + df2.s9 + df2.sA + df2.sB + df2.sC + df2.sD + df2.sE + df2.sF;
+}
+
 half inline getScore4x4x3(const __local uchar *src, const __local uchar *dest) {
     half16 df0 = convert_half16(vload16(0, src)) - convert_half16(vload16(0, dest));
     half16 df1 = convert_half16(vload16(1, src)) - convert_half16(vload16(1, dest));
     half16 df2 = convert_half16(vload16(2, src)) - convert_half16(vload16(2, dest));
+    df0 *= df0;
+    df1 *= df1;
+    df2 *= df2;
+
+    half scores = 0;
+
+    EACH16(scores += df0)
+    EACH16(scores += df1)
+    EACH16(scores += df2)
+
+    return scores;
+}
+
+half getScore4x4x3Centered(const __local uchar *src, const __local uchar *dest) {
+    half16 df0;
+    half16 df1;
+    half16 df2;
+
+    centeredRGB(
+            convert_half16(vload16(0, src)),
+            convert_half16(vload16(1, src)),
+            convert_half16(vload16(2, src)),
+            convert_half16(vload16(0, dest)),
+            convert_half16(vload16(1, dest)),
+            convert_half16(vload16(2, dest)),
+            &df0,
+            &df1,
+            &df2
+    );
+
     df0 *= df0;
     df1 *= df1;
     df2 *= df2;
@@ -225,7 +327,6 @@ half inline getWindowColumnsScore4x4(const __local uchar *src, const __local uch
         perColumnScore[i] = 0;
     }
 
-    __attribute__((opencl_unroll_hint(2)))
     for (int i = 0; i < windowSize / 4; ++i) {
         appendScore4x4x3(&src[i * 4 * 4 * 3], &dest[i * 4 * 4 * 3], &perColumnScore[i * 4]);
     }
@@ -243,9 +344,8 @@ half inline getWindowColumnsScore4x4(const __local uchar *src, const __local uch
 // в perColumnScore поместим стоимость каждого пикселя первой колонки тайла для текущего d (сумму разностей 16 пикселей для окна 4х4)
 half inline getScore4x4(const __local uchar *src, const __local uchar *dest, int windowSize) {
     half scores = 0;
-    __attribute__((opencl_unroll_hint(2)))
     for (int i = 0; i < windowSize / 4; ++i) {
-        scores += getScore4x4x3(&src[i * 4 * 4 * 3], &dest[i * 4 * 4 * 3]);
+        scores += getScore4x4x3Centered(&src[i * 4 * 4 * 3], &dest[i * 4 * 4 * 3]);
     }
 
     return scores;
@@ -317,9 +417,8 @@ void getDisparity(
                 int iw = i + windowSize - 1;
                 half scoreN[4] = {0,0,0,0};
 
-                appendScore4x4x3(&src[iw * h * sz], &dest[(iw + d) * h * sz], scoreN);
+                appendScore4x4x3Centered(&src[iw * h * sz], &dest[(iw + d) * h * sz], scoreN);
 
-                __attribute__((opencl_unroll_hint(3)))
                 for (int j = (int)(b == 0); j < 4; ++j) {
                     scores[i + j] = scores[i + j - 1] + scoreN[j] - prev[(i + j - 1)];
                 }
@@ -502,8 +601,8 @@ __kernel void DisparityEvaluator(
     int windowSize0 = 4;
     windowSize0 = min(MAX_WINDOW_WIDTH, (windowSize0 / 4) * 4);
 
-    __local uchar pFrame0[maxLocalBuffer] __attribute__ ((aligned (128)));
-    __local uchar pFrame1[maxLocalBuffer] __attribute__ ((aligned (128)));
+    __local uchar pFrame0[maxLocalBuffer] __attribute__ ((aligned (64)));
+    __local uchar pFrame1[maxLocalBuffer] __attribute__ ((aligned (64)));
 
     int xLimit = min(x0 + H_GRANULE_SIZE, w - 16*3);
     int yLimit = min(y0 + V_GRANULE_SIZE / 2, h - V_GRANULE_SIZE / 2 - 8);
@@ -533,14 +632,14 @@ __kernel void DisparityEvaluator(
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
                 short r;
 
-                getDisparitySingleValue(pFrame1, pFrame0, x, 0, w, fragmentHeight,
+                getDisparitySingleValue(pFrame1, pFrame0, x + result[i], 0, w, fragmentHeight,
                                         max(-x, -result[i] - 7), min(-result[i] + 7, maxDisparity), windowSize0 * 2, nsz, &r, 1, false BC_PASS);
                 result[i] = abs(r + result[i]) > 5 ? 0 : r;
             }
 
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
                 short d = abs(result[i]);
-                disparity[y * w + x + i] = d > (MAX_DISPARITY - 50) ? 0 : d * DISPARITY_PRECISION;
+                disparity[y * w + x + i] = d > (MAX_DISPARITY - 5) ? 0 : d * DISPARITY_PRECISION;
             }
         }
     }
