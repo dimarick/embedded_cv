@@ -18,6 +18,10 @@
 #define VECTOR_SIZE 4
 #endif
 
+#ifndef N_CANDIDATES
+#define N_CANDIDATES 1
+#endif
+
 #ifndef BATCH_SIZE
 #define BATCH_SIZE 1
 #endif
@@ -451,6 +455,8 @@ void getDisparityCandidates(
         int windowSize,
         int sz,
         short* result,
+        half* costs,
+        int nCandidates,
         int step,
         bool debug
         BC_ARG
@@ -460,21 +466,16 @@ void getDisparityCandidates(
 
     size_t dataSize = w * sz * h;
 
-    maxDisparity = max(minDisparity, maxDisparity);
-    minDisparity = min(minDisparity, maxDisparity);
     int disparityRange = maxDisparity - minDisparity;
 
     FATAL_LOCAL_BOUNDARY(src, data1, dataSize);
     FATAL_LOCAL_BOUNDARY(dest, data2, dataSize);
     FATAL_LOCAL_BOUNDARY(&dest[minDisparity], data2, dataSize);
-
-    short bestD[VECTOR_SIZE * BATCH_SIZE];
-    half minCost[VECTOR_SIZE * BATCH_SIZE];
-
-    for (int b = 0; b < BATCH_SIZE; ++b) {
-        vstoreN((shortN)0, b, bestD);
-        vstoreN((halfN)1e12f, b, minCost);
-    }
+//
+//    for (int b = 0; b < BATCH_SIZE * nCandidates; ++b) {
+//        vstoreN((shortN)0, b, result);
+//        vstoreN((halfN)1e12f, b, costs);
+//    }
 
     short stepScale = 1;
 
@@ -517,14 +518,28 @@ void getDisparityCandidates(
 
             halfN currentScore = vloadN(b, scores);
 
-            shortN needUpdate = convert_shortN(isless(currentScore, vloadN(b, minCost)));
-            vstoreN(fmin(vloadN(b, minCost), currentScore), b, minCost);
-            vstoreN(select(vloadN(b, bestD), (shortN)d, needUpdate), b, bestD);
-        }
-    }
+#if HALF_FP_AVAILABLE
+            shortN needUpdatedCost = currentScore < vloadN(b, costs);
+            shortN canUpdateCandidates = vloadN(b,  result) < (shortN)(d - 1);
+            intN needUpdateCandidates = needUpdatedCost && canUpdateCandidates;
+            shortN needUpdate = needUpdatedCost;
+            shortN needUpdateResult = needUpdateCandidates;
+#else
+            intN needUpdatedCost = currentScore < vloadN(b, costs);
+            intN canUpdateCandidates = convert_intN(vloadN(b,  result)) < (intN)(d - 2);
+            intN needUpdateCandidates = needUpdatedCost && canUpdateCandidates;
+            shortN needUpdate = convert_shortN(needUpdatedCost);
+            shortN needUpdateResult = convert_shortN(needUpdateCandidates);
+#endif
 
-    for (int b = 0; b < BATCH_SIZE; ++b) {
-        vstoreN(vloadN(b, bestD), b, result);
+            for (int i = 0; i < nCandidates - 1; ++i) {
+                vstoreN(select(vloadN(b * nCandidates + (i + 1), result), vloadN(b * nCandidates + i, result), needUpdateResult), b * nCandidates + (i + 1), result);
+                vstoreN(select(vloadN(b * nCandidates + (i + 1), costs), vloadN(b + i, costs), needUpdateCandidates), b * nCandidates + (i + 1), costs);
+            }
+
+            vstoreN(fmin(vloadN(b, costs), currentScore), b, costs);
+            vstoreN(select(vloadN(b, result), (shortN)d, needUpdate), b, result);
+        }
     }
 }
 
@@ -540,6 +555,7 @@ void inline getDisparitySingleValue(
         int windowSize,
         int sz,
         short* result,
+        half* cost,
         int step,
         bool debug
         BC_ARG
@@ -548,40 +564,34 @@ void inline getDisparitySingleValue(
     __local const uchar *dest = data2 + y * sz + x * h * sz;
 
     size_t dataSize = w * sz * h;
-
-    maxDisparity = max(minDisparity, maxDisparity);
-    minDisparity = min(minDisparity, maxDisparity);
     int disparityRange = maxDisparity - minDisparity;
 
     FATAL_LOCAL_BOUNDARY(src, data1, dataSize);
     FATAL_LOCAL_BOUNDARY(dest, data2, dataSize);
     FATAL_LOCAL_BOUNDARY(&dest[minDisparity], data2, dataSize);
 
-    short bestD = 0;
-    half minCost = 1e12f;
+    int stepScale = 1;
 
-    for (short d = minDisparity; d <= maxDisparity; d += step) {
+    for (short d = minDisparity; d <= maxDisparity; d += step * stepScale) {
         half scores;
 
         scores = getScore4x4(src, &dest[d * h * sz], windowSize);
 
         half currentScore = scores;
 
-        short needUpdate = (short)(isless(currentScore, minCost));
-        minCost = fmin(minCost, currentScore);
-        bestD = needUpdate != 0 ? d : bestD;
+        short needUpdate = (short)(isless(currentScore, *cost));
+        *cost = fmin(*cost, currentScore);
+        *result = needUpdate != 0 ? d : *result;
     }
-
-    result[0] = bestD;
 }
 
 __kernel void DisparityEvaluator(
         __global uchar* frame0,
         __global uchar* frame1,
-        __global float* roughDisparity,
+//        __global float* roughDisparity,
         __global short* disparity,
-        __global float* variance,
-        __global float* q,
+//        __global float* variance,
+//        __global float* q,
         const float q0,
         const int windowHeight,
         const int windowSize,
@@ -623,23 +633,41 @@ __kernel void DisparityEvaluator(
         barrier(CLK_LOCAL_MEM_FENCE);
 
         for (int x = x0; x < min(xLimit, w - MIN_VALID_DISPARITY - windowSize0); x += BATCH_SIZE * VECTOR_SIZE) {
-            short result[BATCH_SIZE * VECTOR_SIZE];
+            short disparities[BATCH_SIZE * VECTOR_SIZE];
+            half costs[BATCH_SIZE * VECTOR_SIZE];
+
+            for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
+                disparities[i] = 0;
+                costs[i] = 1e12;
+            }
 
             const int maxDisparity = max(0, min(MAX_DISPARITY, (int) (w - ((x + 16*3) + windowSize0 + 1))));
             getDisparityCandidates(pFrame0, pFrame1, x, 0, w, fragmentHeight,
-                         max(-x, -MAX_DISPARITY), 0, windowSize0, nsz, result, 4, false BC_PASS);
+                         max(-x, -MAX_DISPARITY), -MAX_DISPARITY / 2 , windowSize0, nsz, disparities, costs, 1, 4, false BC_PASS);
+
+            getDisparityCandidates(pFrame0, pFrame1, x, 0, w, fragmentHeight,
+                         max(-x, -MAX_DISPARITY / 2 + 1), 0, windowSize0, nsz, disparities, costs, 1, 2, false BC_PASS);
 
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-                short r;
-
-                getDisparitySingleValue(pFrame1, pFrame0, x + result[i], 0, w, fragmentHeight,
-                                        max(-x, -result[i] - 7), min(-result[i] + 7, maxDisparity), windowSize0 * 2, nsz, &r, 1, false BC_PASS);
-                result[i] = abs(r + result[i]) > 5 ? 0 : r;
+                short d = disparities[i];
+                getDisparitySingleValue(pFrame0, pFrame1, x - d, 0, w, fragmentHeight, max(-x, d - 3), min(d + 3, maxDisparity), windowSize0, nsz, &disparities[i], &costs[i], 2, false BC_PASS);
             }
 
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
-                short d = abs(result[i]);
-                disparity[y * w + x + i] = d > (MAX_DISPARITY - 5) ? 0 : d * DISPARITY_PRECISION;
+                short d = disparities[i];
+                short d1, d2;
+                half cost = 1e12;
+
+                getDisparitySingleValue(pFrame1, pFrame0, x + d, 0, w, fragmentHeight, max(-x, -d - 5), min(-d + 8, maxDisparity), windowSize0, nsz, &d2, &cost, 1, false BC_PASS);
+                getDisparitySingleValue(pFrame1, pFrame0, x + d, 0, w, fragmentHeight, max(-x, -d + 9), min(-d + 50, maxDisparity), windowSize0, nsz, &d2, &cost, 2, false BC_PASS);
+                short lrcDistance = abs(abs(d) - abs(d2));
+                bool valid = lrcDistance < 5;
+                disparities[i] = valid ? d2 : 0;
+            }
+
+            for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
+                short d = abs(disparities[i]);
+                disparity[(y + 1) * w + x + i + 1] = d > (MAX_DISPARITY - 5) ? 0 : d * DISPARITY_PRECISION;
             }
         }
     }

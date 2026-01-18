@@ -103,16 +103,16 @@ namespace ecv {
             rd = cv::Mat(frames[0].cols / 2, std::max(1, frames[0].rows / 2), CV_16S);
         }
         cl::Buffer gDisparity(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, disparity.dataend - disparity.datastart);
-        cl::Buffer gVariance(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, variance.dataend - variance.datastart);
+//        cl::Buffer gVariance(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, variance.dataend - variance.datastart);
 
         auto startDisp = std::chrono::high_resolution_clock::now();
-        std::cout << "Starting processing queue " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+//        std::cout << "Starting processing queue " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
         std::vector<cl::Buffer> gFrames(frames.size());
         for (int i = 0; i < frames.size(); ++i) {
             gFrames[i] = cl::Buffer((cl_mem)frames[i].handle(cv::ACCESS_READ), true);
         }
-        cl::Buffer gRoughDisparity(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, rd.dataend - rd.datastart);
-        queue.enqueueWriteBuffer(gRoughDisparity, CL_FALSE, 0, rd.dataend - rd.datastart, (void *)rd.datastart, nullptr);
+//        cl::Buffer gRoughDisparity(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, rd.dataend - rd.datastart);
+//        queue.enqueueWriteBuffer(gRoughDisparity, CL_FALSE, 0, rd.dataend - rd.datastart, (void *)rd.datastart, nullptr);
 
         auto sz = (int)frames[0].elemSize();
         auto w = frames[0].cols;
@@ -120,20 +120,20 @@ namespace ecv {
         auto windowSize = 3 * sz;
         auto windowHeight = std::min(4, frames[0].rows);
         auto _q = (float)this->q;
-        cl::Buffer gQ(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, sizeof _q);
+//        cl::Buffer gQ(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, sizeof _q);
 
-        std::cout << "Buffers enqueued " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+//        std::cout << "Buffers enqueued " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
         queue.finish();
 
-        std::cout << "Buffers written " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+//        std::cout << "Buffers written " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
         auto a = 0;
         this->kernel.setArg(a++, gFrames[0]);
         this->kernel.setArg(a++, gFrames[1]);
-        this->kernel.setArg(a++, gRoughDisparity);
+//        this->kernel.setArg(a++, gRoughDisparity);
         this->kernel.setArg(a++, gDisparity);
-        this->kernel.setArg(a++, gVariance);
-        this->kernel.setArg(a++, gQ);
+//        this->kernel.setArg(a++, gVariance);
+//        this->kernel.setArg(a++, gQ);
         this->kernel.setArg(a++, _q);
         this->kernel.setArg(a++, windowHeight);
         this->kernel.setArg(a++, windowSize);
@@ -142,23 +142,23 @@ namespace ecv {
         this->kernel.setArg(a++, sz);
         this->kernel.setArg(a++, DISPARITY_PRECISION);
 
-        std::cout << "Kernel args " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+//        std::cout << "Kernel args " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
         queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 4, h / 2), cl::NDRange(w / 4, 1));
 //        queue.enqueueNDRangeKernel(this->kernel, cl::NullRange, cl::NDRange(frames[0].rows, frames[0].cols), cl::NDRange(frames[0].rows, 1));
 
-        std::cout << "Kernel enqueued " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+//        std::cout << "Kernel enqueued " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
         queue.finish();
 
-        std::cout << "Kernel done " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+//        std::cout << "Kernel done " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
         queue.enqueueReadBuffer(gDisparity, CL_FALSE, 0, disparity.dataend - disparity.datastart, (void *)disparity.datastart);
-        queue.enqueueReadBuffer(gVariance, CL_FALSE, 0, variance.dataend - variance.datastart, (void *)variance.datastart);
-        queue.enqueueReadBuffer(gQ, CL_FALSE, 0, sizeof(_q), (void *)&_q);
+//        queue.enqueueReadBuffer(gVariance, CL_FALSE, 0, variance.dataend - variance.datastart, (void *)variance.datastart);
+//        queue.enqueueReadBuffer(gQ, CL_FALSE, 0, sizeof(_q), (void *)&_q);
         queue.finish();
 
-        std::cout << "Memory read done " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+//        std::cout << "Memory read done " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
         this->q = _q;
     }

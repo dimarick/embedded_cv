@@ -42,12 +42,12 @@ T ## 4 fn(T ## 4); \
 T ## 8 fn(T ## 8); \
 T ## 16 fn(T ## 16);
 
-#define VECTOR_2FN(T, fn) \
-T ## 2 fn(T ## 2, T ## 2); \
-T ## 3 fn(T ## 3, T ## 3); \
-T ## 4 fn(T ## 4, T ## 4); \
-T ## 8 fn(T ## 8, T ## 8); \
-T ## 16 fn(T ## 16, T ## 16);
+#define VECTOR_2FN(T, TI, fn) \
+TI ## 2 fn(T ## 2, T ## 2); \
+TI ## 3 fn(T ## 3, T ## 3); \
+TI ## 4 fn(T ## 4, T ## 4); \
+TI ## 8 fn(T ## 8, T ## 8); \
+TI ## 16 fn(T ## 16, T ## 16);
 
 #define VECTOR_VLOADSTORE(T) \
 T ##  2 vload ##  2(size_t offset, const T *p); \
@@ -81,45 +81,45 @@ VECTOR_CONVERT(T, half) \
 VECTOR_CONVERT(T, float) \
 VECTOR_CONVERT(T, double)
 
-#define VECTOR_TYPE(T) \
+#define VECTOR_TYPE(T, TI) \
 struct T ## 2 { FIELD2(T); T &operator[](size_t); }; \
 struct T ## 3 { FIELD3(T); T &operator[](size_t); }; \
 struct T ## 4 { FIELD4(T); T &operator[](size_t); }; \
 struct T ## 8 { FIELD8(T); T &operator[](size_t); }; \
 struct T ## 16 { FIELD16(T); T &operator[](size_t); }; \
-VECTOR_2FN(T, operator==) \
-VECTOR_2FN(T, operator>) \
-VECTOR_2FN(T, operator<) \
-VECTOR_2FN(T, operator>=) \
-VECTOR_2FN(T, operator<=) \
-VECTOR_2FN(T, operator&&) \
-VECTOR_2FN(T, operator||) \
-VECTOR_2FN(T, operator<<) \
-VECTOR_2FN(T, operator>>) \
-VECTOR_2FN(T, operator-) \
-VECTOR_2FN(T, operator+) \
-VECTOR_2FN(T, operator*) \
-VECTOR_2FN(T, operator/) \
-VECTOR_2FN(T, operator<<=) \
-VECTOR_2FN(T, operator>>=) \
-VECTOR_2FN(T, operator-=) \
-VECTOR_2FN(T, operator+=) \
-VECTOR_2FN(T, operator*=) \
-VECTOR_2FN(T, operator/=) \
+VECTOR_2FN(T, TI, operator==) \
+VECTOR_2FN(T, TI, operator>) \
+VECTOR_2FN(T, TI, operator<) \
+VECTOR_2FN(T, TI, operator>=) \
+VECTOR_2FN(T, TI, operator<=) \
+VECTOR_2FN(T, TI, operator&&) \
+VECTOR_2FN(T, TI, operator||) \
+VECTOR_2FN(T, TI, operator<<) \
+VECTOR_2FN(T, TI, operator>>) \
+VECTOR_2FN(T, TI, operator-) \
+VECTOR_2FN(T, TI, operator+) \
+VECTOR_2FN(T, TI, operator*) \
+VECTOR_2FN(T, TI, operator/) \
+VECTOR_2FN(T, TI, operator<<=) \
+VECTOR_2FN(T, TI, operator>>=) \
+VECTOR_2FN(T, TI, operator-=) \
+VECTOR_2FN(T, TI, operator+=) \
+VECTOR_2FN(T, TI, operator*=) \
+VECTOR_2FN(T, TI, operator/=) \
 VECTOR_1FN(T, operator++) \
 VECTOR_1FN(T, operator--)
 
-VECTOR_TYPE(char);
-VECTOR_TYPE(uchar);
-VECTOR_TYPE(short);
-VECTOR_TYPE(ushort);
-VECTOR_TYPE(int);
-VECTOR_TYPE(uint);
-VECTOR_TYPE(long);
-VECTOR_TYPE(ulong);
-VECTOR_TYPE(half);
-VECTOR_TYPE(float);
-VECTOR_TYPE(double);
+VECTOR_TYPE(char, char);
+VECTOR_TYPE(uchar, uchar);
+VECTOR_TYPE(short, short);
+VECTOR_TYPE(ushort, ushort);
+VECTOR_TYPE(int, int);
+VECTOR_TYPE(uint, uint);
+VECTOR_TYPE(long, long);
+VECTOR_TYPE(ulong, ulong);
+VECTOR_TYPE(half, short);
+VECTOR_TYPE(float, int);
+VECTOR_TYPE(double, long);
 
 VECTOR_VLOADSTORE(char);
 VECTOR_VLOADSTORE(uchar);
