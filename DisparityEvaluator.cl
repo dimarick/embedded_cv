@@ -456,7 +456,6 @@ void getDisparityCandidates(
         int sz,
         short* result,
         half* costs,
-        int nCandidates,
         int step,
         bool debug
         BC_ARG
@@ -531,11 +530,6 @@ void getDisparityCandidates(
             shortN needUpdate = convert_shortN(needUpdatedCost);
             shortN needUpdateResult = convert_shortN(needUpdateCandidates);
 #endif
-
-            for (int i = 0; i < nCandidates - 1; ++i) {
-                vstoreN(select(vloadN(b * nCandidates + (i + 1), result), vloadN(b * nCandidates + i, result), needUpdateResult), b * nCandidates + (i + 1), result);
-                vstoreN(select(vloadN(b * nCandidates + (i + 1), costs), vloadN(b + i, costs), needUpdateCandidates), b * nCandidates + (i + 1), costs);
-            }
 
             vstoreN(fmin(vloadN(b, costs), currentScore), b, costs);
             vstoreN(select(vloadN(b, result), (shortN)d, needUpdate), b, result);
@@ -643,10 +637,13 @@ __kernel void DisparityEvaluator(
 
             const int maxDisparity = max(0, min(MAX_DISPARITY, (int) (w - ((x + 16*3) + windowSize0 + 1))));
             getDisparityCandidates(pFrame0, pFrame1, x, 0, w, fragmentHeight,
-                         max(-x, -MAX_DISPARITY), -MAX_DISPARITY / 2 , windowSize0, nsz, disparities, costs, 1, 4, false BC_PASS);
+                         max(-x, -MAX_DISPARITY), -MAX_DISPARITY / 2 , windowSize0, nsz, disparities, costs, 4, false BC_PASS);
 
             getDisparityCandidates(pFrame0, pFrame1, x, 0, w, fragmentHeight,
-                         max(-x, -MAX_DISPARITY / 2 + 1), 0, windowSize0, nsz, disparities, costs, 1, 2, false BC_PASS);
+                         max(-x, -MAX_DISPARITY / 2 + 1), -MAX_DISPARITY / 4, windowSize0, nsz, disparities, costs, 3, false BC_PASS);
+
+            getDisparityCandidates(pFrame0, pFrame1, x, 0, w, fragmentHeight,
+                         max(-x, -MAX_DISPARITY / 4 + 1), 0, windowSize0, nsz, disparities, costs, 1, false BC_PASS);
 
             for (int i = 0; i < BATCH_SIZE * VECTOR_SIZE; ++i) {
                 short d = disparities[i];
@@ -658,10 +655,11 @@ __kernel void DisparityEvaluator(
                 short d1, d2;
                 half cost = 1e12;
 
-                getDisparitySingleValue(pFrame1, pFrame0, x + d, 0, w, fragmentHeight, max(-x, -d - 5), min(-d + 8, maxDisparity), windowSize0, nsz, &d2, &cost, 1, false BC_PASS);
-                getDisparitySingleValue(pFrame1, pFrame0, x + d, 0, w, fragmentHeight, max(-x, -d + 9), min(-d + 50, maxDisparity), windowSize0, nsz, &d2, &cost, 2, false BC_PASS);
+                getDisparitySingleValue(pFrame1, pFrame0, x + d, 0, w, fragmentHeight, max(-x, -d - 3), min(-d + 8, maxDisparity), windowSize0, nsz, &d2, &cost, 1, false BC_PASS);
+                getDisparitySingleValue(pFrame1, pFrame0, x + d, 0, w, fragmentHeight, max(-x, -d + 9), min(-d + 15, maxDisparity), windowSize0, nsz, &d2, &cost, 2, false BC_PASS);
+                getDisparitySingleValue(pFrame1, pFrame0, x + d, 0, w, fragmentHeight, max(-x, -d + 16), min(-d + 40, maxDisparity), windowSize0, nsz, &d2, &cost, 3, false BC_PASS);
                 short lrcDistance = abs(abs(d) - abs(d2));
-                bool valid = lrcDistance < 5;
+                bool valid = lrcDistance < 4;
                 disparities[i] = valid ? d2 : 0;
             }
 
