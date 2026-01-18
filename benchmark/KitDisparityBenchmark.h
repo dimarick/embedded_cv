@@ -29,6 +29,7 @@ public:
         float avgNoc = 0.0f; // Средняя ошибка (незакрытые области)
         float avgAll = 0.0f; // Средняя ошибка (все области)
         float d1All = 0.0f;  // Метрика D1-all (актуально для 2015)
+        float dense = 0.0f;
     };
 
     // Агрегированные результаты по всему датасету
@@ -38,6 +39,7 @@ public:
         float meanAvgNoc = 0.0f;
         float meanAvgAll = 0.0f;
         float meanD1All = 0.0f;
+        float dense = 0.0f;
         std::vector<float> inferenceTimes; // Время выполнения для каждого изображения
     };
 
@@ -63,9 +65,9 @@ public:
     void initializeDatasets();
 private:
     Config config_;
-    std::vector<std::string> leftImagePaths_;
-    std::vector<std::string> rightImagePaths_;
-    std::vector<std::string> gtDisparityPaths_;
+    std::vector<cv::Mat> leftImage;
+    std::vector<cv::Mat> rightImage;
+    std::vector<cv::Mat> gtDisparity;
     
     // Загрузка ground truth диспарити KITTI (16-битное PNG)
     cv::Mat loadGTDisparity(const std::string& path);

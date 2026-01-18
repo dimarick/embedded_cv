@@ -12,9 +12,9 @@ KitDisparityBenchmark::KitDisparityBenchmark(const Config& config) : config_(con
 }
 
 void KitDisparityBenchmark::initializeDatasets() {
-    leftImagePaths_.clear();
-    rightImagePaths_.clear();
-    gtDisparityPaths_.clear();
+    leftImage.clear();
+    rightImage.clear();
+    gtDisparity.clear();
     
     std::string leftImageFolder, rightImageFolder, gtFolder;
     
@@ -36,6 +36,7 @@ void KitDisparityBenchmark::initializeDatasets() {
     std::string gtBase = base + gtFolder;
     
     // KITTI использует naming pattern: 000000_10.png, 000001_10.png и т.д.
+#pragma omp parallel for
     for (int i = 0; i < (config_.benchmarkYear == "2012" ? 194 : 200); ++i) {
         std::stringstream ss;
         ss << std::setfill('0') << std::setw(6) << i;
@@ -46,9 +47,14 @@ void KitDisparityBenchmark::initializeDatasets() {
         std::string gtPath = gtBase + idxStr + "_10.png";
         
         if (fs::exists(leftPath) && fs::exists(rightPath) && fs::exists(gtPath)) {
-            leftImagePaths_.push_back(leftPath);
-            rightImagePaths_.push_back(rightPath);
-            gtDisparityPaths_.push_back(gtPath);
+            // Загрузка стереопары
+            cv::Mat left = cv::imread(leftPath, cv::IMREAD_UNCHANGED);
+            cv::Mat right = cv::imread(rightPath, cv::IMREAD_UNCHANGED);
+            cv::Mat gt = loadGTDisparity(gtPath);
+
+            leftImage.push_back(left);
+            rightImage.push_back(right);
+            gtDisparity.push_back(gt);
         } else {
             if (config_.verbose) {
                 std::cout << "Warning: Missing files for index " << i << ", skipping." << "leftPath " << leftPath << " rightPath " << rightPath << std::endl;
@@ -57,8 +63,8 @@ void KitDisparityBenchmark::initializeDatasets() {
     }
     
     if (config_.verbose) {
-        std::cout << "Initialized KITTI " << config_.benchmarkYear 
-                  << " benchmark with " << leftImagePaths_.size() << " image pairs." << std::endl;
+        std::cout << "Initialized KITTI " << config_.benchmarkYear
+                  << " benchmark with " << leftImage.size() << " image pairs." << std::endl;
     }
 }
 
@@ -102,8 +108,8 @@ KitDisparityBenchmark::ImageMetrics KitDisparityBenchmark::computeMetrics(
         cv::Mat errorMaskNoc = diff > config_.errorThreshold;
         errorMaskNoc = errorMaskNoc & validMask;
         
-        metrics.outNoc = 100.0f * cv::countNonZero(errorMaskNoc) / cv::countNonZero(validMask);
-        metrics.avgNoc = cv::mean(diff, validMask)[0];
+        metrics.outNoc = 100.0f * (float)cv::countNonZero(errorMaskNoc) / (float)cv::countNonZero(validMask);
+        metrics.avgNoc = (float)cv::mean(diff, validMask)[0];
         
         // Для 'all' метрики в 2012 требуются дополнительные GT с окклюзиями
         // В этом упрощенном примере полагаем outAll = outNoc, avgAll = avgNoc
@@ -120,9 +126,11 @@ KitDisparityBenchmark::ImageMetrics KitDisparityBenchmark::computeMetrics(
         cv::Mat errorMask = diff > thresholdMap;
         errorMask = errorMask & validMask;
         
-        metrics.d1All = 100.0f * cv::countNonZero(errorMask) / cv::countNonZero(validMask);
-        metrics.avgAll = cv::mean(diff, validMask)[0];
+        metrics.d1All = 100.0f * (float)cv::countNonZero(errorMask) / (float)cv::countNonZero(validMask);
+        metrics.avgAll = (float)cv::mean(diff, validMask)[0];
     }
+
+    metrics.dense = 100.0f * (float)cv::countNonZero(predDisparity) / (float)predDisparity.total();
     
     return metrics;
 }
@@ -131,14 +139,14 @@ std::pair<KitDisparityBenchmark::ImageMetrics, double>
 KitDisparityBenchmark::evaluateImage(int index, 
                                      std::function<void(const std::vector<cv::UMat>&, cv::Mat&)> evaluator) {
     
-    if (index < 0 || index >= leftImagePaths_.size()) {
+    if (index < 0 || index >= leftImage.size()) {
         throw std::out_of_range("Image index out of range");
     }
     
     // Загрузка стереопары
-    cv::Mat left = cv::imread(leftImagePaths_[index], cv::IMREAD_UNCHANGED);
-    cv::Mat right = cv::imread(rightImagePaths_[index], cv::IMREAD_UNCHANGED);
-    cv::Mat gt = loadGTDisparity(gtDisparityPaths_[index]);
+    cv::Mat left = leftImage[index];
+    cv::Mat right = rightImage[index];
+    cv::Mat gt = gtDisparity[index];
     
     if (left.empty() || right.empty() || gt.empty()) {
         throw std::runtime_error("Failed to load image pair or GT for index " + std::to_string(index));
@@ -249,25 +257,31 @@ KitDisparityBenchmark::runBenchmark(std::function<void(const std::vector<cv::UMa
     AggregateMetrics aggregate;
     std::vector<double> times;
     
-    size_t totalImages = leftImagePaths_.size();
+    size_t totalImages = leftImage.size();
     int processed = 0;
-    
+    std::mutex lock;
+
+#pragma omp parallel for
     for (int i = 0; i < totalImages; ++i) {
         if (config_.debug && config_.id >= 0 && i != config_.id) {
             continue;
         }
         try {
             auto [metrics, elapsed] = evaluateImage(i, evaluator);
-            
+
+            lock.lock();
             // Агрегация метрик
             aggregate.meanOutNoc += metrics.outNoc;
             aggregate.meanOutAll += metrics.outAll;
             aggregate.meanAvgNoc += metrics.avgNoc;
             aggregate.meanAvgAll += metrics.avgAll;
             aggregate.meanD1All += metrics.d1All;
+            aggregate.dense += metrics.dense;
             aggregate.inferenceTimes.push_back(elapsed);
             
             processed++;
+
+            lock.unlock();
             
             if (config_.verbose && (i % 20 == 0 || i == totalImages - 1)) {
                 std::cout << "Processed " << i + 1 << "/" << totalImages 
@@ -290,6 +304,7 @@ KitDisparityBenchmark::runBenchmark(std::function<void(const std::vector<cv::UMa
         aggregate.meanAvgNoc *= invProcessed;
         aggregate.meanAvgAll *= invProcessed;
         aggregate.meanD1All *= invProcessed;
+        aggregate.dense *= invProcessed;
     }
     
     if (config_.verbose) {
@@ -302,6 +317,7 @@ KitDisparityBenchmark::runBenchmark(std::function<void(const std::vector<cv::UMa
             std::cout << "Out-All: " << aggregate.meanOutAll << "%" << std::endl;
             std::cout << "Avg-Noc: " << aggregate.meanAvgNoc << " px" << std::endl;
             std::cout << "Avg-All: " << aggregate.meanAvgAll << " px" << std::endl;
+            std::cout << "Dense: " << aggregate.dense << " %" << std::endl;
         } else {
             std::cout << std::fixed << std::setprecision(3);
             std::cout << "D1-all: " << aggregate.meanD1All << "%" << std::endl;

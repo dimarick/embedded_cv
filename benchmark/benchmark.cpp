@@ -23,9 +23,11 @@ int main(int argc, char **argv) {
     benchmark.initializeDatasets();
 
     ecv::DisparityEvaluator stereo((cl_context)cv::ocl::Context::getDefault().ptr());
+
+    std::mutex lock;
     
     // Запуск оценки вашего алгоритма
-    auto results = benchmark.runBenchmark([&stereo](const std::vector<cv::UMat>& frames, cv::Mat& disparity) {
+    auto results = benchmark.runBenchmark([&stereo, &lock](const std::vector<cv::UMat>& frames, cv::Mat& disparity) {
         // Вызов вашего готового кернела стереозрения
         cv::Mat variance;
         cv::Mat disparityI16;
@@ -36,7 +38,9 @@ int main(int argc, char **argv) {
             }
         }
 
+        lock.lock();
         stereo.evaluateDisparity(frames, disparityI16, variance);
+        lock.unlock();
 
         disparityI16.convertTo(disparity, CV_32F);
 
