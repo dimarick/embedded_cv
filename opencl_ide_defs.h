@@ -96,16 +96,16 @@ VECTOR_2FN(T, TI, operator&&) \
 VECTOR_2FN(T, TI, operator||) \
 VECTOR_2FN(T, TI, operator<<) \
 VECTOR_2FN(T, TI, operator>>) \
-VECTOR_2FN(T, TI, operator-) \
-VECTOR_2FN(T, TI, operator+) \
-VECTOR_2FN(T, TI, operator*) \
-VECTOR_2FN(T, TI, operator/) \
+VECTOR_2FN(T, T, operator-) \
+VECTOR_2FN(T, T, operator+) \
+VECTOR_2FN(T, T, operator*) \
+VECTOR_2FN(T, T, operator/) \
 VECTOR_2FN(T, TI, operator<<=) \
 VECTOR_2FN(T, TI, operator>>=) \
-VECTOR_2FN(T, TI, operator-=) \
-VECTOR_2FN(T, TI, operator+=) \
-VECTOR_2FN(T, TI, operator*=) \
-VECTOR_2FN(T, TI, operator/=) \
+VECTOR_2FN(T, T, operator-=) \
+VECTOR_2FN(T, T, operator+=) \
+VECTOR_2FN(T, T, operator*=) \
+VECTOR_2FN(T, T, operator/=) \
 VECTOR_1FN(T, operator++) \
 VECTOR_1FN(T, operator--)
 

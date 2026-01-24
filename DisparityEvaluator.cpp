@@ -2,6 +2,8 @@
 #include <iostream>
 #include <fstream>
 #include <cpptrace/basic.hpp>
+#include <stereo.hpp>
+#include <core/ocl.hpp>
 #include "DisparityEvaluator.h"
 namespace ecv {
 //    const unsigned char kernelSources[] =
@@ -109,8 +111,13 @@ namespace ecv {
 //        std::cout << "Starting processing queue " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
         std::vector<cl::Buffer> gFrames(frames.size());
         for (int i = 0; i < frames.size(); ++i) {
+//            cv::medianBlur(frames[i], frames[i], 3);
+//            cv::boxFilter(frames[i], frames[i], -1, cv::Size(3, 3));
+        }
+        for (int i = 0; i < frames.size(); ++i) {
             gFrames[i] = cl::Buffer((cl_mem)frames[i].handle(cv::ACCESS_READ), true);
         }
+
 //        cl::Buffer gRoughDisparity(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, rd.dataend - rd.datastart);
 //        queue.enqueueWriteBuffer(gRoughDisparity, CL_FALSE, 0, rd.dataend - rd.datastart, (void *)rd.datastart, nullptr);
 
@@ -157,10 +164,30 @@ namespace ecv {
 //        queue.enqueueReadBuffer(gVariance, CL_FALSE, 0, variance.dataend - variance.datastart, (void *)variance.datastart);
 //        queue.enqueueReadBuffer(gQ, CL_FALSE, 0, sizeof(_q), (void *)&_q);
         queue.finish();
+//
+////        std::cout << "Memory read done " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+//
+//        cv::Mat element = getStructuringElement( cv::MorphShapes::MORPH_ELLIPSE, cv::Size( 5, 5 ), cv::Point( 2, 2 ) );
+////        cv::dilate(disparity, disparity,element);
+////        cv::boxFilter(disparity, disparity, -1, cv::Size(3, 3));
 
-//        std::cout << "Memory read done " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
+//        sgbm->compute(frames[0], frames[1], disparity);
+//        cv::UMat uDisparity;
+//
+//        cv::UMat l, r;
+//
+//        cv::cvtColor(frames[0], l, cv::COLOR_RGB2GRAY);
+//        cv::cvtColor(frames[1], r, cv::COLOR_RGB2GRAY);
+//
+//        l.flags &= ~64;
+//        r.flags &= ~64;
+//
+//        cv::ocl::setUseOpenCL(false);
+//
+//        bm->compute(l, r, disparity);
 
-        this->q = _q;
+//        uDisparity.copyTo(disparity);
+//        this->q = _q;
     }
 
     void DisparityEvaluator::evaluateIncrementally(const std::vector<cv::Mat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity) {
@@ -335,6 +362,10 @@ namespace ecv {
         if (this->oclInitialized) {
             return;
         }
+        sgbm = cv::StereoSGBM::create(0, 384, 3, 0, 0, 1, 0, 0, 0, 0, cv::StereoSGBM::MODE_HH);
+        bm = cv::StereoBM::create(256, 5);
+        bm->setPreFilterType(cv::StereoBM::PREFILTER_NORMALIZED_RESPONSE);
+
         cl_int err = 0;
         if (!this->hasContext) {
             std::vector<cl::Platform> platforms;

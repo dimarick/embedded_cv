@@ -32,9 +32,13 @@ int main(int argc, char **argv) {
         cv::Mat variance;
         cv::Mat disparityI16;
 
-        for (auto frame : frames) {
+        for (auto &frame : frames) {
             if (frame.channels() == 1) {
                 cv::cvtColor(frame, frame, cv::COLOR_GRAY2RGB);
+//                frame.convertTo(frame, CV_8UC1);
+            } else {
+//                cv::cvtColor(frame, frame, cv::COLOR_RGB2GRAY);
+//                target.convertTo(frame, CV_8UC1);
             }
         }
 

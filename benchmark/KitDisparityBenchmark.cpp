@@ -34,6 +34,7 @@ void KitDisparityBenchmark::initializeDatasets() {
     std::string leftBase = base + leftImageFolder;
     std::string rightBase = base + rightImageFolder;
     std::string gtBase = base + gtFolder;
+    std::mutex m;
     
     // KITTI использует naming pattern: 000000_10.png, 000001_10.png и т.д.
 #pragma omp parallel for
@@ -52,9 +53,11 @@ void KitDisparityBenchmark::initializeDatasets() {
             cv::Mat right = cv::imread(rightPath, cv::IMREAD_UNCHANGED);
             cv::Mat gt = loadGTDisparity(gtPath);
 
+            m.lock();
             leftImage.push_back(left);
             rightImage.push_back(right);
             gtDisparity.push_back(gt);
+            m.unlock();
         } else {
             if (config_.verbose) {
                 std::cout << "Warning: Missing files for index " << i << ", skipping." << "leftPath " << leftPath << " rightPath " << rightPath << std::endl;
@@ -195,6 +198,7 @@ KitDisparityBenchmark::evaluateImage(int index,
             cv::Mat gt8;
             cv::Mat left2;
             cv::Mat right2;
+            cv::Mat errorMap;
 
             left.copyTo(left2);
             right.copyTo(right2);
@@ -219,6 +223,7 @@ KitDisparityBenchmark::evaluateImage(int index,
 //            cv::bitwise_and(disparity8, validMask, disparity8, cv::noArray());
 
             cv::applyColorMap(disparity8, disparity8, cv::ColormapTypes::COLORMAP_JET);
+//            cv::applyColorMap(errorMap, errorMap, cv::ColormapTypes::COLORMAP_JET);
 
             gtFp.convertTo(gt8, CV_8U);
             cv::applyColorMap(gt8, gt8, cv::ColormapTypes::COLORMAP_JET);
@@ -235,12 +240,14 @@ KitDisparityBenchmark::evaluateImage(int index,
             cv::drawMarker(gt8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
             cv::drawMarker(left2, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
             cv::drawMarker(right2, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
+//            cv::drawMarker(errorMap, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
 
 
             cv::imshow("Left", left2);
             cv::imshow("Right", right2);
             cv::imshow("GT", gt8);
             cv::imshow("Disparity", disparity8);
+//            cv::imshow("Error", errorMap);
 
             if (cv::waitKey(10) >= 0) {
                 break;
@@ -261,7 +268,7 @@ KitDisparityBenchmark::runBenchmark(std::function<void(const std::vector<cv::UMa
     int processed = 0;
     std::mutex lock;
 
-#pragma omp parallel for
+//#pragma omp parallel for
     for (int i = 0; i < totalImages; ++i) {
         if (config_.debug && config_.id >= 0 && i != config_.id) {
             continue;
@@ -282,13 +289,13 @@ KitDisparityBenchmark::runBenchmark(std::function<void(const std::vector<cv::UMa
             processed++;
 
             lock.unlock();
-            
+
             if (config_.verbose && (i % 20 == 0 || i == totalImages - 1)) {
                 std::cout << "Processed " << i + 1 << "/" << totalImages 
                           << " images. Current D1-all: " << metrics.d1All << "%" 
                           << ", Time: " << elapsed << "ms" << std::endl;
             }
-            
+
         } catch (const std::exception& e) {
             if (config_.verbose) {
                 std::cout << "Error processing image " << i << ": " << e.what() << std::endl;

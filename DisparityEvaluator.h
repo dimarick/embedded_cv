@@ -10,12 +10,15 @@
 #define CL_HPP_ENABLE_EXCEPTIONS
 
 #include <CL/cl2.hpp>
+#include <stereo.hpp>
 
 namespace ecv {
 
     class DisparityEvaluator {
     private:
         bool oclInitialized = false;
+        cv::Ptr<cv::StereoSGBM> sgbm;
+        cv::Ptr<cv::StereoBM> bm;
         bool hasContext = false;
         cl::Device device;
         cl::Context context;
