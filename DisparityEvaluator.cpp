@@ -407,7 +407,7 @@ namespace ecv {
             this->hasContext = true;
         }
 
-        std::ifstream kernelFile("DisparityEvaluator.cl");
+        std::ifstream kernelFile("DisparityEvaluator3ch.cl");
         std::string src(std::istreambuf_iterator<char>(kernelFile), (std::istreambuf_iterator<char>()));
 
         this->program = cl::Program(this->context, src, false, &err);
