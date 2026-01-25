@@ -133,7 +133,7 @@ KitDisparityBenchmark::ImageMetrics KitDisparityBenchmark::computeMetrics(
         metrics.avgAll = (float)cv::mean(diff, validMask)[0];
     }
 
-    metrics.dense = 100.0f * (float)cv::countNonZero(predDisparity) / (float)predDisparity.total();
+    metrics.dense = 100.0f * (float)cv::countNonZero(predDisparity > 0.0f) / (float)predDisparity.total();
     
     return metrics;
 }
