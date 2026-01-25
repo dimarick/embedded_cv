@@ -110,48 +110,45 @@ namespace ecv {
         auto startDisp = std::chrono::high_resolution_clock::now();
 //        std::cout << "Starting processing queue " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
         std::vector<cl::Buffer> gFrames(frames.size());
+
+        std::vector<cv::UMat> processedFrames(frames.size());
+
         for (int i = 0; i < frames.size(); ++i) {
-//            cv::medianBlur(frames[i], frames[i], 3);
-//            cv::boxFilter(frames[i], frames[i], -1, cv::Size(3, 3));
+            cv::cvtColor(frames[i], processedFrames[i], cv::COLOR_RGB2GRAY);
+            cv::equalizeHist(processedFrames[i], processedFrames[i]);
+//            frames[i].copyTo(processedFrames[i]);
         }
-        for (int i = 0; i < frames.size(); ++i) {
-            gFrames[i] = cl::Buffer((cl_mem)frames[i].handle(cv::ACCESS_READ), true);
+
+        cv::ocl::Queue::getDefault().finish();
+
+        for (int i = 0; i < processedFrames.size(); ++i) {
+            gFrames[i] = cl::Buffer((cl_mem)processedFrames[i].handle(cv::ACCESS_READ), true);
         }
+        queue.finish();
 
 //        cl::Buffer gRoughDisparity(context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, rd.dataend - rd.datastart);
 //        queue.enqueueWriteBuffer(gRoughDisparity, CL_FALSE, 0, rd.dataend - rd.datastart, (void *)rd.datastart, nullptr);
 
-        auto sz = (int)frames[0].elemSize();
+        auto channels = (int)processedFrames[0].elemSize();
         auto w = frames[0].cols;
         auto h = frames[0].rows;
-        auto windowSize = 3 * sz;
-        auto windowHeight = std::min(4, frames[0].rows);
-        auto _q = (float)this->q;
-//        cl::Buffer gQ(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, sizeof _q);
 
 //        std::cout << "Buffers enqueued " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
-        queue.finish();
 
 //        std::cout << "Buffers written " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
         auto a = 0;
         this->kernel.setArg(a++, gFrames[0]);
         this->kernel.setArg(a++, gFrames[1]);
-//        this->kernel.setArg(a++, gRoughDisparity);
         this->kernel.setArg(a++, gDisparity);
 //        this->kernel.setArg(a++, gVariance);
-//        this->kernel.setArg(a++, gQ);
-        this->kernel.setArg(a++, _q);
-        this->kernel.setArg(a++, windowHeight);
-        this->kernel.setArg(a++, windowSize);
         this->kernel.setArg(a++, w);
         this->kernel.setArg(a++, h);
-        this->kernel.setArg(a++, sz);
-        this->kernel.setArg(a++, DISPARITY_PRECISION);
+        this->kernel.setArg(a++, channels);
 
 //        std::cout << "Kernel args " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
-        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 4, h / 2), cl::NDRange(w / 4, 1));
+        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(w / 8, h / 2), cl::NDRange(w / 8, 1));
 //        queue.enqueueNDRangeKernel(this->kernel, cl::NullRange, cl::NDRange(frames[0].rows, frames[0].cols), cl::NDRange(frames[0].rows, 1));
 
 //        std::cout << "Kernel enqueued " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
@@ -181,8 +178,6 @@ namespace ecv {
 //
 //        l.flags &= ~64;
 //        r.flags &= ~64;
-//
-//        cv::ocl::setUseOpenCL(false);
 //
 //        bm->compute(l, r, disparity);
 
@@ -363,8 +358,9 @@ namespace ecv {
             return;
         }
         sgbm = cv::StereoSGBM::create(0, 384, 3, 0, 0, 1, 0, 0, 0, 0, cv::StereoSGBM::MODE_HH);
-        bm = cv::StereoBM::create(256, 5);
+        bm = cv::StereoBM::create(384, 9);
         bm->setPreFilterType(cv::StereoBM::PREFILTER_NORMALIZED_RESPONSE);
+        bm->setUniquenessRatio(1);
 
         cl_int err = 0;
         if (!this->hasContext) {
