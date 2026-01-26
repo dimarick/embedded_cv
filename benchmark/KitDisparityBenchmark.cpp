@@ -140,7 +140,7 @@ KitDisparityBenchmark::ImageMetrics KitDisparityBenchmark::computeMetrics(
 
 std::pair<KitDisparityBenchmark::ImageMetrics, double> 
 KitDisparityBenchmark::evaluateImage(int index, 
-                                     std::function<void(const std::vector<cv::UMat>&, cv::Mat&)> evaluator) {
+                                     std::function<void(const std::vector<cv::UMat>&, cv::Mat&, cv::Mat&)> evaluator) {
     
     if (index < 0 || index >= leftImage.size()) {
         throw std::out_of_range("Image index out of range");
@@ -162,9 +162,10 @@ KitDisparityBenchmark::evaluateImage(int index,
     
     // Вычисление диспарити и замер времени
     cv::Mat disparity;
+    cv::Mat variance;
     auto start = std::chrono::high_resolution_clock::now();
     
-    evaluator(frames, disparity);
+    evaluator(frames, disparity, variance);
     
     auto end = std::chrono::high_resolution_clock::now();
     double elapsed = std::chrono::duration<double, std::milli>(end - start).count();
@@ -194,6 +195,8 @@ KitDisparityBenchmark::evaluateImage(int index,
         while(true) {
             cv::Mat disparity8;
             cv::Mat disparityFp;
+            cv::Mat variance8;
+            cv::Mat varianceFp;
             cv::Mat gtFp;
             cv::Mat gt8;
             cv::Mat left2;
@@ -204,6 +207,7 @@ KitDisparityBenchmark::evaluateImage(int index,
             right.copyTo(right2);
 
             disparity.copyTo(disparityFp);
+            variance.copyTo(varianceFp);
 
             gt.copyTo(gtFp);
 
@@ -219,10 +223,14 @@ KitDisparityBenchmark::evaluateImage(int index,
 
             disparityFp.convertTo(disparity8, CV_8U);
 
+            varianceFp *= 255.0 / 20;
+            varianceFp.convertTo(variance8, CV_8U);
+
             cv::Mat validMask = gt > 0.0f;
 //            cv::bitwise_and(disparity8, validMask, disparity8, cv::noArray());
 
             cv::applyColorMap(disparity8, disparity8, cv::ColormapTypes::COLORMAP_JET);
+            cv::applyColorMap(variance8, variance8, cv::ColormapTypes::COLORMAP_JET);
 //            cv::applyColorMap(errorMap, errorMap, cv::ColormapTypes::COLORMAP_JET);
 
             gtFp.convertTo(gt8, CV_8U);
@@ -231,12 +239,17 @@ KitDisparityBenchmark::evaluateImage(int index,
             auto disparityAtPoint = disparity.at<float>(mouseDisp.y, mouseDisp.x);
             auto dispStr = std::to_string((float)disparityAtPoint);
 
+            auto varianceAtPoint = variance.at<float>(mouseDisp.y, mouseDisp.x);
+            auto varStr = std::to_string((float)varianceAtPoint);
+
             auto gtAtPoint = gt.at<float>(mouseDisp.y, mouseDisp.x);
             auto gtStr = std::to_string((float)gtAtPoint);
 
             cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
+            cv::putText(variance8, varStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
             cv::putText(gt8, gtStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
             cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
+            cv::drawMarker(variance8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
             cv::drawMarker(gt8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
             cv::drawMarker(left2, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
             cv::drawMarker(right2, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
@@ -247,6 +260,7 @@ KitDisparityBenchmark::evaluateImage(int index,
             cv::imshow("Right", right2);
             cv::imshow("GT", gt8);
             cv::imshow("Disparity", disparity8);
+            cv::imshow("Variance", variance8);
 //            cv::imshow("Error", errorMap);
 
             if (cv::waitKey(10) >= 0) {
@@ -259,7 +273,7 @@ KitDisparityBenchmark::evaluateImage(int index,
 }
 
 KitDisparityBenchmark::AggregateMetrics 
-KitDisparityBenchmark::runBenchmark(std::function<void(const std::vector<cv::UMat>&, cv::Mat&)> evaluator) {
+KitDisparityBenchmark::runBenchmark(std::function<void(const std::vector<cv::UMat>&, cv::Mat&, cv::Mat&)> evaluator) {
     
     AggregateMetrics aggregate;
     std::vector<double> times;

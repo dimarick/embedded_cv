@@ -184,6 +184,32 @@ for (int i = (rangeStart); i < (rangeStart) + ((rangeEnd) - (rangeStart)) / dim;
 #define  select(ifFalse, ifTrue, condition) ((condition) != 0 ? (ifTrue) : (ifFalse))
 #endif
 
+half inline sum16(half16 v16) {
+    half8 v8 = v16.odd + v16.even;
+    half4 v4 = v8.odd + v8.even;
+    half2 v2 = v4.odd + v4.even;
+
+    return v2.odd + v2.even;
+}
+
+half inline sum8(half8 v8) {
+    half4 v4 = v8.odd + v8.even;
+    half2 v2 = v4.odd + v4.even;
+
+    return v2.odd + v2.even;
+}
+
+half inline mean(half16 v) {
+    return sum16(v) / 16;
+}
+
+half inline zstddev(half16 v) {
+    v *= v;
+    half r = sum16(v);
+
+    return sqrt(r) + EPS;
+}
+
 void inline loadPatch9x1(const __local uchar *src, half *patch) {
     vstore8(convert_half8(vload8(0, src)), 0, patch);
     patch[9-1] = (half)src[9-1];
@@ -331,32 +357,6 @@ half inline appendScore3x1(const half *src, const __local uchar *dest) {
     return df0.s0 + df0.s1 + df0.s2;
 }
 
-half inline sum16(half16 v16) {
-    half8 v8 = v16.odd + v16.even;
-    half4 v4 = v8.odd + v8.even;
-    half2 v2 = v4.odd + v4.even;
-
-    return v2.odd + v2.even;
-}
-
-half inline sum8(half8 v8) {
-    half4 v4 = v8.odd + v8.even;
-    half2 v2 = v4.odd + v4.even;
-
-    return v2.odd + v2.even;
-}
-
-half inline mean(half16 v) {
-    return sum16(v) / 16;
-}
-
-half inline zstddev(half16 v) {
-    v *= v;
-    half r = sum16(v);
-
-    return sqrt(r) + EPS;
-}
-
 half inline getWindowColumnsScore(const half *src, const __local uchar *dest, half *perColumnScore) {
     for (int i = 0; i < WINDOW_SIZE; ++i) {
         perColumnScore[i] = 0;
@@ -430,6 +430,7 @@ half inline interpolate(const half *costs, int i) {
 }
 
 void getDisparityCandidates(
+        half *patch,
         __local uchar *data1,
         __local uchar *data2,
         int x,
@@ -445,6 +446,7 @@ void getDisparityCandidates(
         int nCandidates,
         int batchSize,
         int step,
+        half wAvg,
         bool debug
         BC_ARG
 ) {
@@ -462,13 +464,15 @@ void getDisparityCandidates(
     }
 
     int i = 0;
-    half patch[(BATCH_SIZE + WINDOW_SIZE + 1) * WINDOW_SIZE] __attribute__ ((aligned (64)));
+//    half patch[(BATCH_SIZE + WINDOW_SIZE + 1) * WINDOW_SIZE] __attribute__ ((aligned (64)));
     half perColumnScore[BATCH_SIZE + WINDOW_SIZE + 1] __attribute__ ((aligned (64)));
-    loadPatch(src, patch);
 //    for (int b = 0; b < batchSize - 1; ++b) {
 //        int bw = b + WINDOW_SIZE;
 //        loadPatch1(src + bw * h, patch + bw * h);
 //    }
+
+    half alpha = 2.0 / (wAvg + 1.0);
+    half avg = 1e12;
 
     for (half d = minDisparity; d <= maxDisparity; d += step) {
 
@@ -488,18 +492,18 @@ void getDisparityCandidates(
                 }
             }
 
-            half *costAvgRef = &costAvg[b * 3];
-            costAvgRef[(i % 3)] = cost;
+            avg = i == 0 ? cost : alpha * cost + (1 - alpha) * avg;
 
-            half avg = cost;//(costAvgRef[0] + costAvgRef[1] + costAvgRef[2]) / min(i, 3);
+            half *costAvgRef = &costAvg[b * 3];
+            costAvgRef[(i % 3)] = avg;
 
             bool needUpdate = avg < costs[b];
             costs[b] = fmin(costs[b], avg);
 
             cost = cost - perColumnScore[b] + perColumnScore[bw];
 
-            result[b] = needUpdate && i >= 3
-                    ? (short) ((d + interpolate(costAvgRef, i) * step) * DISPARITY_PRECISION)
+            result[b] = needUpdate
+                    ? (short) ((d - 1 + interpolate(costAvgRef, i) * step) * DISPARITY_PRECISION)
                     : result[b];
         }
 
@@ -541,7 +545,7 @@ __kernel void DisparityEvaluator(
         __global uchar* frame0,
         __global uchar* frame1,
         __global short* disparity,
-//        __global float* variance,
+        __global float* variance,
         const int w,
         const int h,
         const int channels
@@ -626,8 +630,11 @@ __kernel void DisparityEvaluator(
 
             const int maxDisparity = max(0, min(MAX_DISPARITY, (int) (w - (x + windowSize0 + 1))));
 
-            getDisparityCandidates(pFrame0, pFrame1, x, 0, w, MAX_FRAGMENT_HEIGHT,
-                         max(-x, -MAX_DISPARITY), 0, WINDOW_SIZE, 1, disparities, costs, N_CANDIDATES, BATCH_SIZE, 1, false BC_PASS);
+            half patch[(BATCH_SIZE + WINDOW_SIZE + 1) * WINDOW_SIZE] __attribute__ ((aligned (64)));
+            loadPatch(pFrame0 + x * MAX_FRAGMENT_HEIGHT, patch);
+
+            getDisparityCandidates(patch, pFrame0, pFrame1, x, 0, w, MAX_FRAGMENT_HEIGHT,
+                         max(-x, -MAX_DISPARITY), 0, WINDOW_SIZE, 1, disparities, costs, N_CANDIDATES, BATCH_SIZE, 2, 3, false BC_PASS);
 
             int w2 = WINDOW_SIZE / 2;
 
@@ -636,25 +643,31 @@ __kernel void DisparityEvaluator(
                 short d1 = 0;
                 half cost = 1e12;
 
-                for (int i = 0; i < N_CANDIDATES && !(abs(abs(d1) - abs(d0)) <= 3 * DISPARITY_PRECISION); ++i) {
+                for (int i = 0; i < N_CANDIDATES && !(abs(abs(d1) - abs(d0)) <= 2 * DISPARITY_PRECISION); ++i) {
                     short d = disparities[b + i * BATCH_SIZE] / DISPARITY_PRECISION;
-                    getDisparityCandidates(pFrame1, pFrame0, clamp(x + b + d, 0, xLimit), 0, w, MAX_FRAGMENT_HEIGHT,
-                                           max(-x - b, -d - 30), min(maxDisparity - b, -d + 30), WINDOW_SIZE, 1, &d1, &cost,
-                                           1, 1, 2, false BC_PASS);
+
+                    int safeX = clamp(x + b + d, 0, xLimit);
+
+                    loadPatch(pFrame1 + safeX * MAX_FRAGMENT_HEIGHT, patch);
+
+                    getDisparityCandidates(patch, pFrame1, pFrame0, safeX, 0, w, MAX_FRAGMENT_HEIGHT,
+                                           max(-x - b, -d - 10), min(maxDisparity - b, -d + 10), WINDOW_SIZE, 1, &d1, &cost,
+                                           1, 1, 1, 3, false BC_PASS);
                 }
 
                 half c0 =  fabs(costs[b]);
                 half c1 = fabs((costs[b + BATCH_SIZE]));
                 short d = abs(d0);
-                bool valid = abs(abs(d1) - d) <= 3 * DISPARITY_PRECISION;
+                bool valid = abs(abs(d1) - d) <= 2 * DISPARITY_PRECISION;
                 disparity[(y + w2) * w + x + w2 + b] =
                      valid
-                     && c1 / (c0 + EPS) > 1.25
+                     && c1 / (c0 + EPS) > 1.35
                      && d < (MAX_DISPARITY - 64) * DISPARITY_PRECISION
-                     ? d
+                     ? d1
                      : 0;
-            }
 
+                variance[(y + w2) * w + x + w2 + b] = c0 / 81;
+            }
         }
     }
 

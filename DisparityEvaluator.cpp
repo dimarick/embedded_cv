@@ -105,7 +105,7 @@ namespace ecv {
             rd = cv::Mat(frames[0].cols / 2, std::max(1, frames[0].rows / 2), CV_16S);
         }
         cl::Buffer gDisparity(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, disparity.dataend - disparity.datastart);
-//        cl::Buffer gVariance(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, variance.dataend - variance.datastart);
+        cl::Buffer gVariance(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, variance.dataend - variance.datastart);
 
         auto startDisp = std::chrono::high_resolution_clock::now();
 //        std::cout << "Starting processing queue " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
@@ -113,8 +113,11 @@ namespace ecv {
 
         std::vector<cv::UMat> processedFrames(frames.size());
 
+        auto clahe = cv::createCLAHE(3, cv::Size(5,5));
+
         for (int i = 0; i < frames.size(); ++i) {
             cv::cvtColor(frames[i], processedFrames[i], cv::COLOR_RGB2GRAY);
+            clahe->apply(processedFrames[i], processedFrames[i]);
             cv::equalizeHist(processedFrames[i], processedFrames[i]);
 //            frames[i].copyTo(processedFrames[i]);
         }
@@ -141,7 +144,7 @@ namespace ecv {
         this->kernel.setArg(a++, gFrames[0]);
         this->kernel.setArg(a++, gFrames[1]);
         this->kernel.setArg(a++, gDisparity);
-//        this->kernel.setArg(a++, gVariance);
+        this->kernel.setArg(a++, gVariance);
         this->kernel.setArg(a++, w);
         this->kernel.setArg(a++, h);
         this->kernel.setArg(a++, channels);
@@ -158,7 +161,7 @@ namespace ecv {
 //        std::cout << "Kernel done " << ((double) (std::chrono::high_resolution_clock::now() - startDisp).count()) / 1e6 << std::endl;
 
         queue.enqueueReadBuffer(gDisparity, CL_FALSE, 0, disparity.dataend - disparity.datastart, (void *)disparity.datastart);
-//        queue.enqueueReadBuffer(gVariance, CL_FALSE, 0, variance.dataend - variance.datastart, (void *)variance.datastart);
+        queue.enqueueReadBuffer(gVariance, CL_FALSE, 0, variance.dataend - variance.datastart, (void *)variance.datastart);
 //        queue.enqueueReadBuffer(gQ, CL_FALSE, 0, sizeof(_q), (void *)&_q);
         queue.finish();
 //

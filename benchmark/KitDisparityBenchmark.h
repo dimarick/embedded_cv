@@ -50,7 +50,7 @@ public:
      * @param evaluator Функция для вычисления диспарити.
      * @return Агрегированные метрики по датасету.
      */
-    AggregateMetrics runBenchmark(std::function<void(const std::vector<cv::UMat>&, cv::Mat&)> evaluator);
+    AggregateMetrics runBenchmark(std::function<void(const std::vector<cv::UMat>&, cv::Mat&, cv::Mat&)> evaluator);
 
     /**
      * Оценка на одном конкретном изображении.
@@ -59,7 +59,7 @@ public:
      * @return Метрики для этого изображения и время выполнения.
      */
     std::pair<ImageMetrics, double> evaluateImage(int index, 
-                                                  std::function<void(const std::vector<cv::UMat>&, cv::Mat&)> evaluator);
+                                                  std::function<void(const std::vector<cv::UMat>&, cv::Mat&, cv::Mat&)> evaluator);
 
     // Инициализация путей к данным
     void initializeDatasets();

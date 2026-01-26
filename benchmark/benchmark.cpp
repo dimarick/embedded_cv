@@ -27,9 +27,7 @@ int main(int argc, char **argv) {
     std::mutex lock;
     
     // Запуск оценки вашего алгоритма
-    auto results = benchmark.runBenchmark([&stereo, &lock](const std::vector<cv::UMat>& frames, cv::Mat& disparity) {
-        // Вызов вашего готового кернела стереозрения
-        cv::Mat variance;
+    auto results = benchmark.runBenchmark([&stereo, &lock](const std::vector<cv::UMat>& frames, cv::Mat& disparity, cv::Mat& variance) {
         cv::Mat disparityI16;
 
         for (auto &frame : frames) {

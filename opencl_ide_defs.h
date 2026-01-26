@@ -148,6 +148,7 @@ VECTOR_CONVERT_ALL(double);
 #define gentype float
 #define igentype int
 gentype		clamp		(gentype x, float minval, float maxval);
+igentype		clamp		(igentype x, igentype minval, igentype maxval);
 gentype		degrees		(gentype radians);
 gentype		max			(gentype x, gentype y);
 igentype		max			(igentype x, igentype y);
