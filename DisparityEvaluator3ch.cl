@@ -473,6 +473,13 @@ void getDisparityCandidates(
 
     half alpha = 2.0 / (wAvg + 1.0);
     half avg = 1e12;
+    half avgb[BATCH_SIZE];
+
+    for (int j = 0; j < BATCH_SIZE; ++j) {
+        avgb[j] = 0;
+    }
+
+
 
     for (half d = minDisparity; d <= maxDisparity; d += step) {
 
@@ -492,7 +499,7 @@ void getDisparityCandidates(
                 }
             }
 
-            avg = i == 0 ? cost : alpha * cost + (1 - alpha) * avg;
+            avg = d == minDisparity ? cost : alpha * cost + (1 - alpha) * avg;
 
             half *costAvgRef = &costAvg[b * 3];
             costAvgRef[(i % 3)] = avg;
@@ -577,7 +584,7 @@ __kernel void DisparityEvaluator(
 
     half kern[] = {
             1,  0, -1,
-            2,  0, -2,
+            3,  0, -3,
             1,  0, -1
     };
 
@@ -634,7 +641,7 @@ __kernel void DisparityEvaluator(
             loadPatch(pFrame0 + x * MAX_FRAGMENT_HEIGHT, patch);
 
             getDisparityCandidates(patch, pFrame0, pFrame1, x, 0, w, MAX_FRAGMENT_HEIGHT,
-                         max(-x, -MAX_DISPARITY), 0, WINDOW_SIZE, 1, disparities, costs, N_CANDIDATES, BATCH_SIZE, 2, 3, false BC_PASS);
+                         max(-x, -MAX_DISPARITY), 0, WINDOW_SIZE, 1, disparities, costs, N_CANDIDATES, BATCH_SIZE, 3, 2, false BC_PASS);
 
             int w2 = WINDOW_SIZE / 2;
 
@@ -643,7 +650,7 @@ __kernel void DisparityEvaluator(
                 short d1 = 0;
                 half cost = 1e12;
 
-                for (int i = 0; i < N_CANDIDATES && !(abs(abs(d1) - abs(d0)) <= 2 * DISPARITY_PRECISION); ++i) {
+                for (int i = 0; i < N_CANDIDATES && !(abs(abs(d1) - abs(d0)) <= 3 * DISPARITY_PRECISION); ++i) {
                     short d = disparities[b + i * BATCH_SIZE] / DISPARITY_PRECISION;
 
                     int safeX = clamp(x + b + d, 0, xLimit);
@@ -651,20 +658,20 @@ __kernel void DisparityEvaluator(
                     loadPatch(pFrame1 + safeX * MAX_FRAGMENT_HEIGHT, patch);
 
                     getDisparityCandidates(patch, pFrame1, pFrame0, safeX, 0, w, MAX_FRAGMENT_HEIGHT,
-                                           max(-x - b, -d - 10), min(maxDisparity - b, -d + 10), WINDOW_SIZE, 1, &d1, &cost,
-                                           1, 1, 1, 3, false BC_PASS);
+                                           max(-x - b, -d - 5), min(maxDisparity - b, -d + 5), WINDOW_SIZE, 1, &d1, &cost,
+                                           1, 1, 1, 2, false BC_PASS);
                 }
 
                 half c0 =  fabs(costs[b]);
                 half c1 = fabs((costs[b + BATCH_SIZE]));
                 short d = abs(d0);
-                bool valid = abs(abs(d1) - d) <= 2 * DISPARITY_PRECISION;
-                disparity[(y + w2) * w + x + w2 + b] =
+                bool valid = abs(abs(d1) - d) <= 3 * DISPARITY_PRECISION;
+                disparity[(y + w2) * w + x + w2 + b] = disparity[(y + w2) * w + x + w2 + b] == 0 &&
                      valid
-                     && c1 / (c0 + EPS) > 1.35
+                     && c1 / (c0 + EPS) > 1.15
                      && d < (MAX_DISPARITY - 64) * DISPARITY_PRECISION
-                     ? d1
-                     : 0;
+                     ? (d+d1) / 2
+                     : disparity[(y + w2) * w + x + w2 + b];
 
                 variance[(y + w2) * w + x + w2 + b] = c0 / 81;
             }
