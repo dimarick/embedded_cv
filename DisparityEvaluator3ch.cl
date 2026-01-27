@@ -840,7 +840,7 @@ __kernel void DisparityEvaluator(
                 short d1 = 0;
                 half cost = 1e12;
 
-                for (int i = 0; i < N_CANDIDATES && !(abs(abs(d1) - abs(disparities[b + i * BATCH_SIZE])) <= 1 * DISPARITY_PRECISION); ++i) {
+                for (int i = 0; i < N_CANDIDATES; ++i) {
                     short d = disparities[b + i * BATCH_SIZE] / DISPARITY_PRECISION;
 
                     int safeX = clamp(x + b + d, 0, xLimit);
