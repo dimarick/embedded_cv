@@ -4,6 +4,7 @@
 #include <cpptrace/basic.hpp>
 #include <stereo.hpp>
 #include <core/ocl.hpp>
+#include <photo.hpp>
 #include "DisparityEvaluator.h"
 namespace ecv {
 //    const unsigned char kernelSources[] =
@@ -118,7 +119,7 @@ namespace ecv {
         for (int i = 0; i < frames.size(); ++i) {
             cv::cvtColor(frames[i], processedFrames[i], cv::COLOR_RGB2GRAY);
             clahe->apply(processedFrames[i], processedFrames[i]);
-            cv::equalizeHist(processedFrames[i], processedFrames[i]);
+//            cv::equalizeHist(processedFrames[i], processedFrames[i]);
 //            frames[i].copyTo(processedFrames[i]);
         }
 
@@ -186,6 +187,12 @@ namespace ecv {
 
 //        uDisparity.copyTo(disparity);
 //        this->q = _q;
+//        cv::Mat disp;
+//
+//        disparity.convertTo(disp, CV_32F);
+//
+////        cv::inpaint(disp, disp == 0, disp, 1, cv::INPAINT_NS);
+//        disp.convertTo(disparity, disparity.type());
     }
 
     void DisparityEvaluator::evaluateIncrementally(const std::vector<cv::Mat> &frames, const cv::Mat &roughDisparity, cv::Mat &disparity) {
@@ -418,7 +425,7 @@ namespace ecv {
 
         try {
             err = program.build("-Werror -cl-denorms-are-zero -cl-fast-relaxed-math -cl-finite-math-only -cl-unsafe-math-optimizations -cl-no-signed-zeros");
-//            err = program.build("-Werror -cl-opt-disable -DDEBUG=1");
+//            err = program.build("-cl-opt-disable -DDEBUG=1");
 //            err = program.build("-Werror");
         } catch (...) {
             std::cerr << "Build Status: " << program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(device)

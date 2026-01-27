@@ -5,6 +5,7 @@
 #include <iostream>
 #include <iomanip>
 #include <numeric>
+#include <opencv2/photo.hpp>
 
 namespace fs = std::filesystem;
 
@@ -15,17 +16,20 @@ void KitDisparityBenchmark::initializeDatasets() {
     leftImage.clear();
     rightImage.clear();
     gtDisparity.clear();
+    leftImage.resize((config_.benchmarkYear == "2012" ? 194 : 200));
+    rightImage.resize((config_.benchmarkYear == "2012" ? 194 : 200));
+    gtDisparity.resize((config_.benchmarkYear == "2012" ? 194 : 200));
     
     std::string leftImageFolder, rightImageFolder, gtFolder;
     
     if (config_.benchmarkYear == "2012") {
         leftImageFolder = "training/colored_0/";
         rightImageFolder = "training/colored_1/";
-        gtFolder = "training/disp_noc/"; // Незакрытые области
+        gtFolder = "training/disp_occ/";
     } else if (config_.benchmarkYear == "2015") {
         leftImageFolder = "training/image_2/";
         rightImageFolder = "training/image_2/";
-        gtFolder = "training/disp_occ_0/"; // Все области (с окклюзиями)
+        gtFolder = "training/disp_occ_0/";
     } else {
         throw std::runtime_error("Unsupported benchmark year. Use '2012' or '2015'.");
     }
@@ -54,9 +58,9 @@ void KitDisparityBenchmark::initializeDatasets() {
             cv::Mat gt = loadGTDisparity(gtPath);
 
             m.lock();
-            leftImage.push_back(left);
-            rightImage.push_back(right);
-            gtDisparity.push_back(gt);
+            leftImage[i] = left;
+            rightImage[i] = right;
+            gtDisparity[i] = gt;
             m.unlock();
         } else {
             if (config_.verbose) {
@@ -94,7 +98,7 @@ KitDisparityBenchmark::ImageMetrics KitDisparityBenchmark::computeMetrics(
     
     // Маска валидных пикселей (в GT диспарити > 0)
     cv::Mat validMask = gtDisparity > 0.0f;
-    validMask &= predDisparity > 0.0f;
+//    validMask &= predDisparity > 0.0f;
 
     if (cv::countNonZero(validMask) == 0) {
         return metrics;
@@ -110,8 +114,9 @@ KitDisparityBenchmark::ImageMetrics KitDisparityBenchmark::computeMetrics(
         // Здесь для простоты считаем, что все валидные пиксели - незакрытые
         cv::Mat errorMaskNoc = diff > config_.errorThreshold;
         errorMaskNoc = errorMaskNoc & validMask;
+        errorMaskNoc &= predDisparity > 0.0f;
         
-        metrics.outNoc = 100.0f * (float)cv::countNonZero(errorMaskNoc) / (float)cv::countNonZero(validMask);
+        metrics.outNoc = 100.0f * (float)cv::countNonZero(errorMaskNoc) / (float)cv::countNonZero(validMask & predDisparity > 0.0f);
         metrics.avgNoc = (float)cv::mean(diff, validMask)[0];
         
         // Для 'all' метрики в 2012 требуются дополнительные GT с окклюзиями
@@ -127,7 +132,8 @@ KitDisparityBenchmark::ImageMetrics KitDisparityBenchmark::computeMetrics(
         cv::max(config_.errorThreshold, 0.05f * gtDisparity, thresholdMap);
         
         cv::Mat errorMask = diff > thresholdMap;
-        errorMask = errorMask & validMask;
+        errorMask &= validMask;
+        errorMask &= predDisparity > 0.0f;
         
         metrics.d1All = 100.0f * (float)cv::countNonZero(errorMask) / (float)cv::countNonZero(validMask);
         metrics.avgAll = (float)cv::mean(diff, validMask)[0];
@@ -202,6 +208,8 @@ KitDisparityBenchmark::evaluateImage(int index,
             cv::Mat left2;
             cv::Mat right2;
             cv::Mat errorMap;
+            cv::Mat errorMapFp;
+            cv::Mat errorMap8;
 
             left.copyTo(left2);
             right.copyTo(right2);
@@ -216,22 +224,30 @@ KitDisparityBenchmark::evaluateImage(int index,
             }
 
             gtFp -= minVal;
-            gtFp *= 255.0 / (maxVal - minVal);
+            gtFp *= 256.0 / (maxVal - minVal);
 
             disparityFp -= minVal;
-            disparityFp *= 255.0 / (maxVal - minVal);
+            disparityFp *= 256.0 / (maxVal - minVal);
 
             disparityFp.convertTo(disparity8, CV_8U);
 
-            varianceFp *= 255.0 / 20;
+            varianceFp *= 256.0 / 20;
             varianceFp.convertTo(variance8, CV_8U);
 
             cv::Mat validMask = gt > 0.0f;
-//            cv::bitwise_and(disparity8, validMask, disparity8, cv::noArray());
 
             cv::applyColorMap(disparity8, disparity8, cv::ColormapTypes::COLORMAP_JET);
             cv::applyColorMap(variance8, variance8, cv::ColormapTypes::COLORMAP_JET);
-//            cv::applyColorMap(errorMap, errorMap, cv::ColormapTypes::COLORMAP_JET);
+
+            cv::absdiff(disparity, gt, errorMap);
+
+            cv::Mat errorMask = validMask & disparity > 0.0f;
+
+            errorMap.copyTo(errorMapFp);
+            errorMapFp *= 100.0;
+            errorMapFp.convertTo(errorMap8, CV_8U);
+            errorMap8 &= errorMask;
+            cv::applyColorMap(errorMap8, errorMap8, cv::ColormapTypes::COLORMAP_JET);
 
             gtFp.convertTo(gt8, CV_8U);
             cv::applyColorMap(gt8, gt8, cv::ColormapTypes::COLORMAP_JET);
@@ -242,18 +258,23 @@ KitDisparityBenchmark::evaluateImage(int index,
             auto varianceAtPoint = variance.at<float>(mouseDisp.y, mouseDisp.x);
             auto varStr = std::to_string((float)varianceAtPoint);
 
+            auto errorAtPoint = errorMap.at<float>(mouseDisp.y, mouseDisp.x)
+                    * (float)(errorMask.at<char>(mouseDisp.y, mouseDisp.x) != 0);
+            auto errStr = std::to_string((float)errorAtPoint);
+
             auto gtAtPoint = gt.at<float>(mouseDisp.y, mouseDisp.x);
             auto gtStr = std::to_string((float)gtAtPoint);
 
             cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
             cv::putText(variance8, varStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
             cv::putText(gt8, gtStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
+            cv::putText(errorMap8, errStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
             cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
             cv::drawMarker(variance8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
             cv::drawMarker(gt8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
             cv::drawMarker(left2, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
             cv::drawMarker(right2, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
-//            cv::drawMarker(errorMap, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
+            cv::drawMarker(errorMap8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 20, 1);
 
 
             cv::imshow("Left", left2);
@@ -261,7 +282,7 @@ KitDisparityBenchmark::evaluateImage(int index,
             cv::imshow("GT", gt8);
             cv::imshow("Disparity", disparity8);
             cv::imshow("Variance", variance8);
-//            cv::imshow("Error", errorMap);
+            cv::imshow("Error", errorMap8);
 
             if (cv::waitKey(10) >= 0) {
                 break;
