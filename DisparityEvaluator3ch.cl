@@ -849,7 +849,7 @@ __kernel void DisparityEvaluator(
             }
 
             int nMatches = getDisparityCandidates(patch, patchQuality, pFrame0, pFrame1, x, 0, w, MAX_FRAGMENT_HEIGHT,
-                         max(-x, -MAX_DISPARITY), 0, WINDOW_SIZE, 1, disparities, costs, N_CANDIDATES, BATCH_SIZE, 1, 4, false BC_PASS);
+                         max(-x, -MAX_DISPARITY), 0, WINDOW_SIZE, 1, disparities, costs, N_CANDIDATES, BATCH_SIZE, 2, 4, false BC_PASS);
 
             for (int b = 0; b < BATCH_SIZE && nMatches > 0; ++b) {
                 for (int i = 0; i < 1; ++i) {
@@ -860,7 +860,7 @@ __kernel void DisparityEvaluator(
                     }
 
                     getDisparity(patch + b * MAX_FRAGMENT_HEIGHT, pFrame0, pFrame1, x + b, 0,
-                                 max(-x, d - 1), min(maxDisparity - b, d + 1), &disparities[b + i * BATCH_SIZE], &costs[b + i * BATCH_SIZE], 1, 1, false BC_PASS);
+                                 max(-x, d - 2), min(maxDisparity - b, d + 2), &disparities[b + i * BATCH_SIZE], &costs[b + i * BATCH_SIZE], 1, 1, false BC_PASS);
 
                 }
             }
@@ -882,7 +882,7 @@ __kernel void DisparityEvaluator(
 
                     getDisparity(patch, pFrame1, pFrame0, safeX, 0,
                                            max(-x - b, -d - 5), min(maxDisparity - b, -d + 5), &dlrc, &cost,
-                                           1, 1, false BC_PASS);
+                                           2, 1, false BC_PASS);
                 }
 
                 half c0 =  fabs(costs[b]);
@@ -896,7 +896,7 @@ __kernel void DisparityEvaluator(
 
                 disparity[resultOffset] =
                      abs(d - dlrc) < 2 * DISPARITY_SCALE
-                     && c1 / (c0 + EPS) > 1.25
+                     && c1 / (c0 + EPS) > 1.35
                      && abs(d) < (MAX_DISPARITY - 8) * DISPARITY_SCALE
                      ? (short)(((half)d * c0 + (half)dlrc * cost) / (c0 + cost))
 //                     ? (d * c1 + dlrc * cost) / (c1 + cost)
