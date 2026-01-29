@@ -118,8 +118,8 @@ namespace ecv {
 
         for (int i = 0; i < frames.size(); ++i) {
             cv::cvtColor(frames[i], processedFrames[i], cv::COLOR_RGB2GRAY);
-            clahe->apply(processedFrames[i], processedFrames[i]);
 //            cv::equalizeHist(processedFrames[i], processedFrames[i]);
+            clahe->apply(processedFrames[i], processedFrames[i]);
 //            frames[i].copyTo(processedFrames[i]);
         }
 
@@ -174,7 +174,7 @@ namespace ecv {
 
 //        sgbm->compute(frames[0], frames[1], disparity);
 //        cv::UMat uDisparity;
-//
+
 //        cv::UMat l, r;
 //
 //        cv::cvtColor(frames[0], l, cv::COLOR_RGB2GRAY);
@@ -368,9 +368,9 @@ namespace ecv {
             return;
         }
         sgbm = cv::StereoSGBM::create(0, 384, 3, 0, 0, 1, 0, 0, 0, 0, cv::StereoSGBM::MODE_HH);
-        bm = cv::StereoBM::create(384, 9);
+        bm = cv::StereoBM::create(384, 11);
         bm->setPreFilterType(cv::StereoBM::PREFILTER_NORMALIZED_RESPONSE);
-        bm->setUniquenessRatio(1);
+        bm->setUniquenessRatio(5);
 
         cl_int err = 0;
         if (!this->hasContext) {

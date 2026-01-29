@@ -317,6 +317,12 @@ int main(int argc, const char **argv) {
     std::mutex sendingLock;
     std::ostringstream tm;
     std::vector<cv::UMat> result(frames.size());
+    cv::FileStorage fs;
+    cv::FileStorage fs_write;
+    cv::Mat kernel;
+    float kernelDiv = 1;
+    auto clahe = cv::createCLAHE(3, cv::Size(11,11));
+
 
     for (int i = 0; running; i++) {
         long nextFrame = std::max(readerLeftCount, readerRightCount);
@@ -354,11 +360,48 @@ int main(int argc, const char **argv) {
         }
 
         for (int j = 0; j < frames.size(); ++j) {
-            for (int k = 1; k < 12; ++k) {
-                auto p1 = Point(0, k * frames[j].size().height / 11);
-                auto p2 = Point(frames[j].size().width, k * frames[j].size().height / 11);
-//                    cv::line(frames[j], p1, p2, cv::Scalar(255, 0, 255), 1);
+//            for (int k = 1; k < 12; ++k) {
+//                auto p1 = Point(0, k * frames[j].size().height / 11);
+//                auto p2 = Point(frames[j].size().width, k * frames[j].size().height / 11);
+////                    cv::line(frames[j], p1, p2, cv::Scalar(255, 0, 255), 1);
+//            }
+
+            kernel.release();
+
+            if (!fs.isOpened()) {
+                fs.open("kernel.yml", cv::FileStorage::READ);
             }
+
+            if (fs.isOpened()) {
+                fs["kernel"] >> kernel;
+                fs["kernel_div"] >> kernelDiv;
+                fs.release();
+
+                kernel /= kernelDiv;
+            } else {
+                std::cout << "Файл kernel.yml не найден, создаю дефолтное ядро 5x5" << std::endl;
+                kernel = cv::Mat::ones(5, 5, CV_32F);
+
+                fs_write.open("kernel.yml", cv::FileStorage::WRITE);
+                fs_write << "kernel" << kernel << "kernel_div" << 25;
+                fs_write.release();
+            }
+
+            cv::UMat filtered;
+            cv::UMat original;
+            frames[0].copyTo(original);
+
+            cv::cvtColor(frames[0], original, cv::COLOR_RGB2GRAY);
+//
+            cv::filter2D(original, filtered, kernel);
+//            cv::medianBlur(original, filtered, 17);
+//            cv::medianBlur(original, filtered, 5);
+//            cv::equalizeHist(filtered, filtered);
+            clahe->apply(filtered, filtered);
+
+            imshow("Original", original);
+            imshow("Filtered", filtered);
+
             if (j != 1) {
                 cv::remap(frames[j], result[j], bestMap1[j], noArray(), INTER_NEAREST);
             } else {

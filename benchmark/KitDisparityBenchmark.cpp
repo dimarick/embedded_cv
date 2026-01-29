@@ -244,9 +244,10 @@ KitDisparityBenchmark::evaluateImage(int index,
             cv::Mat errorMask = validMask & disparity > 0.0f;
 
             errorMap.copyTo(errorMapFp);
-            errorMapFp *= 100.0;
+            errorMapFp *= 10.0;
             errorMapFp.convertTo(errorMap8, CV_8U);
             errorMap8 &= errorMask;
+            errorMap8 &= errorMap >= config_.errorThreshold;
             cv::applyColorMap(errorMap8, errorMap8, cv::ColormapTypes::COLORMAP_JET);
 
             gtFp.convertTo(gt8, CV_8U);
