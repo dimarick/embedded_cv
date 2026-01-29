@@ -48,6 +48,8 @@
 #define MAX_LOCAL_BUFFER MAX_ROW_WIDTH * (MAX_FRAGMENT_HEIGHT)
 #define MIN_VALID_DISPARITY 5
 
+#define SCORE_NORM (1.0 / (256 * WINDOW_SIZE * WINDOW_SIZE))
+
 #if DEBUG == 1
 struct __bounds_checker {
     char t;
@@ -270,15 +272,15 @@ void inline appendScore11x11(const half *src, const __local uchar *dest, half *p
     half16 df6 = vload16(6, src) - convert_half16(vload16(6, dest));
     half8 df7 = vload8(0, src + 16 * 7) - convert_half8(vload8(0, dest + 16 * 7));
     half tail = src[11*11-1] - (half)(dest[11*11-1]);
-    df0 *= df0;
-    df1 *= df1;
-    df2 *= df2;
-    df3 *= df3;
-    df4 *= df4;
-    df5 *= df5;
-    df6 *= df6;
-    df7 *= df7;
-    tail *= tail;
+    df0 *= df0 * (half16)SCORE_NORM;
+    df1 *= df1 * (half16)SCORE_NORM;
+    df2 *= df2 * (half16)SCORE_NORM;
+    df3 *= df3 * (half16)SCORE_NORM;
+    df4 *= df4 * (half16)SCORE_NORM;
+    df5 *= df5 * (half16)SCORE_NORM;
+    df6 *= df6 * (half16)SCORE_NORM;
+    df7 *= df7 * (half8)SCORE_NORM;
+    tail *= tail * SCORE_NORM;
 
     perColumnScore[0] += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6 + df0.s7 + df0.s8 + df0.s9 + df0.sA;
     perColumnScore[1] += df0.sB + df0.sC + df0.sD + df0.sE + df0.sF + df1.s0 + df1.s1 + df1.s2 + df1.s3 + df1.s4 + df1.s5;
@@ -296,8 +298,8 @@ void inline appendScore11x11(const half *src, const __local uchar *dest, half *p
 half inline appendScore11x1(const half *src, const __local uchar *dest) {
     half8 df0 = vload8(0, src) - convert_half8(vload8(0, dest));
     half3 df1 = vload3(0, src + 8) - convert_half3(vload3(0, dest + 8));
-    df0 *= df0;
-    df1 *= df1;
+    df0 *= df0 * (half8)SCORE_NORM;
+    df1 *= df1 * (half3)SCORE_NORM;
 
     return sum8(df0) + sum3(df1);
 }
@@ -323,12 +325,12 @@ void inline appendScore9x9(const half *src, const __local uchar *dest, half *per
     half16 df3 = vload16(3, src) - convert_half16(vload16(3, dest));
     half16 df4 = vload16(4, src) - convert_half16(vload16(4, dest));
     half tail = src[9*9-1] - (half)(dest[9*9-1]);
-    df0 *= df0;
-    df1 *= df1;
-    df2 *= df2;
-    df3 *= df3;
-    df4 *= df4;
-    tail *= tail;
+    df0 *= df0 * (half16)SCORE_NORM;
+    df1 *= df1 * (half16)SCORE_NORM;
+    df2 *= df2 * (half16)SCORE_NORM;
+    df3 *= df3 * (half16)SCORE_NORM;
+    df4 *= df4 * (half16)SCORE_NORM;
+    tail *= tail * SCORE_NORM;
 
     perColumnScore[0] += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6 + df0.s7 + df0.s8;
     perColumnScore[1] += df0.s9 + df0.sA + df0.sB + df0.sC + df0.sD + df0.sE + df0.sF + df1.s0 + df1.s1;
@@ -344,8 +346,8 @@ void inline appendScore9x9(const half *src, const __local uchar *dest, half *per
 half inline appendScore9x1(const half *src, const __local uchar *dest) {
     half8 df0 = vload8(0, src) - convert_half8(vload8(0, dest));
     half tail = src[9-1] - (half)dest[9-1];
-    df0 *= df0;
-    tail *= tail;
+    df0 *= df0 * (half8)SCORE_NORM;
+    tail *= tail * SCORE_NORM;
 
     return sum8(df0) + tail;
 }
@@ -367,10 +369,10 @@ void inline appendScore7x7(const half *src, const __local uchar *dest, half *per
     half16 df1 = vload16(1, src) - convert_half16(vload16(1, dest));
     half16 df2 = vload16(2, src) - convert_half16(vload16(2, dest));
     half tail = src[7*7-1] - (half)dest[7*7-1];
-    df0 *= df0;
-    df1 *= df1;
-    df2 *= df2;
-    tail *= tail;
+    df0 *= df0 * (half16)SCORE_NORM;
+    df1 *= df1 * (half16)SCORE_NORM;
+    df2 *= df2 * (half16)SCORE_NORM;
+    tail *= tail * SCORE_NORM;
 
     perColumnScore[0] += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6;
     perColumnScore[1] += df0.s7 + df0.s8 + df0.s9 + df0.sA + df0.sB + df0.sC + df0.sD;
@@ -383,7 +385,7 @@ void inline appendScore7x7(const half *src, const __local uchar *dest, half *per
 
 half inline appendScore7x1(const half *src, const __local uchar *dest) {
     half8 df0 = vload8(0, src) - convert_half8(vload8(0, dest));
-    df0 *= df0;
+    df0 *= df0 * (half8)SCORE_NORM;
 
     return df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6;
 }
@@ -403,9 +405,9 @@ void inline appendScore5x5(const half *src, const __local uchar *dest, half *per
     half16 df0 = vload16(0, src) - convert_half16(vload16(0, dest));
     half8 df1 = vload8(1, src) - convert_half8(vload8(1, dest));
     half tail = src[5*5-1] - (half)dest[5*5-1];
-    df0 *= df0;
-    df1 *= df1;
-    tail *= tail;
+    df0 *= df0 * (half16)SCORE_NORM;
+    df1 *= df1 * (half8)SCORE_NORM;
+    tail *= tail * SCORE_NORM;
 
     perColumnScore[0] += df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4;
     perColumnScore[1] += df0.s5 + df0.s6 + df0.s7 + df0.s8 + df0.s9;
@@ -417,8 +419,8 @@ void inline appendScore5x5(const half *src, const __local uchar *dest, half *per
 half inline appendScore5x1(const half *src, const __local uchar *dest) {
     half4 df0 = vload4(0, src) - convert_half4(vload4(0, dest));
     half tail = src[5-1] - (half)dest[5-1];
-    df0 *= df0;
-    tail *= tail;
+    df0 *= df0 * (half4)SCORE_NORM;
+    tail *= tail * SCORE_NORM;
 
     return df0.s0 + df0.s1 + df0.s2 + df0.s3 + tail;
 }
@@ -435,8 +437,8 @@ void inline loadPatch3x3(const uchar *src, half *patch) {
 void inline appendScore3x3(const half *src, const __local uchar *dest, half *perColumnScore) {
     half8 df0 = vload8(1, src) - convert_half8(vload8(1, dest));
     half tail = src[3*3-1] - (half)dest[3*3-1];
-    df0 *= df0;
-    tail *= tail;
+    df0 *= df0 * (half8)SCORE_NORM;
+    tail *= tail * SCORE_NORM;
 
     perColumnScore[0] += df0.s0 + df0.s1 + df0.s2;
     perColumnScore[1] += df0.s3 + df0.s4 + df0.s5;
@@ -445,7 +447,7 @@ void inline appendScore3x3(const half *src, const __local uchar *dest, half *per
 
 half inline appendScore3x1(const half *src, const __local uchar *dest) {
     half3 df0 = vload3(0, src) - convert_half3(vload3(0, dest));
-    df0 *= df0;
+    df0 *= df0 * (half3)SCORE_NORM;
 
     return df0.s0 + df0.s1 + df0.s2;
 }
@@ -521,7 +523,7 @@ void inline loadPatch1(const uchar *src, half *patch) {
     }
 }
 
-half inline getWindowColumnScore(const half *src, const __local uchar *dest) {
+half inline getWindowSingleColumnScore(const half *src, const __local uchar *dest) {
     switch (WINDOW_SIZE) {
         case 3:
             return appendScore3x1(src, dest);
@@ -544,7 +546,9 @@ half inline interpolate(const half *costs, int i) {
     return C1 > C0 && C1 > C2 ? (C0 - C2) / (2 * (C0 - 2 * C1 + C2)) : 0;
 }
 
-void getDisparityCandidates(
+int getDisparityCandidates(
+        half *patch,
+        half *patchQuality,
         __local uchar *data1,
         __local uchar *data2,
         int x,
@@ -571,27 +575,20 @@ void getDisparityCandidates(
 
     int disparityRange = maxDisparity - minDisparity;
 
-    half patch[(BATCH_SIZE + WINDOW_SIZE + 3) * WINDOW_SIZE] __attribute__ ((aligned (64)));
     half perColumnScore[BATCH_SIZE + WINDOW_SIZE + 3] __attribute__ ((aligned (64)));
 
     int i = 0;
 
     half alpha = 2.0 / (wAvg + 1.0);
-    half avg = 1e12;
+
     half avgb[BATCH_SIZE];
 
     for (int b = 0; b < BATCH_SIZE; ++b) {
-        avgb[b] = 100;
+        avgb[b] = 10;
     }
 
+    int nMatches = 1;
     int stepScale = 1;
-
-    loadPatch(src, patch);
-    half patchQuality = getPatchScore(patch);
-
-    if (patchQuality < 0.05) {
-        return;
-    }
 
     for (half d = minDisparity; d <= maxDisparity; d += step * stepScale) {
         stepScale = max((short)1, (short)(clz((short)0) - clz((short)fabs(d)) - 5));
@@ -600,10 +597,8 @@ void getDisparityCandidates(
         for (int b = 0; b < BATCH_SIZE; ++b) {
             int bw = b + WINDOW_SIZE;
             if (b < BATCH_SIZE - 1) {
-                loadPatch1(src + bw * h, patch + bw * h);
-                perColumnScore[bw] = getWindowColumnScore(patch + bw * h, &dest[(int)d * h + bw * h]);
+                perColumnScore[bw] = getWindowSingleColumnScore(patch + bw * h, &dest[(int)d * h + bw * h]);
             }
-
             if (fabs(result[b] / DISPARITY_SCALE - d) > step && cost < costs[b]) {
                 for (int k = nCandidates - 2; k >= 0; k--) {
                     result[(k + 1) * BATCH_SIZE + b] = result[k * BATCH_SIZE + b];
@@ -611,23 +606,32 @@ void getDisparityCandidates(
                 }
             }
 
-            avgb[0] = alpha * cost + (1 - alpha) * avgb[0];
-            bool needUpdate = avgb[0] < costs[b];
+//            int b0 = 0;
+            int b0 = b;
+            avgb[b0] = alpha * cost + (1 - alpha) * avgb[b0];
+            half c = avgb[b0];
 
-            costs[b] = fmin(costs[b], avgb[0]);
+            bool needUpdate = patchQuality[b] > 0.1 && avgb[b0] < costs[b];
 
-            cost = cost - perColumnScore[b] + perColumnScore[bw];
+            costs[b] = fmin(costs[b], avgb[b0]);
+
+            cost = cost + (-perColumnScore[b] + perColumnScore[bw]);
 
             result[b] = needUpdate
-                    ? (short) (d) * DISPARITY_SCALE
+                    ? (short) d * DISPARITY_SCALE - (wAvg - 1) / 2 * step * DISPARITY_SCALE
                     : result[b];
+
+            nMatches += needUpdate;
         }
 
         i++;
     }
+
+    return nMatches;
 }
 
 void getDisparity(
+        half * patch,
         __local uchar *data1,
         __local uchar *data2,
         int x,
@@ -644,31 +648,20 @@ void getDisparity(
     __local const uchar *src = data1 + y + x * MAX_FRAGMENT_HEIGHT;
     __local const uchar *dest = data2 + y + x * MAX_FRAGMENT_HEIGHT;
 
-    half patch[(BATCH_SIZE + WINDOW_SIZE + 1) * WINDOW_SIZE] __attribute__ ((aligned (64)));
     half costAvg[BATCH_SIZE * 3] __attribute__ ((aligned (64)));
     half perColumnScore[WINDOW_SIZE] __attribute__ ((aligned (64)));
 
-    loadPatch(src, patch);
-
-    for (int i = 0; i < BATCH_SIZE * 3; ++i) {
-        costAvg[i] = 1e12;
-    }
-
     int i = 0;
-
-    half alpha = 2.0 / (wAvg + 1.0);
-    half avg = 100;
 
     half stepScale = (int)WINDOW_SIZE / 4;
 
     for (half d = minDisparity; d <= maxDisparity && stepScale >= 1; d += step) {
         half cost = getWindowColumnsScore(patch, &dest[(int)d * MAX_FRAGMENT_HEIGHT], perColumnScore);
-        avg = alpha * cost + (1 - alpha) * avg;
-        costAvg[(i % 3)] = avg;
-        bool needUpdate = avg < costs[0];
-        costs[0] = fmin(costs[0], avg);
+        costAvg[(i % 3)] = cost;
+        bool needUpdate = cost < costs[0];
+        costs[0] = fmin(costs[0], cost);
         result[0] = needUpdate
-                ? (short) (d + interpolate(costAvg, i) * step ) * DISPARITY_SCALE
+                ? (short) (d * DISPARITY_SCALE + interpolate(costAvg, i) * step * DISPARITY_SCALE)
                 : result[0];
         i++;
     }
@@ -701,6 +694,37 @@ void knorm(half *k, int k0) {
     for (int i = 0; i < k0 * k0; ++i) {
         k[i] /= knorm;
     }
+}
+
+half consistanceCheck(short d0, half cost, short *disparity, uchar *image, int w, short *suggestD) {
+    half dl = disparity[-1];
+    half du = disparity[-w];
+    half dul = disparity[-w-1];
+
+    if (d0 == 0 || dl == 0 || du == 0 || dul == 0) {
+        *suggestD = d0;
+        return cost;
+    }
+
+    half i0 = image[0];
+    half il = image[-1];
+    half iu = image[-w];
+    half iul = image[-w-1];
+
+    half covx = (du - dul) / (iu - iul + 0.5);
+    half covy = (dl - dul) / (il - iul + 0.5);
+    half dx = (i0 - il) * (covx) + dl;
+    half dy = (i0 - iu) * (covy) + du;
+
+    half dmin = fmin(fmin(dx, dy), 0);
+    half dmax = fmax(fmax(dx, dy), 255);
+    half dmean = (dx + dy) / 2;
+
+    half consist = ((dmin > d0 || dmax < d0) * 0.9 + fabs(d0 - dmean) * 0.1 / 256);
+
+    *suggestD = dmean;
+
+    return consist;
 }
 
 __kernel void DisparityEvaluator(
@@ -810,44 +834,76 @@ __kernel void DisparityEvaluator(
 
             const int maxDisparity = max(0, min(MAX_DISPARITY, (int) (w - (x + WINDOW_SIZE + 1))));
 
-            getDisparityCandidates(pFrame0, pFrame1, x, 0, w, MAX_FRAGMENT_HEIGHT,
+            half patchQuality[BATCH_SIZE];
+            half patch[(BATCH_SIZE + WINDOW_SIZE + 3) * WINDOW_SIZE] __attribute__ ((aligned (64)));
+            loadPatch(pFrame0 + x * MAX_FRAGMENT_HEIGHT, patch);
+            patchQuality[0] = getPatchScore(patch);
+
+            for (int b = 0; b < BATCH_SIZE - 1; ++b) {
+                int bw = b + WINDOW_SIZE;
+                loadPatch1(pFrame0 + (x + bw) * MAX_FRAGMENT_HEIGHT, patch + bw * MAX_FRAGMENT_HEIGHT);
+            }
+
+            for (int b = 0; b < BATCH_SIZE; b++) {
+                patchQuality[b] = getPatchScore(patch + b * MAX_FRAGMENT_HEIGHT);
+            }
+
+            int nMatches = getDisparityCandidates(patch, patchQuality, pFrame0, pFrame1, x, 0, w, MAX_FRAGMENT_HEIGHT,
                          max(-x, -MAX_DISPARITY), 0, WINDOW_SIZE, 1, disparities, costs, N_CANDIDATES, BATCH_SIZE, 1, 4, false BC_PASS);
 
-            for (int b = 0; b < BATCH_SIZE; ++b) {
-                short d1 = 0;
-                half cost = 1e12;
+            for (int b = 0; b < BATCH_SIZE && nMatches > 0; ++b) {
+                for (int i = 0; i < 1; ++i) {
+                    short d = disparities[b + i * BATCH_SIZE] / DISPARITY_SCALE;
 
-                half c0 =  fabs(costs[b]);
-                half c1 = fabs((costs[b + BATCH_SIZE]));
+                    if (d == 0) {
+                        continue;
+                    }
+
+                    getDisparity(patch + b * MAX_FRAGMENT_HEIGHT, pFrame0, pFrame1, x + b, 0,
+                                 max(-x, d - 1), min(maxDisparity - b, d + 1), &disparities[b + i * BATCH_SIZE], &costs[b + i * BATCH_SIZE], 1, 1, false BC_PASS);
+
+                }
+            }
+
+            for (int b = 0; b < BATCH_SIZE && nMatches > 0; ++b) {
+                short dlrc = 0;
+                half cost = 1e12;
 
                 for (int i = 0; i < 1; ++i) {
                     short d = disparities[b + i * BATCH_SIZE] / DISPARITY_SCALE;
 
+                    if (d == 0) {
+                        continue;
+                    }
+
                     int safeX = clamp(x + b + d, 0, xLimit);
 
-                    getDisparity(pFrame1, pFrame0, safeX, 0,
-                                           max(-x - b, -d - 5), min(maxDisparity - b, -d + 5), &d1, &cost,
-                                           1, 2, false BC_PASS);
+                    loadPatch(pFrame1 + safeX * MAX_FRAGMENT_HEIGHT, patch);
+
+                    getDisparity(patch, pFrame1, pFrame0, safeX, 0,
+                                           max(-x - b, -d - 5), min(maxDisparity - b, -d + 5), &dlrc, &cost,
+                                           1, 1, false BC_PASS);
                 }
 
-                short d = abs(disparities[b]);
-                bool valid = abs(abs(d1) - d) <= 2 * DISPARITY_SCALE;
-                short dl = abs(d - disparity[(y + w2) * w + x - 1 + w2 + b]) >= 2 * DISPARITY_SCALE;
-                short du = abs(d - disparity[(y - 1 + w2) * w + x + w2 + b]) >= 2 * DISPARITY_SCALE;
-                short dd = abs(d - disparity[(y - 1 + w2) * w + x - 1 + w2 + b]) >= 3 * DISPARITY_SCALE;
+                half c0 =  fabs(costs[b]);
+                half c1 = fabs((costs[b + BATCH_SIZE]));
 
-                half cl = dl * fabs(c1 - variance[(y + w2) * w + x - 1 + w2 + b]) / c1;
-                half cu = du * fabs(c1 - variance[(y - 1 + w2) * w + x + w2 + b]) / c1;
-                half cd = dd * fabs(c1 - variance[(y - 1 + w2) * w + x - 1 + w2 + b]) / c1;
-                disparity[(y + w2) * w + x + w2 + b] =
-                     valid
+                int resultOffset = (y + w2) * w + x + w2 + b;
+                short d0 = abs(disparities[b]);
+                short d1 = abs(disparities[b + BATCH_SIZE]);
+
+                short d = d0;
+
+                disparity[resultOffset] =
+                     abs(d - dlrc) < 2 * DISPARITY_SCALE
                      && c1 / (c0 + EPS) > 1.25
-                     && (cl + cu + cd * 0.707) < 3
-                     && d < (MAX_DISPARITY - 8) * DISPARITY_SCALE
-                     ? (d1+d)/2
+                     && abs(d) < (MAX_DISPARITY - 8) * DISPARITY_SCALE
+                     ? (short)(((half)d * c0 + (half)dlrc * cost) / (c0 + cost))
+//                     ? (d * c1 + dlrc * cost) / (c1 + cost)
                      : 0;
 
-                variance[(y + w2) * w + x + w2 + b] = c1;
+//                variance[resultOffset] = frame0[resultOffset];
+                variance[resultOffset] = c0;//((float)(abs(dlrc) - d)) / DISPARITY_SCALE;
             }
         }
     }
