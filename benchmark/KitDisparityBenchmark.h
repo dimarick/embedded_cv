@@ -27,7 +27,8 @@ public:
         float outNoc = 0.0f; // Процент плохих пикселей (незакрытые области)
         float outAll = 0.0f; // Процент плохих пикселей (все области)
         float avgNoc = 0.0f; // Средняя ошибка (незакрытые области)
-        float avgAll = 0.0f; // Средняя ошибка (все области)
+        float falseP = 0.0f; // средняя положительная ошибка
+        float falseN = 0.0f; // средняя отрицательная ошибка
         float d1All = 0.0f;  // Метрика D1-all (актуально для 2015)
         float dense = 0.0f;
     };
@@ -37,7 +38,8 @@ public:
         float meanOutNoc = 0.0f;
         float meanOutAll = 0.0f;
         float meanAvgNoc = 0.0f;
-        float meanAvgAll = 0.0f;
+        float falseP = 0.0f; // средняя положительная ошибка
+        float falseN = 0.0f; // средняя отрицательная ошибка
         float meanD1All = 0.0f;
         float dense = 0.0f;
         std::vector<float> inferenceTimes; // Время выполнения для каждого изображения

@@ -105,26 +105,27 @@ KitDisparityBenchmark::ImageMetrics KitDisparityBenchmark::computeMetrics(
     }
     
     // Ошибка для каждого пикселя
-    cv::Mat diff;
-    cv::absdiff(predDisparity, gtDisparity, diff);
-    
+    cv::Mat absdiff;
+    cv::Mat diff = predDisparity - gtDisparity;
+    cv::absdiff(predDisparity, gtDisparity, absdiff);
+
     // 1. Для KITTI 2012: отдельно считаем метрики для незакрытых (noc) и всех (all) областей
     if (config_.benchmarkYear == "2012") {
         // В 2012 датасете есть отдельные GT для незакрытых областей
         // Здесь для простоты считаем, что все валидные пиксели - незакрытые
-        cv::Mat errorMaskNoc = diff > config_.errorThreshold;
+        cv::Mat errorMaskNoc = absdiff > config_.errorThreshold;
         errorMaskNoc = errorMaskNoc & validMask;
         errorMaskNoc &= predDisparity > 0.0f;
         
         metrics.outNoc = 100.0f * (float)cv::countNonZero(errorMaskNoc) / (float)cv::countNonZero(validMask & predDisparity > 0.0f);
-        metrics.avgNoc = (float)cv::mean(diff, validMask)[0];
+        metrics.avgNoc = (float)cv::mean(absdiff, validMask)[0];
         
         // Для 'all' метрики в 2012 требуются дополнительные GT с окклюзиями
         // В этом упрощенном примере полагаем outAll = outNoc, avgAll = avgNoc
         metrics.outAll = metrics.outNoc;
-        metrics.avgAll = metrics.avgNoc;
-        
-    } 
+        metrics.falseP = 100.0f * (float)cv::countNonZero(diff > 0 & (validMask & predDisparity > 0.0f)) / (float)cv::countNonZero(validMask & predDisparity > 0.0f);
+        metrics.falseN = 100.0f * (float)cv::countNonZero(diff < 0 & (validMask & predDisparity > 0.0f)) / (float)cv::countNonZero(validMask & predDisparity > 0.0f);
+    }
     // 2. Для KITTI 2015: используем метрику D1-all
     else if (config_.benchmarkYear == "2015") {
         // D1-all: процент пикселей с ошибкой > max(3px, 0.05 * gtDisparity)
@@ -136,7 +137,7 @@ KitDisparityBenchmark::ImageMetrics KitDisparityBenchmark::computeMetrics(
         errorMask &= predDisparity > 0.0f;
         
         metrics.d1All = 100.0f * (float)cv::countNonZero(errorMask) / (float)cv::countNonZero(validMask);
-        metrics.avgAll = (float)cv::mean(diff, validMask)[0];
+//        metrics.avgAll = (float)cv::mean(diff, validMask)[0];
     }
 
     metrics.dense = 100.0f * (float)cv::countNonZero(predDisparity > 0.0f) / (float)predDisparity.total();
@@ -231,7 +232,7 @@ KitDisparityBenchmark::evaluateImage(int index,
 
             disparityFp.convertTo(disparity8, CV_8U);
 
-            varianceFp *= 256.0 / 20;
+//            varianceFp *= 256.0;
             varianceFp.convertTo(variance8, CV_8U);
 
             cv::Mat validMask = gt > 0.0f;
@@ -317,7 +318,8 @@ KitDisparityBenchmark::runBenchmark(std::function<void(const std::vector<cv::UMa
             aggregate.meanOutNoc += metrics.outNoc;
             aggregate.meanOutAll += metrics.outAll;
             aggregate.meanAvgNoc += metrics.avgNoc;
-            aggregate.meanAvgAll += metrics.avgAll;
+            aggregate.falseP += metrics.falseP;
+            aggregate.falseN += metrics.falseN;
             aggregate.meanD1All += metrics.d1All;
             aggregate.dense += metrics.dense;
             aggregate.inferenceTimes.push_back(elapsed);
@@ -345,7 +347,8 @@ KitDisparityBenchmark::runBenchmark(std::function<void(const std::vector<cv::UMa
         aggregate.meanOutNoc *= invProcessed;
         aggregate.meanOutAll *= invProcessed;
         aggregate.meanAvgNoc *= invProcessed;
-        aggregate.meanAvgAll *= invProcessed;
+        aggregate.falseP *= invProcessed;
+        aggregate.falseN *= invProcessed;
         aggregate.meanD1All *= invProcessed;
         aggregate.dense *= invProcessed;
     }
@@ -359,12 +362,13 @@ KitDisparityBenchmark::runBenchmark(std::function<void(const std::vector<cv::UMa
             std::cout << "Out-Noc: " << aggregate.meanOutNoc << "%" << std::endl;
             std::cout << "Out-All: " << aggregate.meanOutAll << "%" << std::endl;
             std::cout << "Avg-Noc: " << aggregate.meanAvgNoc << " px" << std::endl;
-            std::cout << "Avg-All: " << aggregate.meanAvgAll << " px" << std::endl;
+            std::cout << "False-Positive: " << aggregate.falseP << " %" << std::endl;
+            std::cout << "False-Negative: " << aggregate.falseN << " %" << std::endl;
             std::cout << "Dense: " << aggregate.dense << " %" << std::endl;
         } else {
             std::cout << std::fixed << std::setprecision(3);
             std::cout << "D1-all: " << aggregate.meanD1All << "%" << std::endl;
-            std::cout << "Avg-All: " << aggregate.meanAvgAll << " px" << std::endl;
+//            std::cout << "Avg-All: " << aggregate.meanAvgAll << " px" << std::endl;
         }
         
         if (!aggregate.inferenceTimes.empty()) {

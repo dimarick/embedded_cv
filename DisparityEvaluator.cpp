@@ -114,11 +114,11 @@ namespace ecv {
 
         std::vector<cv::UMat> processedFrames(frames.size());
 
-        auto clahe = cv::createCLAHE(3, cv::Size(5,5));
+        auto clahe = cv::createCLAHE(3, cv::Size(31,31));
 
         for (int i = 0; i < frames.size(); ++i) {
             cv::cvtColor(frames[i], processedFrames[i], cv::COLOR_RGB2GRAY);
-//            cv::equalizeHist(processedFrames[i], processedFrames[i]);
+            cv::equalizeHist(processedFrames[i], processedFrames[i]);
             clahe->apply(processedFrames[i], processedFrames[i]);
 //            frames[i].copyTo(processedFrames[i]);
         }
@@ -184,7 +184,7 @@ namespace ecv {
 //        r.flags &= ~64;
 //
 //        bm->compute(l, r, disparity);
-
+//
 //        uDisparity.copyTo(disparity);
 //        this->q = _q;
 //        cv::Mat disp;

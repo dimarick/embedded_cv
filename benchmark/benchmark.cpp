@@ -48,17 +48,6 @@ int main(int argc, char **argv) {
 
         disparity /= 16;
     });
-    
-    // Сохранение результатов в файл
-    std::ofstream report("kitti_benchmark_report.txt");
-    report << "KITTI 2015 Benchmark Results\n";
-    report << "D1-all: " << results.meanD1All << "%\n";
-    report << "Avg-All error: " << results.meanAvgAll << " px\n";
-    report << "Average inference time: " 
-           << std::accumulate(results.inferenceTimes.begin(), results.inferenceTimes.end(), 0.0) 
-              / results.inferenceTimes.size() 
-           << " ms\n";
-    report.close();
-    
+
     return 0;
 }
