@@ -23,7 +23,7 @@
 // Batch size for sliding window optimization. H_GRANULE_SIZE % BATCH_SIZE should be 0.
 // Larger value - better performance, but too large can drop performance. Max good value depends from device
 #ifndef BATCH_SIZE
-#define BATCH_SIZE 16
+#define BATCH_SIZE 8
 #endif
 
 // Search N best matches
@@ -38,7 +38,11 @@
 
 // Texture homogenity threshold. Lower value - lower noise, but can drop low contrast and wide details.
 #ifndef TEXTURE_THRESHOLD
-#define TEXTURE_THRESHOLD 0.03
+#define TEXTURE_THRESHOLD 0.1
+#endif
+
+#ifndef TEXTURE_THRESHOLD_SHIFT
+#define TEXTURE_THRESHOLD_SHIFT 2
 #endif
 
 #ifndef MAX_DISPARITY
@@ -67,6 +71,16 @@
 // Max Left-Right check disparity distance
 #ifndef LEFT_RIGHT_CHECK_DELTA
 #define LEFT_RIGHT_CHECK_DELTA 2
+#endif
+
+// Use interpolation
+#ifndef ENABLE_INTERPOLATION
+#define ENABLE_INTERPOLATION true
+#endif
+
+// Use LEFT_RIGHT_CHECK
+#ifndef ENABLE_LEFT_RIGHT_CHECK
+#define ENABLE_LEFT_RIGHT_CHECK true
 #endif
 
 // Left-Right Check strictness. More value - more strictness, lower value - more false-positive matches
@@ -237,16 +251,16 @@ void inline loadPatch11x11(const uchar *src, half *patch) {
 half inline getPatchScore11x11(half *patch) {
     half score = 0;
 
-    for (int i = 0; i < 10; ++i) {
-        half8 df0 = vload8(0, patch + 11 * i) - vload8(0, patch + 11 * i + 11);
-        half3 df1 = vload3(0, patch + 11 * i) - vload3(0, patch + 11 * i + 11 + 8);
+    for (int i = 0; i < 11 - TEXTURE_THRESHOLD_SHIFT; ++i) {
+        half8 df0 = vload8(0, patch + 11 * i) - vload8(0, patch + (11 + TEXTURE_THRESHOLD_SHIFT) * i);
+        half3 df1 = vload3(0, patch + 11 * i) - vload3(0, patch + (11 + TEXTURE_THRESHOLD_SHIFT) * i + 8);
         df0 *= df0;
         df1 *= df1;
 
         score += sum8(df0) + sum3(df1);
     }
 
-    return score / (10 * 11 * 256);
+    return score / ((11 - TEXTURE_THRESHOLD_SHIFT) * 11 * 256);
 }
 
 half inline getPatchScore9x9(half *patch) {
@@ -837,13 +851,21 @@ __kernel void DisparityEvaluator(
 
         short disparities[BATCH_SIZE * N_CANDIDATES];
         half costs[BATCH_SIZE * N_CANDIDATES];
-        half avgb[BATCH_SIZE];
+        half textureQuality[BATCH_SIZE] __attribute__ ((aligned (64)));
+        half patch[(BATCH_SIZE + WINDOW_SIZE + 3) * WINDOW_SIZE] __attribute__ ((aligned (64)));
 
         xLimit = min(xLimit, w - MIN_VALID_DISPARITY - WINDOW_SIZE);
 
-        half initialAvg = 0;
-
         for (int x = x0; x < xLimit; x += BATCH_SIZE) {
+            int bw = 0;
+            for (; bw < BATCH_SIZE; bw += WINDOW_SIZE) {
+                loadPatch(pFrame0 + (x + bw) * MAX_FRAGMENT_HEIGHT, patch + bw * MAX_FRAGMENT_HEIGHT);
+            }
+
+            for (; bw < BATCH_SIZE + WINDOW_SIZE - 1; bw++) {
+                loadPatch1(pFrame0 + (x + bw) * MAX_FRAGMENT_HEIGHT, patch + bw * MAX_FRAGMENT_HEIGHT);
+            }
+
             for (int b = 0; b < BATCH_SIZE; ++b) {
                 disparities[b] = 0;
                 costs[b] = 1e12;
@@ -856,15 +878,7 @@ __kernel void DisparityEvaluator(
 
             const int maxDisparity = max(0, min(MAX_DISPARITY, (int) (w - (x + WINDOW_SIZE + 1))));
 
-            half textureQuality[BATCH_SIZE];
-            half patch[(BATCH_SIZE + WINDOW_SIZE + 3) * WINDOW_SIZE] __attribute__ ((aligned (64)));
-            loadPatch(pFrame0 + x * MAX_FRAGMENT_HEIGHT, patch);
             textureQuality[0] = getPatchScore(patch);
-
-            for (int b = 0; b < BATCH_SIZE - 1; ++b) {
-                int bw = b + WINDOW_SIZE;
-                loadPatch1(pFrame0 + (x + bw) * MAX_FRAGMENT_HEIGHT, patch + bw * MAX_FRAGMENT_HEIGHT);
-            }
 
             for (int b = 0; b < BATCH_SIZE; b++) {
                 textureQuality[b] = getPatchScore(patch + b * MAX_FRAGMENT_HEIGHT);
@@ -874,7 +888,7 @@ __kernel void DisparityEvaluator(
                          max(-x, -MAX_DISPARITY), MIN_DISPARITY, disparities, costs,
                          N_CANDIDATES, DISPARITY_STEP, COST_SMOOTHNESS, false BC_PASS);
 
-            for (int b = 0; b < BATCH_SIZE && nMatches > 0; ++b) {
+            for (int b = 0; ENABLE_INTERPOLATION && b < BATCH_SIZE && nMatches > 0; ++b) {
                 for (int i = 0; i < 1; ++i) {
                     short d = disparities[b + i * BATCH_SIZE] / DISPARITY_SCALE;
 
@@ -893,7 +907,7 @@ __kernel void DisparityEvaluator(
                 short dlrc = 0;
                 half cost = 1e12;
 
-                for (int i = 0; i < 1; ++i) {
+                for (int i = 0; ENABLE_LEFT_RIGHT_CHECK && i < 1; ++i) {
                     short d = disparities[b + i * BATCH_SIZE] / DISPARITY_SCALE;
 
                     if (d == 0) {
@@ -919,10 +933,13 @@ __kernel void DisparityEvaluator(
                 short d = d0;
 
                 disparity[resultOffset] =
-                     abs(d - dlrc) < LEFT_RIGHT_CHECK_DELTA * DISPARITY_SCALE
+                     (!ENABLE_LEFT_RIGHT_CHECK || abs(d - dlrc) < LEFT_RIGHT_CHECK_DELTA * DISPARITY_SCALE)
                      && (N_CANDIDATES < 2 || c1 / (c0 + EPS) > MATCH_UNIQUE_THRESHOLD)
                      && abs(d) < (MAX_DISPARITY - 8) * DISPARITY_SCALE
-                     ? (short)(((half)d * c0 + (half)dlrc * cost / LEFT_RIGHT_CHECK_DISPARITY_STEP) / (c0 + cost / LEFT_RIGHT_CHECK_DISPARITY_STEP))
+                     ? (ENABLE_LEFT_RIGHT_CHECK
+                        ? (short)(((half)d * c0 + (half)dlrc * cost / LEFT_RIGHT_CHECK_DISPARITY_STEP) / (c0 + cost / LEFT_RIGHT_CHECK_DISPARITY_STEP))
+                        : d
+                     )
                      : 0;
 
                 variance[resultOffset] = c0;

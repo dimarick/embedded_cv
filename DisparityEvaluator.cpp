@@ -424,7 +424,7 @@ namespace ecv {
         }
 
         try {
-            err = program.build("-Werror -cl-denorms-are-zero -cl-fast-relaxed-math -cl-finite-math-only -cl-unsafe-math-optimizations -cl-no-signed-zeros");
+            err = program.build("-Werror -w -cl-denorms-are-zero -cl-fast-relaxed-math -cl-finite-math-only -cl-unsafe-math-optimizations -cl-no-signed-zeros");
 //            err = program.build("-cl-opt-disable -DDEBUG=1");
 //            err = program.build("-Werror");
         } catch (...) {
