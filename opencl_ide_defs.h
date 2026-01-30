@@ -19,6 +19,7 @@ typedef unsigned long uintptr_t;
 typedef signed long intptr_t;
 typedef signed long ptrdiff_t;
 
+#define FIELD_ODD_EVEN(expr) expr odd; expr even;
 #define FIELD2(expr) expr s0; expr s1;
 #define FIELD3(expr) FIELD2(expr) expr s2;
 #define FIELD4(expr) FIELD3(expr) expr s3;
@@ -47,7 +48,12 @@ TI ## 2 fn(T ## 2, T ## 2); \
 TI ## 3 fn(T ## 3, T ## 3); \
 TI ## 4 fn(T ## 4, T ## 4); \
 TI ## 8 fn(T ## 8, T ## 8); \
-TI ## 16 fn(T ## 16, T ## 16);
+TI ## 16 fn(T ## 16, T ## 16); \
+TI ## 2 fn(T ## 2, T); \
+TI ## 3 fn(T ## 3, T); \
+TI ## 4 fn(T ## 4, T); \
+TI ## 8 fn(T ## 8, T); \
+TI ## 16 fn(T ## 16, T);
 
 #define VECTOR_VLOADSTORE(T) \
 T ##  2 vload ##  2(size_t offset, const T *p); \
@@ -82,11 +88,11 @@ VECTOR_CONVERT(T, float) \
 VECTOR_CONVERT(T, double)
 
 #define VECTOR_TYPE(T, TI) \
-struct T ## 2 { FIELD2(T); T &operator[](size_t); }; \
+struct T ## 2 { FIELD_ODD_EVEN(T); FIELD2(T); T &operator[](size_t); }; \
 struct T ## 3 { FIELD3(T); T &operator[](size_t); }; \
-struct T ## 4 { FIELD4(T); T &operator[](size_t); }; \
-struct T ## 8 { FIELD8(T); T &operator[](size_t); }; \
-struct T ## 16 { FIELD16(T); T &operator[](size_t); }; \
+struct T ## 4 { FIELD_ODD_EVEN(T ## 2); FIELD4(T); T &operator[](size_t); }; \
+struct T ## 8 { FIELD_ODD_EVEN(T ## 4); FIELD8(T); T &operator[](size_t); }; \
+struct T ## 16 { FIELD_ODD_EVEN(T ## 8); FIELD16(T); T &operator[](size_t); }; \
 VECTOR_2FN(T, TI, operator==) \
 VECTOR_2FN(T, TI, operator>) \
 VECTOR_2FN(T, TI, operator<) \
@@ -148,12 +154,16 @@ VECTOR_CONVERT_ALL(double);
 #define gentype float
 #define igentype int
 gentype		clamp		(gentype x, float minval, float maxval);
-igentype		clamp		(igentype x, igentype minval, igentype maxval);
+igentype	clamp		(igentype x, igentype minval, igentype maxval);
 gentype		degrees		(gentype radians);
 gentype		max			(gentype x, gentype y);
-igentype		max			(igentype x, igentype y);
+igentype	max			(igentype x, igentype y);
 gentype		min			(gentype x, gentype y);
-igentype		min			(igentype x, igentype y);
+igentype	min			(igentype x, igentype y);
+gentype		clz 		(gentype x);
+gentype		fabs		(gentype x);
+gentype		sqrt		(gentype x);
+igentype	abs			(igentype x);
 gentype		fmax		(gentype x, gentype y);
 gentype		fmin		(gentype x, gentype y);
 gentype		mix			(gentype x, gentype y, gentype a);
