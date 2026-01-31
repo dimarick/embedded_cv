@@ -33,12 +33,16 @@
 
 // Match uniqueness threshold. When N_CANDIDATES > 1, the pixel will be valid if secondCost / bestCost > this value
 #ifndef MATCH_UNIQUE_THRESHOLD
-#define MATCH_UNIQUE_THRESHOLD 1.15
+#define MATCH_UNIQUE_THRESHOLD 1.25
 #endif
 
 // Texture homogenity threshold. Lower value - lower noise, but can drop low contrast and wide details. -1 to disable
 #ifndef TEXTURE_THRESHOLD
 #define TEXTURE_THRESHOLD 5
+#endif
+
+#ifndef TEXTURE_THRESHOLD_SHIFT
+#define TEXTURE_THRESHOLD_SHIFT 1
 #endif
 
 #ifndef MAX_DISPARITY
@@ -61,7 +65,7 @@
 
 // Smooth costs before match using EMA with this sliding window size
 #ifndef COST_SMOOTHNESS
-#define COST_SMOOTHNESS 2
+#define COST_SMOOTHNESS 1
 #endif
 
 // Use interpolation
@@ -81,7 +85,7 @@
 
 // Left-Right Check strictness. More value - more strictness, lower value - more false-positive matches
 #ifndef LEFT_RIGHT_CHECK_RANGE
-#define LEFT_RIGHT_CHECK_RANGE 20
+#define LEFT_RIGHT_CHECK_RANGE 10
 #endif
 
 // Left-Right Check step. More value - more performance. Good value 1 to LEFT_RIGHT_CHECK_DELTA
@@ -232,6 +236,105 @@ half inline zstddev(half16 v) {
     return sqrt(r) + EPS;
 }
 
+half inline getPatchScore11x11(half *patch) {
+    half score = 0;
+
+    for (int i = 0; i < 11 - TEXTURE_THRESHOLD_SHIFT; ++i) {
+        half8 df0 = vload8(0, patch + 11 * i) - vload8(0, patch + (11 + TEXTURE_THRESHOLD_SHIFT) * i);
+        half3 df1 = vload3(0, patch + 11 * i) - vload3(0, patch + (11 + TEXTURE_THRESHOLD_SHIFT) * i + 8);
+        df0 *= df0;
+        df1 *= df1;
+
+        score += sum8(df0) + sum3(df1);
+    }
+
+    return score;
+}
+
+half inline getPatchScore9x9(half *patch) {
+    half score = 0;
+
+    for (int i = 0; i < 8; ++i) {
+        half8 df0 = vload8(0, patch + 9 * i) - vload8(0, patch + 9 * i + 9);
+        half tail = patch[9-1 + 9 * i] - (half)patch[9-1 + 9 * i + 9];
+        df0 *= df0;
+        tail *= tail;
+
+        score += sum8(df0) + tail;
+    }
+
+    return score;
+}
+
+half inline getPatchScore7x7(half *patch) {
+    half score = 0;
+
+    for (int i = 0; i < 6; ++i) {
+        half4 df0 = vload4(0, patch + 7 * i) - vload4(0, patch + 7 * i + 7);
+        half3 df1 = vload3(0, patch + 7 * i) - vload3(0, patch + 7 * i + 7 + 4);
+        df0 *= df0;
+        df1 *= df1;
+
+        score += sum4(df0) + sum3(df1);
+    }
+
+    return score;
+}
+
+half inline getPatchScore5x5(half *patch) {
+    half score = 0;
+
+    for (int i = 0; i < 4; ++i) {
+        half4 df0 = vload4(0, patch + 5 * i) - vload4(0, patch + 5 * i + 5);
+        half tail = patch[5-1 + 5 * i] - (half)patch[5-1 + 5 * i + 5];
+        df0 *= df0;
+        tail *= tail;
+
+        score += sum4(df0) + tail;
+    }
+
+    return score;
+}
+
+half inline getPatchScore3x3(half *patch) {
+    half score = 0;
+
+    for (int i = 0; i < 2; ++i) {
+        half3 df0 = vload3(0, patch + 3 * i) - vload3(0, patch + 3 * i + 3);
+        df0 *= df0;
+
+        score += sum3(df0);
+    }
+
+    return score;
+}
+
+half costRms(half value) {
+    half n = WINDOW_SIZE * WINDOW_SIZE;
+
+    return sqrt(value / n);
+}
+
+half patchCost(half value) {
+    half n = WINDOW_SIZE * (WINDOW_SIZE - TEXTURE_THRESHOLD_SHIFT);
+
+    return sqrt(value / n);
+}
+
+half getPatchScore(half *patch) {
+    switch (WINDOW_SIZE) {
+        case 3:
+            return patchCost(getPatchScore3x3(patch));
+        case 5:
+            return patchCost(getPatchScore5x5(patch));
+        case 7:
+            return patchCost(getPatchScore7x7(patch));
+        case 9:
+            return patchCost(getPatchScore9x9(patch));
+        case 11:
+            return patchCost(getPatchScore11x11(patch));
+    }
+}
 void inline loadPatch11x1(const uchar *src, half *patch) {
     vstore8(convert_half8(vload8(0, src)), 0, patch);
     vstore3(convert_half3(vload3(0, src + 8)), 0, patch + 8);
@@ -466,12 +569,6 @@ half inline getWindowColumnsScore(const half *src, const __local uchar *dest, ha
     return scores;
 }
 
-half costRms(half value) {
-    half n = WINDOW_SIZE * WINDOW_SIZE;
-
-    return sqrt(value / n);
-}
-
 void knorm(half *k, int k0) {
     half conv = 0;
 
@@ -587,7 +684,7 @@ half emaNext(half ema, half value, half prev) {
 }
 
 half emaLag(int windowSize) {
-    return ((half)windowSize - 1) / 2;
+    return (windowSize - 1) / 2;
 }
 
 half emaInit(int windowSize) {
@@ -609,10 +706,6 @@ int getDisparityCandidates(
         int nCandidates,
         int step,
         half wAvg,
-        half *mean0,
-        half *mean1,
-        half *stddev0,
-        half *stddev1,
         bool debug
         BC_ARG
 ) {
@@ -634,14 +727,10 @@ int getDisparityCandidates(
     int stepScale = 1;
 
     for (half d = minDisparity; d <= maxDisparity; d += step * stepScale) {
-        stepScale = max((short)1, (short)(clz((short)0) - clz((short)fabs(d)) - 5));
+        stepScale = clamp((int)clz((int)0) - (int)clz(abs((int)d)) - 5, (int)1, (int)(WINDOW_SIZE / 3));
         half cost = getWindowColumnsScore(patch, &dest[(int)d * h], perColumnScore);
 
         for (int b = 0; b < BATCH_SIZE; ++b) {
-            if (stddev1[b + (int)d] < EPS || stddev0[b] < EPS) {
-                continue;
-            }
-
             int bw = b + WINDOW_SIZE;
             if (b < BATCH_SIZE - 1) {
                 perColumnScore[bw] = getWindowSingleColumnScore(patch + bw * h, &dest[(int)d * h + bw * h]);
@@ -688,16 +777,9 @@ void getDisparity(
         half* costs,
         int step,
         half wAvg,
-        half *mean0,
-        half *mean1,
-        half *stddev0,
-        half *stddev1,
         bool debug
         BC_ARG
 ) {
-    if (stddev0[0] < EPS || stddev1[0] < EPS) {
-        return;
-    }
     __local const uchar *dest = data2 + y + x * MAX_FRAGMENT_HEIGHT;
 
     half costAvg[BATCH_SIZE * 3] __attribute__ ((aligned (64)));
@@ -720,41 +802,8 @@ void getDisparity(
     }
 }
 
-half consistanceCheck(short d0, half cost, short *disparity, uchar *image, int w, short *suggestD) {
-    half dl = disparity[-1];
-    half du = disparity[-w];
-    half dul = disparity[-w-1];
+__global half gFrame0[MAX_IMAGE_HEIGHT * MAX_ROW_WIDTH];
 
-    if (d0 == 0 || dl == 0 || du == 0 || dul == 0) {
-        *suggestD = d0;
-        return cost;
-    }
-
-    half i0 = image[0];
-    half il = image[-1];
-    half iu = image[-w];
-    half iul = image[-w-1];
-
-    half covx = (du - dul) / (iu - iul + 0.5);
-    half covy = (dl - dul) / (il - iul + 0.5);
-    half dx = (i0 - il) * (covx) + dl;
-    half dy = (i0 - iu) * (covy) + du;
-
-    half dmin = fmin(fmin(dx, dy), 0);
-    half dmax = fmax(fmax(dx, dy), 255);
-    half dmean = (dx + dy) / 2;
-
-    half consist = ((dmin > d0 || dmax < d0) * 0.9 + fabs(d0 - dmean) * 0.1 / 256);
-
-    *suggestD = dmean;
-
-    return consist;
-}
-
-__global half mean0[MAX_IMAGE_HEIGHT * MAX_ROW_WIDTH] __attribute__ ((aligned (128)));
-__global half stddev0[MAX_IMAGE_HEIGHT * MAX_ROW_WIDTH] __attribute__ ((aligned (128)));
-__global half mean1[MAX_IMAGE_HEIGHT * MAX_ROW_WIDTH] __attribute__ ((aligned (128)));
-__global half stddev1[MAX_IMAGE_HEIGHT * MAX_ROW_WIDTH] __attribute__ ((aligned (128)));
 
 __kernel void DisparityEvaluator(
         __global uchar* frame0,
@@ -785,7 +834,7 @@ __kernel void DisparityEvaluator(
     half boxFilter[WINDOW_SIZE * WINDOW_SIZE];
 
     for (int i = 0; i < WINDOW_SIZE * WINDOW_SIZE; i++) {
-        boxFilter[i] = 1.0;
+        boxFilter[i] = 1.0 / (WINDOW_SIZE * WINDOW_SIZE);
     }
 
     for (int y = y0; y < yLimit; ++y) {
@@ -807,20 +856,11 @@ __kernel void DisparityEvaluator(
         } else {
             for (int r = 0; r < MAX_FRAGMENT_HEIGHT; ++r) {
                 for (int x = x0; x < xLimit; x++) {
-                    uchar c0 = frame0[(y + r) * w + x];
-                    uchar c1 = frame1[(y + r) * w + x];
-                    pFrame0[r + x * MAX_FRAGMENT_HEIGHT] = c0;
-                    pFrame1[r + x * MAX_FRAGMENT_HEIGHT] = c1;
+                    uchar c_0 = frame0[(y + r) * w + x];
+                    uchar c_1 = frame1[(y + r) * w + x];
+                    pFrame0[r + x * MAX_FRAGMENT_HEIGHT] = c_0;
+                    pFrame1[r + x * MAX_FRAGMENT_HEIGHT] = c_1;
                 }
-            }
-
-            for (int x = x0; x < xLimit; x++) {
-                half m0 = convolveH(frame0, x + w2, y + w2, w, h, boxFilter, WINDOW_SIZE) / (WINDOW_SIZE * WINDOW_SIZE);
-                half m1 = convolveH(frame1, x + w2, y + w2, w, h, boxFilter, WINDOW_SIZE) / (WINDOW_SIZE * WINDOW_SIZE);
-                mean0[y * w + x] = m0;
-                mean1[y * w + x] = m1;
-                stddev0[y * w + x] = stddev(frame0, x + w2, y + w2, w, h, m0, WINDOW_SIZE);
-                stddev1[y * w + x] = stddev(frame1, x + w2, y + w2, w, h, m1, WINDOW_SIZE);
             }
         }
 
@@ -832,7 +872,6 @@ __kernel void DisparityEvaluator(
         xLimit = min(xLimit, w - MIN_VALID_DISPARITY - WINDOW_SIZE);
 
         barrier(CLK_LOCAL_MEM_FENCE);
-        barrier(CLK_GLOBAL_MEM_FENCE);
 
         for (int x = x0; x < xLimit; x += BATCH_SIZE) {
             int bw = 0;
@@ -857,17 +896,12 @@ __kernel void DisparityEvaluator(
             const int maxDisparity = max(0, min(MAX_DISPARITY, (int) (w - (x + WINDOW_SIZE + 1))));
 
             for (int b = 0; b < BATCH_SIZE; b++) {
-                textureQuality[b] = stddev0[y * w + x + b];
+                textureQuality[b] = getPatchScore(patch + b * MAX_FRAGMENT_HEIGHT);
             }
 
             int nMatches = getDisparityCandidates(patch, textureQuality, pFrame1, x, 0, w, MAX_FRAGMENT_HEIGHT,
                                                   max(-x, -MAX_DISPARITY), MIN_DISPARITY, disparities, costs,
-                                                  N_CANDIDATES, DISPARITY_STEP, COST_SMOOTHNESS,
-                                                  &mean0[y * w + x],
-                                                  &mean1[y * w + x],
-                                                  &stddev0[y * w + x],
-                                                  &stddev1[y * w + x],
-                                                  false BC_PASS);
+                                                  N_CANDIDATES, DISPARITY_STEP, COST_SMOOTHNESS, false BC_PASS);
 
             for (int b = 0; ENABLE_INTERPOLATION && b < BATCH_SIZE && nMatches > 0; ++b) {
                 for (int i = 0; i < 1; ++i) {
@@ -877,13 +911,10 @@ __kernel void DisparityEvaluator(
                         continue;
                     }
 
+                    int stepScale = clamp((int)clz((int)0) - (int)clz(abs((int)d)) - 5, (int)1, (int)(WINDOW_SIZE / 3));
                     getDisparity(patch + b * MAX_FRAGMENT_HEIGHT, pFrame1, x + b, 0,
-                                 max(-x, d - 2), min(maxDisparity - b, d + 2),
-                                 &disparities[b + i * BATCH_SIZE], &costs[b + i * BATCH_SIZE], 1, 1,
-                                 &mean0[y * w + x + b],
-                                 &mean1[y * w + x + b],
-                                 &stddev0[y * w + x + b],
-                                 &stddev1[y * w + x + b], false BC_PASS);
+                                 max(-x, d - DISPARITY_STEP * stepScale), min(maxDisparity - b, d + DISPARITY_STEP * stepScale),
+                                 &disparities[b + i * BATCH_SIZE], &costs[b + i * BATCH_SIZE], 1, 1, false BC_PASS);
 
                 }
             }
@@ -906,11 +937,7 @@ __kernel void DisparityEvaluator(
                     getDisparity(patch, pFrame0, safeX, 0,
                                  max(-x - b, -d - LEFT_RIGHT_CHECK_RANGE / 2),
                                  min(maxDisparity - b, -d + LEFT_RIGHT_CHECK_RANGE / 2), &dlrc, &cost,
-                                 LEFT_RIGHT_CHECK_DISPARITY_STEP, 1,
-                                 &mean1[y * w + safeX],
-                                 &mean0[y * w + x + b],
-                                 &stddev1[y * w + safeX],
-                                 &stddev0[y * w + x + b], false BC_PASS);
+                                 LEFT_RIGHT_CHECK_DISPARITY_STEP, 1, false BC_PASS);
                 }
 
                 half c0 =  fabs(costs[b]);
@@ -929,7 +956,7 @@ __kernel void DisparityEvaluator(
                         : 0;
 //                variance[resultOffset] = (frame0[resultOffset] - mean0[y * w + x]) / stddev0[y * w + x] * 100;
 //                variance[resultOffset] = frame0[resultOffset] - mean0[y * w + x];
-//                variance[resultOffset] = stddev0[y * w + x + b];
+                variance[resultOffset] = textureQuality[b];
             }
         }
     }

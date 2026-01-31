@@ -321,7 +321,7 @@ int main(int argc, const char **argv) {
     cv::FileStorage fs_write;
     cv::Mat kernel;
     float kernelDiv = 1;
-    auto clahe = cv::createCLAHE(3, cv::Size(11,11));
+    auto clahe = cv::createCLAHE(1, cv::Size(3,3));
 
 
     for (int i = 0; running; i++) {
@@ -393,10 +393,11 @@ int main(int argc, const char **argv) {
 
             cv::cvtColor(frames[0], original, cv::COLOR_RGB2GRAY);
 //
-            cv::filter2D(original, filtered, kernel);
+//            cv::filter2D(original, filtered, kernel);
 //            cv::medianBlur(original, filtered, 17);
 //            cv::medianBlur(original, filtered, 5);
 //            cv::equalizeHist(filtered, filtered);
+            clahe->apply(original, filtered);
             clahe->apply(filtered, filtered);
 
             imshow("Original", original);
