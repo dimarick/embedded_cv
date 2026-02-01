@@ -1,0 +1,15 @@
+{
+  "name": "robot-control-panel",
+  "version": "1.0.0",
+  "description": "Web panel for robot control",
+  "scripts": {
+    "start": "live-server"
+  },
+  "dependencies": {
+    "bulma": "^1.0.0",
+    "@fortawesome/fontawesome-free": "^6.0.0"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.2"
+  }
+}

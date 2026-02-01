@@ -1,0 +1,296 @@
+:root {
+    --pastel-lavender: #e6e1ff; /* Основной пастельный сиреневый */
+    --pastel-lavender-dark: #d4cdf5; /* Немного темнее для акцентов */
+    --pastel-background: #f9f8ff; /* Очень светлый фон */
+    --pastel-surface: #ffffff; /* Белый для поверхностей */
+    --pastel-text: #4a4a6d; /* Мягкий темный цвет для текста */
+    --aspect-ratio-w: 16;
+    --aspect-ratio-h: 9;
+    --aspect-ratio: calc(var(--aspect-ratio-h) / var(--aspect-ratio-w) * 100%);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    background-color: var(--pastel-background);
+    color: var(--pastel-text);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    height: 100vh;
+    margin: 0;
+    padding: 10px;
+    overflow: hidden;
+}
+
+.app-container {
+    display: flex;
+    height: 100%;
+    gap: 10px;
+}
+
+/* --- ЛЕВАЯ ПАНЕЛЬ --- */
+.left-panel {
+    flex: 0 0 18%; /* Примерно 15-20% */
+    background-color: var(--pastel-surface);
+    border-radius: 12px;
+    border: 1px solid var(--pastel-lavender);
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 6px rgba(230, 225, 255, 0.2);
+    transition: flex-basis 0.3s ease;
+    overflow-y: auto;
+}
+
+.left-panel.collapsed {
+    flex: 0 0 60px; /* Ещё уже, только под иконки */
+    padding: 15px 10px;
+    align-items: center; /* Центрируем содержимое по горизонтали */
+}
+
+/* Скрываем весь текст в свёрнутой панели */
+.left-panel.collapsed .menu-label,
+.left-panel.collapsed .menu-list span:not(.icon),
+.left-panel.collapsed .menu-list .button span {
+    display: none !important;
+}
+
+/* Меняем layout меню на компактный */
+.left-panel.collapsed .menu-list {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    width: 100%;
+}
+
+/* Стили для пунктов меню в свёрнутом виде */
+.left-panel.collapsed .menu-list li {
+    width: 100%;
+    text-align: center;
+}
+
+.left-panel.collapsed .menu-list li a {
+    justify-content: center;
+    padding: 10px 0;
+    height: 40px;
+    display: flex;
+    align-items: center;
+}
+
+.left-panel.collapsed .menu-list .menu-text {
+    display: none;
+}
+
+/* Убираем маркеры списка */
+.left-panel.collapsed .menu-list ul {
+    display: none; /* Скрываем выпадающие подменю в свёрнутом состоянии */
+}
+
+/* Увеличиваем иконки */
+.left-panel.collapsed .menu-list .icon,
+.left-panel.collapsed .menu-list i {
+    font-size: 1.3em;
+    margin: 0 !important;
+}
+
+/* Кнопка аварийного останова в свёрнутом виде */
+.left-panel.collapsed .button.is-danger {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.left-panel.collapsed .button.is-danger span {
+    display: none;
+}
+
+.left-panel.collapsed .button.is-danger i {
+    margin: 0;
+    font-size: 1.2em;
+}
+
+/* Адаптируем заголовки разделов */
+.left-panel.collapsed .menu-label {
+    display: none;
+}
+
+.panel-toggle {
+    align-self: flex-end;
+    margin-bottom: 15px;
+    color: var(--pastel-lavender-dark);
+}
+
+.menu-list li a {
+    border-radius: 8px;
+    color: var(--pastel-text);
+    margin-bottom: 8px;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.menu-list li a:hover {
+    background-color: var(--pastel-lavender) !important;
+    color: var(--pastel-text);
+    border-color: var(--pastel-lavender-dark);
+}
+
+/* --- ЦЕНТРАЛЬНАЯ (ОСНОВНАЯ) ПАНЕЛЬ --- */
+.main-panel {
+    flex: 1; /* Занимает всё оставшееся пространство */
+    display: flex;
+    flex-direction: column;
+    background-color: var(--pastel-surface);
+    border-radius: 12px;
+    border: 1px solid var(--pastel-lavender);
+    padding: 15px;
+    box-shadow: 0 4px 6px rgba(230, 225, 255, 0.2);
+    overflow: hidden;
+    min-width: 0; /* Важно для корректного сжатия flex-элементов */
+}
+
+/* Панель управления лейаутом */
+.layout-controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px dashed var(--pastel-lavender);
+}
+
+.layout-btn {
+    background-color: white;
+    border: 1px solid var(--pastel-lavender);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    color: var(--pastel-text);
+    transition: all 0.2s ease;
+}
+
+.layout-btn:hover,
+.layout-btn.active {
+    background-color: var(--pastel-lavender);
+    border-color: var(--pastel-lavender-dark);
+}
+
+/* Контейнер для viewport'ов (видов) */
+.viewport-container {
+    flex: 1;
+    position: relative;
+    background-color: #f0efff; /* Светлый фон для области видео */
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: 300px;
+}
+
+/* Стили для разных лейаутов сетки */
+.layout-single .viewport-grid {
+    display: grid;
+    grid-template-rows: 1fr; /* Одна строка */
+    gap: 10px;
+}
+
+.layout-dual .viewport-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(2, minmax(0, 1fr)); /* Важно: minmax(0, 1fr) */
+    gap: 10px;
+}
+
+.layout-quad .viewport-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(2, minmax(0, 1fr)); /* Две строки */
+    gap: 10px;
+}
+
+/* Стили для отдельного viewport (вида) */
+.viewport {
+    position: relative;
+    background-color: #e8e5ff;
+    border: 2px dashed var(--pastel-lavender-dark);
+    border-radius: 6px;
+    color: var(--pastel-text);
+    font-weight: bold;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+}
+.viewport.active {
+    border-style: solid;
+    border-color: #a899e6;
+}
+
+.viewport-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 10;
+    display: flex;
+    gap: 5px;
+    opacity: 0.3;
+    transition: opacity 0.3s ease;
+}
+
+.viewport:hover .viewport-controls {
+    opacity: 1;
+}
+
+.viewport-btn {
+    background-color: rgba(255, 255, 255, 0.85);
+    border: none;
+    border-radius: 4px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--pastel-text);
+}
+
+/* --- ПРАВАЯ ПАНЕЛЬ --- */
+.right-panel {
+    flex: 0 0 22%;
+    background-color: var(--pastel-surface);
+    border-radius: 12px;
+    border: 1px solid var(--pastel-lavender);
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 6px rgba(230, 225, 255, 0.2);
+    overflow-y: auto;
+}
+
+.telemetry-box, .log-box {
+    background-color: white;
+    border-radius: 8px;
+    border: 1px solid var(--pastel-lavender);
+    padding: 12px;
+    margin-bottom: 15px;
+    flex-shrink: 0;
+}
+
+.log-box {
+    flex: 1;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 0.85em;
+}
+
+/* Утилитарные классы */
+.is-hidden {
+    display: none !important;
+}
+
+.title {
+    color: var(--pastel-text);
+    border-bottom: 1px solid var(--pastel-lavender);
+    padding-bottom: 10px;
+}
