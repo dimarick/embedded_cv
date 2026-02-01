@@ -259,8 +259,15 @@ int main(int argc, const char **argv) {
     auto readerLeft = std::thread(readerfunction, &readingLeft, leftPipe, &readingImLeft, &readerLeftLock, &readerLeftCount);
     auto readerRight = std::thread(readerfunction, &readingRight, rightPipe, &readingImRight, &readerRightLock, &readerRightCount);
 
+    ecv::DisparityEvaluator disparityEvaluator;
+
+    disparityEvaluator.lazyInitializeOcl();
+#ifndef HAVE_OPENCL
+        throw std::runtime_error("OpenCV built without opencl");
+#endif
+
     if (!cv::ocl::isOpenCLActivated()) {
-//        throw std::runtime_error("OpenCL is not available");
+        throw std::runtime_error("OpenCL is not available");
     }
 
     UMat calibLeft, calibRight;
@@ -299,7 +306,6 @@ int main(int argc, const char **argv) {
     cv::setMouseCallback("Disparity", onMouse, &mouseDisp);
     cv::setMouseCallback("src " + std::to_string(0), onMouse, &mouseSrc);
 #endif
-    ecv::DisparityEvaluator disparityEvaluator((cl_context)cv::ocl::Context::getDefault().ptr());
 
 //    uint8_t im1[]  = {0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0};
 //    uint8_t im2[]  = {0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0};
@@ -387,6 +393,7 @@ int main(int argc, const char **argv) {
                 fs_write.release();
             }
 
+#ifdef HAVE_OPENCV_HIGHGUI
             cv::UMat filtered;
             cv::UMat original;
             frames[0].copyTo(original);
@@ -415,6 +422,7 @@ int main(int argc, const char **argv) {
 //                    cv::line(result[j], p1, p2, cv::Scalar(0, 255, 255), 1);
             }
 
+#endif
         }
 
 #ifdef HAVE_OPENCV_HIGHGUI

@@ -185,6 +185,7 @@ KitDisparityBenchmark::evaluateImage(int index,
     // Вычисление метрик
     ImageMetrics metrics = computeMetrics(disparity, gt);
 
+#ifdef HAVE_OPENCV_HIGHGUI
     if (config_.debug) {
         cv::namedWindow("Disparity", cv::WINDOW_AUTOSIZE);
 
@@ -291,6 +292,7 @@ KitDisparityBenchmark::evaluateImage(int index,
             }
         }
     }
+#endif
 
     return {metrics, elapsed};
 }

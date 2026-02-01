@@ -16,7 +16,7 @@ mkdir -p release/${ARCH}/${BUILD_TYPE}
 export PREFIX=${PROJECT_ROOT}/release/${ARCH}
 export OPEN_CV_PATH=${PROJECT_ROOT}/../opencv
 
-rsync -avc --progress ${PROJECT_ROOT}/DisparityEvaluator.cl ${SSH_SERVER}: || exit -1
+rsync -avc --progress ${PROJECT_ROOT}/DisparityEvaluator3ch.cl ${SSH_SERVER}: || exit -1
 
 docker build -t debian-build . || exit -1
 docker run \

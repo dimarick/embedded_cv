@@ -335,12 +335,12 @@ half getPatchScore(half *patch) {
             return patchCost(getPatchScore11x11(patch));
     }
 }
-void inline loadPatch11x1(const uchar *src, half *patch) {
+void inline loadPatch11x1(__local const uchar *src, half *patch) {
     vstore8(convert_half8(vload8(0, src)), 0, patch);
     vstore3(convert_half3(vload3(0, src + 8)), 0, patch + 8);
 }
 
-void inline loadPatch11x11(const uchar *src, half *patch) {
+void inline loadPatch11x11(__local const uchar *src, half *patch) {
     vstore16(convert_half16(vload16(0, src)), 0, patch);
     vstore16(convert_half16(vload16(1, src)), 1, patch);
     vstore16(convert_half16(vload16(2, src)), 2, patch);
@@ -395,12 +395,12 @@ half inline appendScore11x1(const half *src, const __local uchar *dest) {
     return sum8(df0) + sum3(df1);
 }
 
-void inline loadPatch9x1(const uchar *src, half *patch) {
+void inline loadPatch9x1(__local const uchar *src, half *patch) {
     vstore8(convert_half8(vload8(0, src)), 0, patch);
     patch[9-1] = (half)src[9-1];
 }
 
-void inline loadPatch9x9(const uchar *src, half *patch) {
+void inline loadPatch9x9(__local const uchar *src, half *patch) {
     vstore16(convert_half16(vload16(0, src)), 0, patch);
     vstore16(convert_half16(vload16(1, src)), 1, patch);
     vstore16(convert_half16(vload16(2, src)), 2, patch);
@@ -443,12 +443,12 @@ half inline appendScore9x1(const half *src, const __local uchar *dest) {
     return sum8(df0) + tail;
 }
 
-void inline loadPatch7x1(const uchar *src, half *patch) {
+void inline loadPatch7x1(__local const uchar *src, half *patch) {
     vstore4(convert_half4(vload4(0, src)), 0, patch);
     vstore3(convert_half3(vload3(0, src + 4)), 0, patch + 4);
 }
 
-void inline loadPatch7x7(const uchar *src, half *patch) {
+void inline loadPatch7x7(__local const uchar *src, half *patch) {
     vstore16(convert_half16(vload16(0, src)), 0, patch);
     vstore16(convert_half16(vload16(1, src)), 1, patch);
     vstore16(convert_half16(vload16(2, src)), 2, patch);
@@ -481,12 +481,12 @@ half inline appendScore7x1(const half *src, const __local uchar *dest) {
     return df0.s0 + df0.s1 + df0.s2 + df0.s3 + df0.s4 + df0.s5 + df0.s6;
 }
 
-void inline loadPatch5x1(const uchar *src, half *patch) {
+void inline loadPatch5x1(__local const uchar *src, half *patch) {
     vstore3(convert_half3(vload3(0, src)), 0, patch);
     vstore2(convert_half2(vload2(0, src + 3)), 0, patch + 3);
 }
 
-void inline loadPatch5x5(const uchar *src, half *patch) {
+void inline loadPatch5x5(__local const uchar *src, half *patch) {
     vstore16(convert_half16(vload16(0, src)), 0, patch);
     vstore8(convert_half8(vload8(0, src + 16)), 0, patch + 16);
     patch[5*5-1] = (half)src[5*5-1];
@@ -516,11 +516,11 @@ half inline appendScore5x1(const half *src, const __local uchar *dest) {
     return df0.s0 + df0.s1 + df0.s2 + df0.s3 + tail;
 }
 
-void inline loadPatch3x1(const uchar *src, half *patch) {
+void inline loadPatch3x1(__local const uchar *src, half *patch) {
     vstore3(convert_half3(vload3(0, src)), 0, patch);
 }
 
-void inline loadPatch3x3(const uchar *src, half *patch) {
+void inline loadPatch3x3(__local const uchar *src, half *patch) {
     vstore8(convert_half8(vload8(0, src)), 0, patch);
     patch[3*3-1] = (half)src[3*3-1];
 }
@@ -626,7 +626,7 @@ half stddev(const uchar *frame, int x, int y, int w, int h, half mean, int k0) {
     return sqrt(conv / (k0 * k0));
 }
 
-void inline loadPatch(const uchar *src, half *patch) {
+void inline loadPatch(__local __local const uchar *src, half *patch) {
     switch (WINDOW_SIZE) {
         case 3:
             loadPatch3x3(src, patch);
@@ -641,7 +641,7 @@ void inline loadPatch(const uchar *src, half *patch) {
     }
 }
 
-void inline loadPatch1(const uchar *src, half *patch) {
+void inline loadPatch1(__local const uchar *src, half *patch) {
     switch (WINDOW_SIZE) {
         case 3:
             loadPatch3x1(src, patch);
@@ -801,8 +801,6 @@ void getDisparity(
         i++;
     }
 }
-
-__global half gFrame0[MAX_IMAGE_HEIGHT * MAX_ROW_WIDTH];
 
 
 __kernel void DisparityEvaluator(
