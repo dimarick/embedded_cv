@@ -8,6 +8,30 @@ namespace ecv {
     bool Calibrator::calibrate(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
                                const std::vector<std::vector<cv::Point2f>> &imagePoints,
                                cv::Mat &map1, cv::Mat &map2) {
+        size_t objectSize = 0;
+        for (const auto & objectPoint : objectPoints) {
+            if (objectPoint.empty()) {
+                break;
+            }
+            objectSize++;
+        }
+
+        size_t imageSize = 0;
+        for (const auto & imagePoint : imagePoints) {
+            if (imagePoint.empty()) {
+                break;
+            }
+            imageSize++;
+        }
+
+        auto inputSize = std::min(objectSize, imageSize);
+
+        auto objectPointsSlice = objectPoints;
+        auto imagePointsSlice = imagePoints;
+        if (inputSize < imagePoints.size()) {
+            objectPointsSlice = std::vector(objectPoints.begin(), objectPoints.begin() + (int)inputSize);
+            imagePointsSlice = std::vector(imagePoints.begin(), imagePoints.begin() + (int)inputSize);
+        }
 
         cv::Mat cameraMatrix = cv::Mat::zeros(3, 3, CV_64F);
         std::vector<double> distCoeff(12);
@@ -74,13 +98,13 @@ namespace ecv {
         };
         try {
 
-            cv::calibrateCamera(objectPoints, imagePoints, frameSize, cameraMatrix,
+            cv::calibrateCamera(objectPointsSlice, imagePointsSlice, frameSize, cameraMatrix,
                                 distCoeff, rvecs, tvecs, baseFlags | flagsChain[0],
                                 cv::TermCriteria(10, 0.0001)
             );
 
             for (auto i = 1; i < flagsChain.size(); i++) {
-                cv::calibrateCamera(objectPoints, imagePoints, frameSize, cameraMatrix,
+                cv::calibrateCamera(objectPointsSlice, imagePointsSlice, frameSize, cameraMatrix,
                                     distCoeff, rvecs, tvecs, baseFlags | flagsChain[i],
                                     cv::TermCriteria(1000, 1e-7)
                 );

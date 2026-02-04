@@ -81,11 +81,27 @@ add_executable(calibrator
         CalibrateMapper.cpp
         Calibrator.cpp
         Calibrator.h
+        DisparityEvaluator.cpp
+        DisparityEvaluator.h
 )
 
 target_link_libraries(calibrator PUBLIC OpenCL::OpenCL mini_server cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
 
+add_executable(calib
+        calib.cpp
+        CalibrateMapper.cpp
+        Calibrator.cpp
+        Calibrator.h
+        DisparityEvaluator.cpp
+        DisparityEvaluator.h
+        MatStorage.cpp
+        MatStorage.h
+)
+
+target_link_libraries(calib PUBLIC OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
+
 install(TARGETS calibrator DESTINATION bin)
+install(TARGETS calib DESTINATION bin)
 
 add_executable(cv
         cv.cpp

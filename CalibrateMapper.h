@@ -9,6 +9,10 @@
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
 
+
+#include <ext/pb_ds/assoc_container.hpp>
+#include <ext/pb_ds/tree_policy.hpp>
+
 namespace ecv {
     template<typename TP> class CalibrateMapper {
     public:
@@ -22,16 +26,25 @@ namespace ecv {
             Point3 bottomRight;
         };
 
+        struct Point3Compare {
+            bool operator()(const Point3& a, const Point3& b) const {
+                if (a.z == b.z) return true;
+                return a.z > b.z;
+            }
+        };
+
         size_t patternSize = 64;
         float skew = 0;
     private:
-        float prevSquareRmse = 64;
+        float prevSquareRmse = 1e10;
         size_t prevPatternSize = 64;
         float prevSkew = 0;
+        BaseSquare prevSquare;
         cv::Mat checkBoardCornerPattern;
         void createCheckBoardPatterns(cv::Mat &t1);
         void findPeaks(const cv::Mat &mat, std::vector<Point3> &points, size_t *size, int kernel, int noiseTolerance);
         Point3 findMassCenter(const cv::Mat &mat, int x, int y, int searchRadius);
+        Point3 findPointsMassCenter(const std::vector<Point3> points);
         TP squareQualityNormRms(const BaseSquare &square);
         TP findSquareBy3Points(const std::vector<Point3> &points, size_t size, BaseSquare &result);
         TP findSquareByTop(const std::vector<Point3> &points, size_t size, BaseSquare &result);
@@ -43,7 +56,8 @@ namespace ecv {
         Point3 findNearestPoint(const Point3 &point, const std::vector<Point3> &points, TP searchRadius);
         TP autoFitGrid(std::vector<Point3> &grid, const std::vector<Point3> &fitTo, size_t w, size_t h);
         Point3 lineLineIntersection(const Point3 &a1, const Point3 &a2, const Point3 &b1, const Point3 &b2);
-        TP distance(Point3 p1, Point3 p2);
+        TP distance2(Point3 p1, Point3 p2);
+        TP distance3(Point3 p1, Point3 p2);
         TP distanceSqr(Point3 p1, Point3 p2);
         TP sign(TP val);
     public:
@@ -72,8 +86,9 @@ namespace ecv {
             auto topVector = square.topRight - square.topLeft;
             return topVector.y / topVector .x;
         }
-    };
 
+        void cropGrid2(std::vector<Point3> &vector, size_t *w, size_t *h);
+    };
 } // ecv
 
 #endif //EMBEDDED_CV_CALIBRATEMAPPER_H

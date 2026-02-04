@@ -37,16 +37,37 @@ namespace ecv {
         size_t size = peaks.size();
         BaseSquare square;
         detectPeaks(frame, peaks, &size);
+        peaks.resize(size);
         auto squareRmse = detectBaseSquare(frame.size(), peaks, square);
 
         if (std::isnan(squareRmse) || squareRmse > 0.4) {
             *w = 0;
             *h = 0;
 
-            prevSquareRmse *= 1.2;
             setPattern(prevPatternSize, prevSkew);
 
             return std::nan("1");
+        }
+
+        bool updatePattern = false;
+
+        if (squareRmse < prevSquareRmse) {
+            prevPatternSize = patternSize;
+            prevSkew = skew;
+            prevSquareRmse = squareRmse;
+            prevSquare  = square;
+            updatePattern = true;
+        } else if (squareRmse > 1.4 * prevSquareRmse) {
+            setPattern(64, 0);
+            prevSquareRmse = squareRmse;
+            prevSquare  = square;
+        } else {
+            square = prevSquare;
+            square.topLeft = findNearestPoint(square.topLeft, peaks, patternSize * 0.2);
+            square.topRight = findNearestPoint(square.topRight, peaks, patternSize * 0.2);
+            square.bottomLeft = findNearestPoint(square.bottomLeft, peaks, patternSize * 0.2);
+            square.bottomRight = findNearestPoint(square.bottomRight, peaks, patternSize * 0.2);
+            prevSquareRmse *= 1.01;
         }
 
         auto result = detectFrameImagePointsGrid(frame.size(), peaks, square, imageGrid, w, h);
@@ -57,16 +78,9 @@ namespace ecv {
             drawGrid(debugFrame, imageGrid, *w, *h, cv::Scalar(255, 0, 0));
         }
 
-        if (squareRmse < prevSquareRmse && !std::isnan(result) && (*w * *h) > 0) {
-            prevPatternSize = patternSize;
-            prevSkew = skew;
-            prevSquareRmse = squareRmse;
+        if (updatePattern && !std::isnan(result) && (*w * *h) > 0) {
             setPattern(suggestPatternSize(imageGrid, square, *w, *h), suggestSkew(square));
-        } else {
-            setPattern(prevPatternSize, prevSkew);
-            prevSquareRmse *= 1.2;
         }
-
 
         return result;
     }
@@ -80,16 +94,16 @@ namespace ecv {
     }
 
     template<typename TP> void CalibrateMapper<TP>::detectPeaks(const cv::Mat &frame, std::vector<Point3> &peaks, size_t *size) {
-        cv::Mat gray;
-        cv::cvtColor(frame, gray, cv::ColorConversionCodes::COLOR_BGR2GRAY);
+        cv::UMat gray;
+        cv::cvtColor(frame.getUMat(cv::AccessFlag::ACCESS_READ), gray, cv::ColorConversionCodes::COLOR_BGR2GRAY);
         cv::equalizeHist(gray, gray);
-        auto matches = cv::Mat(gray.size(), CV_32F);
+        auto matches = cv::UMat(gray.size(), CV_32F);
         cv::matchTemplate(gray, this->checkBoardCornerPattern, matches, cv::TemplateMatchModes::TM_CCOEFF_NORMED, cv::noArray());
         cv::multiply(matches, matches, matches);
         auto halfPattern = (int)patternSize / 2;
         cv::copyMakeBorder(matches, matches, halfPattern, halfPattern, halfPattern, halfPattern, cv::BorderTypes::BORDER_REPLICATE);
 
-        findPeaks(matches, peaks, size, halfPattern, 2);
+        findPeaks(matches.getMat(cv::AccessFlag::ACCESS_READ), peaks, size, halfPattern, 2);
     }
 
     /**
@@ -121,7 +135,7 @@ namespace ecv {
             return 1.0;
         }
 
-        auto center = Point3((TP)frameSize.width / 2, (TP)frameSize.height / 2, 0);
+        auto center = findPointsMassCenter(peaks);
 
         square = {Point3(0, 0, -1), Point3(0, 0, -1), Point3(0, 0, -1), Point3(0, 0, -1)};
 
@@ -159,7 +173,7 @@ namespace ecv {
             if (p.x <= center.x && p.y <= center.y) {
                 BaseSquare quad;
                 quad.topLeft = p;
-                auto q2 = std::sqrt(distance(p, center)) * findSquareByTopLeft(centralPoints, currentSize, quad) / p.z / p.z;
+                auto q2 = distance2(p, center) * findSquareByTopLeft(centralPoints, currentSize, quad) / p.z / p.z;
 
                 if (q2 < q) {
                     q = q2;
@@ -168,7 +182,8 @@ namespace ecv {
             }
         }
 
-        return squareQualityNormRms(square);
+        TP result = squareQualityNormRms(square);
+        return result;
     }
 
     template<typename TP> size_t CalibrateMapper<TP>::suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, size_t w, size_t h) {
@@ -187,7 +202,7 @@ namespace ecv {
                 (imageGrid[(h - 1) * w].y - imageGrid[(h - 2) * w].y),
                 (imageGrid[(h - 1) * w + w - 1].y - imageGrid[(h - 2) * w + w - 1].y),
         };
-        auto pSize = (size_t)(std::min(list) * 0.9f);
+        auto pSize = (size_t)(std::min(list) * 0.8f);
         pSize -= pSize % 2;
         pSize = std::min((size_t)256, std::max((size_t)24, pSize));
 
@@ -240,10 +255,11 @@ namespace ecv {
                     auto next = &imageGrid[(cH + s * (i + 1)) * _w + cW + j];
                     CV_Assert(next < gridMaxOffset);
 
-                    auto searchRadius = distance(current, prev) * 0.2f;
+                    auto searchRadius = distance2(current, prev) * 0.2f;
                     auto nextApproximated = approximate(current, prev);
                     *next = findNearestPoint(nextApproximated, peaks, searchRadius);
-                    err += std::pow(distance(*next, nextApproximated), 2);
+
+                    err += distanceSqr(*next, nextApproximated);
                 }
                 for (auto k = 0; k < cW; k++) {
                     for (auto ks = -1; ks <= 1; ks += 2) {
@@ -252,10 +268,11 @@ namespace ecv {
                         auto top = imageGrid[(cH + s * i) * _w + cW + ks * (k + 1)];
                         auto next = &imageGrid[(cH + s * (i + 1)) * _w + cW + ks * (k + 1)];
                         CV_Assert(next < gridMaxOffset);
-                        auto searchRadius = distance(current, left) * 0.2f;
+                        auto searchRadius = distance2(current, left) * 0.2f;
                         auto nextApproximated = approximate2(current, left, top);
                         *next = findNearestPoint(nextApproximated, peaks, searchRadius);
-                        err += std::pow(distance(*next, nextApproximated), 2);
+
+                        err += distanceSqr(*next, nextApproximated);
                     }
                 }
             }
@@ -264,6 +281,10 @@ namespace ecv {
         cropGrid(imageGrid, w, h);
 
         return std::sqrt(err / (TP)(_w * _h));
+    }
+
+    template<typename TP> void CalibrateMapper<TP>::cropGrid2(std::vector<Point3> &vector, size_t *w, size_t *h) {
+
     }
 
     /**
@@ -336,8 +357,8 @@ namespace ecv {
             const auto gridHx = (bottom.x - top.x) / 2;
             const auto gridHy = (bottom.y - top.y) / 2;
 
-            const auto gridWScale = distance(c, w0) / (distance(c, w0) + distance(left, right) / 2);
-            const auto gridHScale = distance(c, h0) / (distance(c, h0) + distance(top, bottom) / 2);
+            const auto gridWScale = distance2(c, w0) / (distance2(c, w0) + distance2(left, right) / 2);
+            const auto gridHScale = distance2(c, h0) / (distance2(c, h0) + distance2(top, bottom) / 2);
             const auto gridWSign = -sign(c.x - w0.x);
             const auto gridHSign = -sign(c.y - h0.y);
 
@@ -360,7 +381,7 @@ namespace ecv {
                     }
 
                     objectGrid[y0 * w + x0] = p;
-                    rmsE += distance(p, imageGrid[y0 * w + x0]);
+                    rmsE += distance2(p, imageGrid[y0 * w + x0]);
                 }
             }
 
@@ -418,11 +439,11 @@ namespace ecv {
 
         TP rmse = 0;
         for (int i = 0; i < w * h; ++i) {
-            objectGrid[i] /= objectGrid[i].z;
             rmse += distanceSqr(objectGrid[i], imageGrid[i]);
+            objectGrid[i] /= objectGrid[i].z;
         }
 
-        return std::sqrt(rmse);
+        return std::sqrt(rmse / (w * h));
     }
 
     template<typename TP> bool CalibrateMapper<TP>::isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h) {
@@ -462,7 +483,7 @@ namespace ecv {
             char info[256];
             snprintf(info, sizeof info - sizeof("\0"), "%d", i);
 
-            cv::drawMarker(target, Point((int)p.x, (int)p.y), color, cv::MarkerTypes::MARKER_TILTED_CROSS, 20 * p.z, 2);
+            cv::drawMarker(target, Point((int)p.x, (int)p.y), color, cv::MarkerTypes::MARKER_TILTED_CROSS, std::max(1., 20. * p.z), 2);
         }
     }
     template<typename TP> void CalibrateMapper<TP>::drawBaseSquare(cv::Mat &target, const BaseSquare &square, cv::Scalar color) {
@@ -490,16 +511,12 @@ namespace ecv {
                 auto right = x + 1 == w ? Point3(0, 0, 0): grid[y * w + x + 1];
                 auto bottom = y + 1 == h ? Point3(0, 0, 0) : grid[(y + 1) * w + x];
 
-                if (p.z < 0) {
-                    continue;
-                }
-
-                if (right.z > 0 && x < w - 1) {
+                if (x < w - 1) {
                     cv::line(target, Point((int) p.x, (int) p.y), Point((int) right.x, (int) right.y),
                              color, thickness);
                 }
 
-                if (bottom.z > 0 && y < h - 1) {
+                if (y < h - 1) {
                     cv::line(target, Point((int) p.x, (int) p.y), Point((int) bottom.x, (int) bottom.y),
                              color, thickness);
                 }
@@ -543,14 +560,18 @@ namespace ecv {
      *   0 0 0 0 0
      */
     template<typename TP> void CalibrateMapper<TP>::findPeaks(const cv::Mat &mat, std::vector<Point3> &points, size_t *size, int kernel, int noiseTolerance) {
-        auto data = (float *)mat.data;
-        size_t p = 0;
+        const auto data = (float *)mat.data;
 
-        cv::Mat mask = cv::Mat::zeros(mat.size(), CV_8SC1);
+        const cv::Mat mask = cv::Mat::zeros(mat.size(), CV_8SC1);
 
-        int kernelRadius = (kernel - 1) / 2;
-        int w = mat.cols;
-        auto step = 1;
+        const int kernelRadius = (kernel - 1) / 2;
+        const int w = mat.cols;
+        const auto step = 1;
+
+        std::mutex pointsSetLock;
+        std::multiset<Point3, Point3Compare> pointsSet;
+
+#pragma omp parallel for
         for (int i = kernelRadius; i < mat.rows - kernel; i += step) {
             for (int j = kernelRadius; j < w - kernel; j += step) {
                 if (mask.at<char>(i, j) == 1) {
@@ -599,16 +620,23 @@ namespace ecv {
                     processed.setTo(1);
                     auto point = findMassCenter(mat, j, i, kernelRadius);
                     j+=kernel;
-                    points.at(p) = point;
-                    p++;
-                    if (p >= *size) {
-                        return;
+
+                    if (point.z > 1e-2) {
+                        pointsSetLock.lock();
+                        pointsSet.insert(point);
+                        while (pointsSet.size() >= points.size()) {
+                            pointsSet.erase(std::prev(pointsSet.end()));
+                        }
+                        pointsSetLock.unlock();
                     }
+
                 }
             }
         }
 
-        *size = p;
+        std::copy(pointsSet.begin(), pointsSet.end(), points.begin());
+
+        *size = pointsSet.size();
     }
 
     template<typename TP> typename CalibrateMapper<TP>::Point3 CalibrateMapper<TP>::findMassCenter(const cv::Mat &mat, int x, int y, int searchRadius) {
@@ -651,6 +679,23 @@ namespace ecv {
         }
 
         return {cX, cY, height};
+    }
+
+    template<typename TP> typename CalibrateMapper<TP>::Point3 CalibrateMapper<TP>::findPointsMassCenter(const std::vector<Point3> points) {
+        auto mass = 0.0f;
+        auto sumX = 0.0f;
+        auto sumY = 0.0f;
+
+        for (const auto &p : points) {
+            mass += p.z;
+            sumX += p.z * p.x;
+            sumY += p.z * p.y;
+        }
+
+        auto cX = sumX > 0 && mass > 0 ? (sumX / mass) : 0;
+        auto cY = sumY > 0 && mass > 0 ? (sumY / mass) : 0;
+
+        return {cX, cY, 0};
     }
 
     template<typename TP> TP CalibrateMapper<TP>::findSquareBy3Points(const std::vector<Point3> &points, size_t size, BaseSquare &result) {
@@ -702,7 +747,7 @@ namespace ecv {
         for (int i = 0; i < size; ++i) {
             auto p = points[i];
             auto dp = p - result.topLeft;
-            double d = distance(p, result.topLeft);
+            double d = distance2(p, result.topLeft);
             if (d > (patternSize * 0.4) && dp.x > 0 && std::abs(dp.x / dp.y) > 1.5f) {
                 BaseSquare quad;
                 quad.topLeft = result.topLeft;
@@ -720,12 +765,12 @@ namespace ecv {
     }
 
     template<typename TP> TP CalibrateMapper<TP>::squareQualityNormRms(const BaseSquare &square) {
-        auto left = distance(square.topLeft, square.bottomLeft);
-        auto right = distance(square.topRight, square.bottomRight);
-        auto top = distance(square.topLeft, square.topRight);
-        auto bottom = distance(square.bottomLeft, square.bottomRight);
-        auto d1 = (TP)(distance(square.topLeft, square.bottomRight) / sqrt(2));
-        auto d2 = (TP)(distance(square.bottomLeft, square.topRight) / sqrt(2));
+        auto left = distance2(square.topLeft, square.bottomLeft);
+        auto right = distance2(square.topRight, square.bottomRight);
+        auto top = distance2(square.topLeft, square.topRight);
+        auto bottom = distance2(square.bottomLeft, square.bottomRight);
+        auto d1 = (TP)(distance2(square.topLeft, square.bottomRight) / sqrt(2));
+        auto d2 = (TP)(distance2(square.bottomLeft, square.topRight) / sqrt(2));
         auto avg = std::max({left + right, top + bottom, d1 + d2}) / 2;
 
         auto d = (TP)(
@@ -765,13 +810,13 @@ namespace ecv {
         size_t cH = *h / 2;
 
         auto wScore = 0.0f, hScore = 0.0f;
-        auto threshold = 0.7f;
+        auto threshold = 0.5f;
 
-        for (int x = 0; x < *w; ++x) {
+        for (int x = 2; x < *w - 2; ++x) {
             wScore += grid[cH * *w + x].z;
         }
 
-        for (int y = 0; y < *h; ++y) {
+        for (int y = 2; y < *h - 2; ++y) {
             hScore += grid[y * *w + cW].z;
         }
 
@@ -780,76 +825,48 @@ namespace ecv {
 
         for (int y = 0; y < cH - 1; ++y) {
             top = y;
-            auto rowScore = 0.0f, rowScore1 = 0.0f;
-            for (int x = 0; x < *w; ++x) {
+            auto rowScore = 0.0f;
+            for (int x = 2; x < *w - 2; ++x) {
                 rowScore += grid[y * *w + x].z;
-                rowScore1 += grid[(y + 1) * *w + x].z;
             }
 
-            auto t1 = wThreshold - rowScore;
-            auto t2 = rowScore1 - wThreshold;
-
-            if (t1 < t2 && t2 > 0) {
-                break;
-            } else if (t1 >= t2 && t2 > 0) {
-                top++;
+            if (rowScore > wThreshold) {
                 break;
             }
         }
 
         for (int y = (int)*h; y > cH + 1; --y) {
             bottom = y;
-            auto rowScore = 0.0f, rowScore1 = 0.0f;
-            for (int x = 0; x < *w; ++x) {
+            auto rowScore = 0.0f;
+            for (int x = 2; x < *w - 2; ++x) {
                 rowScore += grid[(y - 1) * *w + x].z;
-                rowScore1 += grid[(y - 2) * *w + x].z;
             }
 
-            auto t1 = wThreshold - rowScore;
-            auto t2 = rowScore1 - wThreshold;
-
-            if (t1 < t2 && t2 > 0) {
-                break;
-            } else if (t1 >= t2 && t2 > 0) {
-                bottom--;
+            if (rowScore > wThreshold) {
                 break;
             }
         }
 
         for (int x = 0; x < cW - 1; ++x) {
             left = x;
-            auto rowScore = 0.0f, rowScore1 = 0.0f;
-            for (int y = 0; y < *h; ++y) {
+            auto rowScore = 0.0f;
+            for (int y = 2; y < *h - 2; ++y) {
                 rowScore += grid[y * *w + x].z;
-                rowScore1 += grid[y * *w + x + 1].z;
             }
 
-            auto t1 = hThreshold - rowScore;
-            auto t2 = rowScore1 - hThreshold;
-
-            if (t1 < t2 && t2 > 0) {
-                break;
-            } else if (t1 >= t2 && t2 > 0) {
-                left++;
+            if (rowScore > hThreshold) {
                 break;
             }
         }
 
         for (int x = (int)*w; x > cW + 1; --x) {
             right = x;
-            auto rowScore = 0.0f, rowScore1 = 0.0f;
-            for (int y = 0; y < *h; ++y) {
+            auto rowScore = 0.0f;
+            for (int y = 2; y < *h - 2; ++y) {
                 rowScore += grid[y * *w + x - 1].z;
-                rowScore1 += grid[y * *w + x - 2].z;
             }
 
-            auto t1 = hThreshold - rowScore;
-            auto t2 = rowScore1 - hThreshold;
-
-            if (t1 < t2 && t2 > 0) {
-                break;
-            } else if (t1 >= t2 && t2 > 0) {
-                right--;
+            if (rowScore > hThreshold) {
                 break;
             }
         }
@@ -871,7 +888,7 @@ namespace ecv {
                 auto current = grid[(cH + j) * w + cW + s * i];
                 auto prev = grid[(cH + j) * w + cW + s * (i - 1)];
                 auto next = &grid[(cH + j) * w + cW + s * (i + 1)];
-                auto searchRadius = distance(current, prev) * 0.2f;
+                auto searchRadius = distance2(current, prev) * 0.2f;
                 auto nextApproximated = approximate(current, prev);
                 *next = findNearestPoint(nextApproximated, peaks, searchRadius);
             }
@@ -886,7 +903,7 @@ namespace ecv {
                 continue;
             }
 
-            auto d = distance(p, point) / p.z / p.z;
+            auto d = distance2(p, point);
 
             if (d < foundDistance) {
                 foundDistance = d;
@@ -895,7 +912,7 @@ namespace ecv {
         }
 
         if (found.z == 0) {
-            return {point.x, point.y, 0};
+            return {point.x, point.y, -1};
         }
 
         return found;
@@ -963,7 +980,7 @@ namespace ecv {
             }
         }
 
-        return distance(right1, left1) * distance(bottom1, top1);
+        return distance2(right1, left1) * distance2(bottom1, top1);
     }
 
     template<typename TP> typename CalibrateMapper<TP>::Point3 CalibrateMapper<TP>::lineLineIntersection(const Point3 &a1, const Point3 &a2, const Point3 &b1, const Point3 &b2) {
@@ -989,8 +1006,12 @@ namespace ecv {
         return Point3(v.x(), v.y(), 1);
     }
 
-    template<typename TP> TP CalibrateMapper<TP>::distance(Point3 p1, Point3 p2) {
+    template<typename TP> TP CalibrateMapper<TP>::distance2(Point3 p1, Point3 p2) {
         return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
+    }
+
+    template<typename TP> TP CalibrateMapper<TP>::distance3(Point3 p1, Point3 p2) {
+        return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2) + std::pow(p1.z - p2.z, 2));
     }
 
     template<typename TP> TP CalibrateMapper<TP>::distanceSqr(Point3 p1, Point3 p2) {

@@ -259,14 +259,13 @@ int main(int argc, const char **argv) {
     auto readerLeft = std::thread(readerfunction, &readingLeft, leftPipe, &readingImLeft, &readerLeftLock, &readerLeftCount);
     auto readerRight = std::thread(readerfunction, &readingRight, rightPipe, &readingImRight, &readerRightLock, &readerRightCount);
 
-    ecv::DisparityEvaluator disparityEvaluator;
+    cv::ocl::setUseOpenCL(true);
 
-    disparityEvaluator.lazyInitializeOcl();
 #ifndef HAVE_OPENCL
-        throw std::runtime_error("OpenCV built without opencl");
+    throw std::runtime_error("OpenCV built without opencl");
 #endif
 
-    if (!cv::ocl::isOpenCLActivated()) {
+    if (!cv::ocl::haveOpenCL()) {
         throw std::runtime_error("OpenCL is not available");
     }
 
@@ -306,6 +305,7 @@ int main(int argc, const char **argv) {
     cv::setMouseCallback("Disparity", onMouse, &mouseDisp);
     cv::setMouseCallback("src " + std::to_string(0), onMouse, &mouseSrc);
 #endif
+    ecv::DisparityEvaluator disparityEvaluator((cl_context)cv::ocl::Context::getDefault().ptr());
 
 //    uint8_t im1[]  = {0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0};
 //    uint8_t im2[]  = {0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0};

@@ -34,52 +34,6 @@ static BroadcastingServer broadcastingServer;
 static CommandServer commandServer;
 int findNearestPoint(const Point2f &point, const std::vector<Point3d> &points, double searchRadius);
 
-
-void matwrite(const std::string& filename, const Mat& mat)
-{
-    std::ofstream fs(filename, std::fstream::binary);
-
-    // Header
-    int type = mat.type();
-    int channels = mat.channels();// rows
-    fs.write((char*)&mat.rows, sizeof(int));    // rows
-    fs.write((char*)&mat.cols, sizeof(int));    // cols
-    fs.write((char*)&type, sizeof(int));        // type
-    fs.write((char*)&channels, sizeof(int));    // channels
-
-    // Data
-    if (mat.isContinuous()) {
-        fs.write(mat.ptr<char>(0), (mat.dataend - mat.datastart));
-    } else {
-        int rowsz = CV_ELEM_SIZE(type) * mat.cols;
-        for (int r = 0; r < mat.rows; ++r)
-        {
-            fs.write(mat.ptr<char>(r), rowsz);
-        }
-    }
-}
-
-void matread(const std::string& filename, Mat &mat)
-{
-    std::ifstream fs(filename, std::fstream::binary);
-
-    if (!fs.good()) {
-        mat = Mat();
-        return;
-    }
-
-    // Header
-    int rows, cols, type, channels;
-    fs.read((char*)&rows, sizeof(int));         // rows
-    fs.read((char*)&cols, sizeof(int));         // cols
-    fs.read((char*)&type, sizeof(int));         // type
-    fs.read((char*)&channels, sizeof(int));     // channels
-
-    // Data
-    mat = Mat(rows, cols, type);
-    fs.read((char*)mat.data, CV_ELEM_SIZE(type) * rows * cols);
-}
-
 void invMap(const cv::Mat &src, cv::Mat &dest) {
     if (dest.empty()) {
         dest = Mat(src.size(), src.type());
@@ -404,6 +358,11 @@ int main(int argc, const char **argv) {
 
             auto gridRmse = calibrateMapper[j].detectFrameImagePointsGrid(colorFrame, imageGrid[j], &gridWidth[j], &gridHeight[j], colorFrame);
 
+            if (std::isnan(gridRmse)) {
+                waitKey(1);
+                continue;
+            }
+
             auto stdGridRmse = 1e6;
             if (calibrateMapper[j].isGridValid(colorFrame.size(), imageGrid[j], gridWidth[j], gridHeight[j])) {
                 stdGridRmse = calibrateMapper[j].generateFrameObjectPointsGrid2(colorFrame.size(), imageGrid[j], objectGrid[j], gridWidth[j],
@@ -590,9 +549,36 @@ int main(int argc, const char **argv) {
                 cv::remap(frames[1], aligned, alignedMap, noArray(), INTER_NEAREST);
 #ifdef HAVE_OPENCV_HIGHGUI
                 cv::imshow("Aligned", aligned);
+
+                cv::Mat disparityFp;
+                cv::Mat disparity;
+                cv::Mat variance;
+                disparity.setTo(0);
+                std::vector<cv::UMat> framesToEval({plain[0].getUMat(AccessFlag::ACCESS_READ), aligned.getUMat(AccessFlag::ACCESS_READ)});
+
+                disparityEvaluator.evaluateDisparity(framesToEval, disparity, variance);
+
+                double minVal = 0, maxVal = 0, varianceMinVal = 0, varianceMaxVal = 0;
+
+                disparity.copyTo(disparityFp);
+                if (minVal == 0 || maxVal == 0) {
+                    cv::minMaxLoc(disparityFp, &minVal, &maxVal);
+                    maxVal = 300 * ecv::DisparityEvaluator::DISPARITY_PRECISION;
+                    minVal = 0;
+                }
+
+                disparityFp -= minVal;
+                disparityFp *= 255.0 / (maxVal - minVal);
+
+                disparityFp.convertTo(disparity8, CV_8U);
+                cv::applyColorMap(disparity8, disparity8, ColormapTypes::COLORMAP_JET);
+
+                calibrateMapper[0].drawGrid(disparity8, plainImageGrid[0], gridWidth[0], gridHeight[0], cv::Scalar(255, 255, 255));
+
+                cv::imshow("Disparity", disparity8);
 #endif
-                for (int i = 0; i < frames.size(); ++i) {
-                    invMap(bestMap1[i], invBestMap1[i]);
+                for (int j = 0; j < frames.size(); ++j) {
+                    invMap(bestMap1[j], invBestMap1[j]);
                 }
                 invMap(alignedMap, invAlignedMap);
 
@@ -617,26 +603,6 @@ int main(int argc, const char **argv) {
         std::ostringstream tm;
 
         tm << "PERF " << fps << " " << time << std::endl;
-
-        Mat preview;
-        cv::resize(disparity8, preview, outputSize);
-
-        if (!writerIsRunning) {
-            if (writer.joinable()) {
-                writer.join();
-            }
-
-            writerIsRunning = true;
-
-            writer = std::thread([](auto *preview, auto *pipe, auto *isRunning, auto *tm) {
-                broadcastingServer.broadcast(tm->str());
-
-                fwrite(preview->data, sizeof(char), preview->dataend - preview->datastart, *pipe);
-                *isRunning = false;
-            }, &preview, &pipe, &writerIsRunning, &tm);
-
-            cv::imwrite("d.jpg", disparity8);
-        }
 
 #ifdef HAVE_OPENCV_HIGHGUI
 
