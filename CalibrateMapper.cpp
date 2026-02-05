@@ -40,7 +40,7 @@ namespace ecv {
         peaks.resize(size);
         auto squareRmse = detectBaseSquare(frame.size(), peaks, square);
 
-        if (std::isnan(squareRmse) || squareRmse > 0.4) {
+        if (std::isnan(squareRmse)) {
             *w = 0;
             *h = 0;
 
@@ -51,7 +51,7 @@ namespace ecv {
 
         bool updatePattern = false;
 
-        if (squareRmse < prevSquareRmse) {
+        if (squareRmse < prevSquareRmse * 1.01) {
             prevPatternSize = patternSize;
             prevSkew = skew;
             prevSquareRmse = squareRmse;
@@ -60,14 +60,8 @@ namespace ecv {
         } else if (squareRmse > 1.4 * prevSquareRmse) {
             setPattern(64, 0);
             prevSquareRmse = squareRmse;
-            prevSquare  = square;
-        } else {
-            square = prevSquare;
-            square.topLeft = findNearestPoint(square.topLeft, peaks, patternSize * 0.2);
-            square.topRight = findNearestPoint(square.topRight, peaks, patternSize * 0.2);
-            square.bottomLeft = findNearestPoint(square.bottomLeft, peaks, patternSize * 0.2);
-            square.bottomRight = findNearestPoint(square.bottomRight, peaks, patternSize * 0.2);
-            prevSquareRmse *= 1.01;
+            prevSquare = square;
+            skew = prevSkew;
         }
 
         auto result = detectFrameImagePointsGrid(frame.size(), peaks, square, imageGrid, w, h);
@@ -141,7 +135,7 @@ namespace ecv {
 
         std::vector<Point3> centralPoints = peaks;
 
-        auto roiSize = (TP)std::min(frameSize.width, frameSize.height) / 4;
+        auto roiSize = (TP)std::min(frameSize.width, frameSize.height) / 2;
 
         struct Rect {
             TP x;
@@ -167,26 +161,31 @@ namespace ecv {
         } while (nextSize >= 20);
 
         auto q = 1.0f / 0.0f;
+        auto qNorm = 1.0f / 0.0f;
 
         for (auto i = 0; i < currentSize; i++) {
             auto p = centralPoints[i];
             if (p.x <= center.x && p.y <= center.y) {
                 BaseSquare quad;
                 quad.topLeft = p;
-                auto q2 = distance2(p, center) * findSquareByTopLeft(centralPoints, currentSize, quad) / p.z / p.z;
+                findSquareByTopLeft(centralPoints, currentSize, quad);
+                auto [q2, size] = squareQualityNormRms(quad);
 
-                if (q2 < q) {
-                    q = q2;
+                if ((q2 * size) < q) {
+                    q = (q2 * size);
+                    qNorm = q2;
                     square = quad;
                 }
             }
         }
 
-        TP result = squareQualityNormRms(square);
-        return result;
+        return qNorm;
     }
 
     template<typename TP> size_t CalibrateMapper<TP>::suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, size_t w, size_t h) {
+        if (h < 2 || w < 2) {
+            return 64;
+        }
         auto list = {
                 square.topRight.x - square.topLeft.x,
                 square.bottomLeft.y - square.topLeft.y,
@@ -708,10 +707,10 @@ namespace ecv {
                 quad.topRight = result.topRight;
                 quad.bottomLeft = result.bottomLeft;
                 quad.bottomRight = p;
-                auto q2 = squareQualityNormRms(quad) / p.z;
+                auto [q2, size] = squareQualityNormRms(quad);
 
-                if (!std::isnan(q2) && q2 < q) {
-                    q = q2;
+                if (q2 * size < q) {
+                    q = q2 * size;
                     result = quad;
                 }
             }
@@ -732,7 +731,7 @@ namespace ecv {
 
                 auto q2 = findSquareBy3Points(points, size, quad) / p.z;
 
-                if (!std::isnan(q2) && q2 < q) {
+                if (q2 < q) {
                     q = q2;
                     result = quad;
                 }
@@ -754,7 +753,7 @@ namespace ecv {
                 quad.topRight = p;
                 auto q2 = d * findSquareByTop(points, size, quad) / p.z;
 
-                if (!std::isnan(q2) && q2 < q) {
+                if (q2 < q) {
                     q = q2;
                     result = quad;
                 }
@@ -764,23 +763,25 @@ namespace ecv {
         return q;
     }
 
-    template<typename TP> TP CalibrateMapper<TP>::squareQualityNormRms(const BaseSquare &square) {
+    template<typename TP> std::pair<TP, TP> CalibrateMapper<TP>::squareQualityNormRms(const BaseSquare &square) {
         auto left = distance2(square.topLeft, square.bottomLeft);
         auto right = distance2(square.topRight, square.bottomRight);
         auto top = distance2(square.topLeft, square.topRight);
         auto bottom = distance2(square.bottomLeft, square.bottomRight);
         auto d1 = (TP)(distance2(square.topLeft, square.bottomRight) / sqrt(2));
         auto d2 = (TP)(distance2(square.bottomLeft, square.topRight) / sqrt(2));
-        auto avg = std::max({left + right, top + bottom, d1 + d2}) / 2;
+        auto avg = (left + right + top + bottom + d1 + d2) / 6;
+        auto max = std::max({left, right, top, bottom, d1, d2});
+        if (avg == 0) {
+            return {(TP)1.0, max};
+        }
+        auto cost = (
+                std::pow(avg - left, 2) + std::pow(avg - right, 2) +
+                std::pow(avg - top, 2) + std::pow(avg - bottom, 2) +
+                std::pow(avg - d1, 2) + std::pow(avg - d2, 2)
+        ) / 6;
 
-        auto d = (TP)(
-                (std::min(left, right) / avg)
-                * (std::min(top, bottom) / avg)
-                * (std::min(d1, d2) / avg)
-                * (std::min(left, top) / std::max(left, top))
-        );
-
-        return 1 - d;
+        return {sqrt(cost), max};
     }
 
     template<typename TP> typename CalibrateMapper<TP>::Point3 CalibrateMapper<TP>::approximate(Point3 current, Point3 prev) {
@@ -813,17 +814,17 @@ namespace ecv {
         auto threshold = 0.5f;
 
         for (int x = 2; x < *w - 2; ++x) {
-            wScore += grid[cH * *w + x].z;
+            wScore += std::max((TP)0., grid[cH * *w + x].z);
         }
 
         for (int y = 2; y < *h - 2; ++y) {
-            hScore += grid[y * *w + cW].z;
+            hScore += std::max((TP)0., grid[y * *w + cW].z);
         }
 
         double wThreshold = wScore * threshold;
         double hThreshold = hScore * threshold;
 
-        for (int y = 0; y < cH - 1; ++y) {
+        for (int y = 0; y < cH; ++y) {
             top = y;
             auto rowScore = 0.0f;
             for (int x = 2; x < *w - 2; ++x) {
@@ -847,7 +848,7 @@ namespace ecv {
             }
         }
 
-        for (int x = 0; x < cW - 1; ++x) {
+        for (int x = 0; x < cW; ++x) {
             left = x;
             auto rowScore = 0.0f;
             for (int y = 2; y < *h - 2; ++y) {

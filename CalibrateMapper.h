@@ -45,7 +45,7 @@ namespace ecv {
         void findPeaks(const cv::Mat &mat, std::vector<Point3> &points, size_t *size, int kernel, int noiseTolerance);
         Point3 findMassCenter(const cv::Mat &mat, int x, int y, int searchRadius);
         Point3 findPointsMassCenter(const std::vector<Point3> points);
-        TP squareQualityNormRms(const BaseSquare &square);
+        std::pair<TP, TP> squareQualityNormRms(const BaseSquare &square);
         TP findSquareBy3Points(const std::vector<Point3> &points, size_t size, BaseSquare &result);
         TP findSquareByTop(const std::vector<Point3> &points, size_t size, BaseSquare &result);
         TP findSquareByTopLeft(const std::vector<Point3> &points, size_t size, BaseSquare &result);
