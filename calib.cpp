@@ -229,6 +229,7 @@ int main(int argc, const char **argv) {
 
             if (w > 0 && h > 0) {
                 gridQ = calibrateMapper[i].generateFrameObjectPointsGrid(imageGrid, objectGrid, w, h);
+                calibrateMapper[i].drawGrid(plainFrames[i], objectGrid, w, h, cv::Scalar(255, 0, 255), 2);
             }
 
             auto detectGridTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();

@@ -13,11 +13,9 @@ namespace ecv {
         size_t sz = size - size % 2;
 
         if (this->patternSize != sz || this->skew != skew || this->checkBoardCornerPattern.empty()) {
-            this->patternSize = sz;
-            this->skew = _skew;
-            this->checkBoardCornerPattern = cv::Mat(this->patternSize, this->patternSize, CV_8U);
-            createCheckBoardPatterns(this->checkBoardCornerPattern);
-            auto half = (float) sz / 2;
+            auto pattern = cv::Mat((int)sz * 3, (int)sz * 3, CV_8U);
+            createCheckBoardPatterns(pattern);
+            auto half = (float) sz * 3 / 2;
             std::vector<cv::Point2f> src = {{half, half},
                                             {half, 0},
                                             {0,    half}};
@@ -25,8 +23,12 @@ namespace ecv {
                                              {half + half * skew, half * skew},
                                              {half * skew,        half - half * skew}};
             auto rot = cv::getAffineTransform(src, dest);
-            cv::warpAffine(this->checkBoardCornerPattern, this->checkBoardCornerPattern, rot,
-                           this->checkBoardCornerPattern.size());
+            cv::warpAffine(pattern, pattern, rot,
+                           pattern.size());
+
+            this->checkBoardCornerPattern = pattern(cv::Rect((int)sz, (int)sz, (int)sz, (int)sz)).clone();
+            this->patternSize = sz;
+            this->skew = _skew;
         }
     }
 
@@ -46,7 +48,7 @@ namespace ecv {
 
             setPattern(prevPatternSize, prevSkew);
 
-            return std::nan("1");
+            return 1. / 0.;
         }
 
         bool updatePattern = false;
@@ -74,10 +76,9 @@ namespace ecv {
 
         if (updatePattern && *w > 4 && *h > 4) {
             setPattern(suggestPatternSize(imageGrid, square, *w, *h), suggestSkew(square));
-            return result;
         }
 
-        return 1. / 0.;
+        return result;
     }
 
     template<typename TP>
@@ -260,7 +261,7 @@ namespace ecv {
                     auto nextApproximated = approximate(current, prev);
                     *next = findNearestPoint(nextApproximated, peaks, searchRadius);
 
-                    err += distanceSqr(*next, nextApproximated);
+                    err += distance2(*next, nextApproximated);
                 }
                 for (auto k = 0; k < cW; k++) {
                     for (auto ks = -1; ks <= 1; ks += 2) {
@@ -273,7 +274,7 @@ namespace ecv {
                         auto nextApproximated = approximate2(current, left, top);
                         *next = findNearestPoint(nextApproximated, peaks, searchRadius);
 
-                        err += distanceSqr(*next, nextApproximated);
+                        err += distance2(*next, nextApproximated);
                     }
                 }
             }
@@ -281,7 +282,7 @@ namespace ecv {
 
         cropGrid(imageGrid, w, h);
 
-        return std::sqrt(err / (TP)(_w * _h));
+        return err / (TP)(_w * _h);
     }
 
     /**
@@ -332,13 +333,13 @@ namespace ecv {
 
         cv::transpose(cv::Mat(3, w * h, CV_64FC1, o.data()), cv::Mat(w * h, 3, CV_64FC1, objectGrid.data()));
 
-        TP rmse = 0;
+        TP err = 0;
         for (int i = 0; i < w * h; ++i) {
-            rmse += distanceSqr(objectGrid[i], imageGrid[i]);
             objectGrid[i] /= objectGrid[i].z;
+            err += distance2(objectGrid[i], imageGrid[i]);
         }
 
-        return std::sqrt(rmse / (w * h));
+        return err / (w * h);
     }
 
     template<typename TP> bool CalibrateMapper<TP>::isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h) {
