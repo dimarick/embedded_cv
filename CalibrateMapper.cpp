@@ -1,5 +1,5 @@
 #include "CalibrateMapper.h"
-#include <Eigen/Geometry>
+#include <ext/pb_ds/assoc_container.hpp>
 #ifdef HAVE_OPENCV_HIGHGUI
 #include <highgui.hpp>
 #endif
@@ -38,9 +38,9 @@ namespace ecv {
         BaseSquare square;
         detectPeaks(frame, peaks, &size);
         peaks.resize(size);
-        auto squareRmse = detectBaseSquare(frame.size(), peaks, square);
+        auto squareRmse = detectBaseSquare(frame.size(), peaks , square);
 
-        if (std::isnan(squareRmse)) {
+        if (squareRmse > 0.1) {
             *w = 0;
             *h = 0;
 
@@ -72,11 +72,12 @@ namespace ecv {
             drawGrid(debugFrame, imageGrid, *w, *h, cv::Scalar(255, 0, 0));
         }
 
-        if (updatePattern && !std::isnan(result) && (*w * *h) > 0) {
+        if (updatePattern && *w > 4 && *h > 4) {
             setPattern(suggestPatternSize(imageGrid, square, *w, *h), suggestSkew(square));
+            return result;
         }
 
-        return result;
+        return 1. / 0.;
     }
 
     template<typename TP>
@@ -210,6 +211,11 @@ namespace ecv {
 
     template<typename TP> TP CalibrateMapper<TP>::detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks, const BaseSquare &square, std::vector<Point3> &imageGrid, size_t *w, size_t *h) {
         auto pointsCount = peaks.size();
+
+        if (pointsCount < 4 * 4) {
+            return 1.0 / 0.0;
+        }
+
         auto imageArea = frameSize.width * frameSize.height;
         auto pixelsPerPoint = std::sqrt(imageArea / pointsCount);
         auto _w = (size_t)(frameSize.width / pixelsPerPoint);
@@ -219,10 +225,6 @@ namespace ecv {
 
         CV_Assert(_w * _h <= imageGrid.size());
         CV_Assert(!frameSize.empty());
-
-        if (pointsCount < 4 * 4) {
-            return 1.0 / 0.0;
-        }
 
         for (int i = 0; i < imageGrid.size(); ++i) {
             imageGrid[i] = Point3(0, 0, -1);
@@ -282,122 +284,16 @@ namespace ecv {
         return std::sqrt(err / (TP)(_w * _h));
     }
 
-    template<typename TP> void CalibrateMapper<TP>::cropGrid2(std::vector<Point3> &vector, size_t *w, size_t *h) {
-
-    }
-
     /**
      * @tparam TP
-     * @param frameSize
      * @param imageGrid
      * @param objectGrid
      * @param w
      * @param h
      * @return возвращает среднюю дистанцию между точкой объекта и точкой на изображении, скорректированную на площадь сетки на изображении.
      */
-    template<typename TP> TP CalibrateMapper<TP>::generateFrameObjectPointsGrid(const cv::Size &frameSize, const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h) {
-        try {
-            const auto cW = (int) w / 2;
-            const auto cH = (int) h / 2;
-
-            TP rmsE = 0.0;
-
-            CV_Assert(w > 4);
-            CV_Assert(h > 4);
-
-            CV_Assert(imageGrid.size() >= w * h);
-            CV_Assert(objectGrid.size() >= imageGrid.size());
-
-            const auto c = imageGrid[cH * w + cW];
-            objectGrid[cH * w + cW] = c;
-
-            auto w0 = Point3(0, 0, 0);
-            auto h0 = Point3(0, 0, 0);
-            TP wn = 0;
-            TP hn = 0;
-
-            for (int i = -cH + 1; i < cW - 1; i++) {
-                if (i == 0) {
-                    continue;
-                }
-                const auto wr = i < 0 ? cW - 1 : -i;
-                const auto hr = i < 0 ? i : cH - 1;
-                const auto topLeft = imageGrid[(cH - hr) * w + cW - wr];
-                const auto topRight = imageGrid[(cH - hr) * w + cW + wr];
-                const auto bottomLeft = imageGrid[(cH + hr) * w + cW - wr];
-                const auto bottomRight = imageGrid[(cH + hr) * w + cW + wr];
-
-                if (i < 0) {
-                    h0 += lineLineIntersection(topLeft, bottomLeft, topRight, bottomRight);
-                    CV_Assert(!std::isnan(h0.x));
-                    CV_Assert(!std::isnan(h0.y));
-                    hn++;
-                } else {
-                    w0 += lineLineIntersection(topLeft, topRight, bottomLeft, bottomRight);
-                    CV_Assert(!std::isnan(w0.x));
-                    CV_Assert(!std::isnan(w0.y));
-                    wn++;
-                }
-            }
-
-            CV_Assert(wn > 0);
-            CV_Assert(hn > 0);
-
-            w0 /= wn;
-            h0 /= hn;
-
-            const auto top = imageGrid[(cH - 1) * w + cW];
-            const auto left = imageGrid[cH * w + cW - 1];
-            const auto bottom = imageGrid[(cH + 1) * w + cW];
-            const auto right = imageGrid[cH * w + cW + 1];
-
-            const auto gridWx = (right.x - left.x) / 2;
-            const auto gridWy = (right.y - left.y) / 2;
-            const auto gridHx = (bottom.x - top.x) / 2;
-            const auto gridHy = (bottom.y - top.y) / 2;
-
-            const auto gridWScale = distance2(c, w0) / (distance2(c, w0) + distance2(left, right) / 2);
-            const auto gridHScale = distance2(c, h0) / (distance2(c, h0) + distance2(top, bottom) / 2);
-            const auto gridWSign = -sign(c.x - w0.x);
-            const auto gridHSign = -sign(c.y - h0.y);
-
-            for (auto x0 = 0; x0 < w; ++x0) {
-                for (auto y0 = 0; y0 < h; ++y0) {
-                    auto dx = (TP) (x0 - cW);
-                    auto wScale = std::pow(gridWScale, gridWSign * dx);
-                    auto xw = c.x + dx * gridWx * wScale;
-                    auto xh = c.y + dx * gridWy * wScale;
-
-                    auto dy = (TP) (y0 - cH);
-                    auto hScale = std::pow(gridHScale, gridHSign * dy);
-                    auto yw = c.x + dy * gridHx * hScale;
-                    auto yh = c.y + dy * gridHy * hScale;
-
-                    auto p = lineLineIntersection(Point3(xw, xh, 0), h0, Point3(yw, yh, 0), w0);
-
-                    if (std::isnan(p.x) || std::isnan(p.y)) {
-                        continue;
-                    }
-
-                    objectGrid[y0 * w + x0] = p;
-                    rmsE += distance2(p, imageGrid[y0 * w + x0]);
-                }
-            }
-
-            auto gridArea = autoFitGrid(objectGrid, imageGrid, w, h);
-            auto imageArea = frameSize.width * frameSize.height;
-            auto gridAreaRelative = gridArea / imageArea;
-
-            return rmsE / TP(w * h) / gridAreaRelative;
-        } catch (const std::exception &e) {
-            setPattern(prevPatternSize, prevSkew);
-            prevSquareRmse *= 1.2;
-            return std::nan("3");
-        }
-    }
-
-    template<typename TP> TP CalibrateMapper<TP>::generateFrameObjectPointsGrid2(const cv::Size &frameSize, const std::vector<Point3> &imageGrid,
-                                                        std::vector<Point3> &objectGrid, size_t w, size_t h) {
+    template<typename TP> TP CalibrateMapper<TP>::generateFrameObjectPointsGrid(const std::vector<Point3> &imageGrid,
+                                                                                std::vector<Point3> &objectGrid, size_t w, size_t h) {
         CV_Assert(w * h <= objectGrid.size());
 
         std::vector<Point3> o(w * h);
@@ -570,7 +466,7 @@ namespace ecv {
         std::mutex pointsSetLock;
         std::multiset<Point3, Point3Compare> pointsSet;
 
-#pragma omp parallel for
+#pragma omp parallel for default(shared)
         for (int i = kernelRadius; i < mat.rows - kernel; i += step) {
             for (int j = kernelRadius; j < w - kernel; j += step) {
                 if (mask.at<char>(i, j) == 1) {
@@ -680,7 +576,7 @@ namespace ecv {
         return {cX, cY, height};
     }
 
-    template<typename TP> typename CalibrateMapper<TP>::Point3 CalibrateMapper<TP>::findPointsMassCenter(const std::vector<Point3> points) {
+    template<typename TP> typename CalibrateMapper<TP>::Point3 CalibrateMapper<TP>::findPointsMassCenter(const std::vector<Point3> &points) {
         auto mass = 0.0f;
         auto sumX = 0.0f;
         auto sumY = 0.0f;
@@ -707,10 +603,10 @@ namespace ecv {
                 quad.topRight = result.topRight;
                 quad.bottomLeft = result.bottomLeft;
                 quad.bottomRight = p;
-                auto [q2, size] = squareQualityNormRms(quad);
+                auto [q2, sz] = squareQualityNormRms(quad);
 
-                if (q2 * size < q) {
-                    q = q2 * size;
+                if (q2 * sz < q) {
+                    q = q2 * sz;
                     result = quad;
                 }
             }
@@ -771,6 +667,7 @@ namespace ecv {
         auto d1 = (TP)(distance2(square.topLeft, square.bottomRight) / sqrt(2));
         auto d2 = (TP)(distance2(square.bottomLeft, square.topRight) / sqrt(2));
         auto avg = (left + right + top + bottom + d1 + d2) / 6;
+        auto min = std::min({left, right, top, bottom, d1, d2});
         auto max = std::max({left, right, top, bottom, d1, d2});
         if (avg == 0) {
             return {(TP)1.0, max};
@@ -781,7 +678,7 @@ namespace ecv {
                 std::pow(avg - d1, 2) + std::pow(avg - d2, 2)
         ) / 6;
 
-        return {sqrt(cost), max};
+        return {sqrt(cost) / min + 1e-16, max};
     }
 
     template<typename TP> typename CalibrateMapper<TP>::Point3 CalibrateMapper<TP>::approximate(Point3 current, Point3 prev) {
@@ -919,100 +816,8 @@ namespace ecv {
         return found;
     }
 
-
-    template<typename TP> TP CalibrateMapper<TP>::autoFitGrid(std::vector<Point3> &grid, const std::vector<Point3> &fitTo, size_t w, size_t h) {
-        if (grid.empty()) {
-            return 0;
-        }
-
-        const auto cW = w / 2;
-        const auto cH = h / 2;
-
-        auto c1 = grid[cH * w + cW];
-        auto left1 = grid[cH * w];
-        auto right1 = grid[cH * w + w - 1];
-        auto top1 = grid[cW];
-        auto bottom1 = grid[(h - 1) * w + cW];
-
-        auto topLeft1 = grid[0];
-        auto topRight1 = grid[w - 1];
-        auto bottomLeft1 = grid[(h - 1) * w];
-        auto bottomRight1 = grid[(h - 1) * w + w - 1];
-
-        auto c2 = fitTo[cH * w + cW];
-        auto left2 = fitTo[cH * w];
-        auto right2 = fitTo[cH * w + w - 1];
-        auto top2 = fitTo[cW];
-        auto bottom2 = fitTo[(h - 1) * w + cW];
-
-        auto topLeft2 = fitTo[0];
-        auto topRight2 = fitTo[w - 1];
-        auto bottomLeft2 = fitTo[(h - 1) * w];
-        auto bottomRight2 = fitTo[(h - 1) * w + w - 1];
-
-        CV_Assert(right2.x > left2.x);
-        CV_Assert(right1.x > left1.x);
-
-        CV_Assert(bottom2.y > top2.y);
-        CV_Assert(bottom1.y > top1.y);
-
-
-        auto scaleX1 = (right2.x - c2.x) / (right1.x - c1.x);
-        auto scaleX2 = (topRight2.x - c2.x) / (topRight1.x - c1.x);
-        auto scaleX3 = (bottomRight2.x - c2.x) / (bottomRight1.x - c1.x);
-        auto scaleX4 = (c2.x - left2.x) / (c1.x - left1.x);
-        auto scaleX5 = (c2.x - topLeft2.x) / (c1.x - topLeft1.x);
-        auto scaleX6 = (c2.x - bottomLeft2.x) / (c1.x - bottomLeft1.x);
-        auto scaleY1 = (bottom2.y - c2.y) / (bottom1.y - c1.y);
-        auto scaleY2 = (bottomLeft2.y - c2.y) / (bottomLeft1.y - c1.y);
-        auto scaleY3 = (bottomRight2.y - c2.y) / (bottomRight1.y - c1.y);
-        auto scaleY4 = (c2.y - top2.y) / (c1.y - top1.y);
-        auto scaleY5 = (c2.y - topLeft2.y) / (c1.y - topLeft1.y);
-        auto scaleY6 = (c2.y - topRight2.y) / (c1.y - topRight1.y);
-
-        auto scaleX = std::min({scaleX1, scaleX2, scaleX3, scaleX4, scaleX5, scaleX6});
-        auto scaleY = std::min({scaleY1, scaleY2, scaleY3, scaleY4, scaleY5, scaleY6});
-
-        for (int y = 0; y < h; ++y) {
-            for (int x = 0; x < w; ++x) {
-                auto p = &grid[y * w + x];
-                p->x = (p->x - c1.x) * scaleX + c2.x;
-                p->y = (p->y - c1.y) * scaleY + c2.y;
-            }
-        }
-
-        return distance2(right1, left1) * distance2(bottom1, top1);
-    }
-
-    template<typename TP> typename CalibrateMapper<TP>::Point3 CalibrateMapper<TP>::lineLineIntersection(const Point3 &a1, const Point3 &a2, const Point3 &b1, const Point3 &b2) {
-        Eigen::Vector2d av1 ((double)a1.x, (double)a1.y);
-        Eigen::Vector2d av2 ((double)a2.x, (double)a2.y);
-        Eigen::Vector2d bv1 ((double)b1.x, (double)b1.y);
-        Eigen::Vector2d bv2 ((double)b2.x, (double)b2.y);
-        auto a = Eigen::Hyperplane<double, 2>::Through(av1, av2);
-        auto b = Eigen::Hyperplane<double, 2>::Through(bv1, bv2);
-
-        auto k1 = (a2.x - a1.x) / (a2.y - a1.y);
-        auto k2 = (b2.x - b1.x) / (b2.y - b1.y);
-
-        if (std::abs(k1 - k2) < 1e-6) {
-            auto x = 1e12 / std::sqrt(k1 * k1 + 1);
-            auto y = x / k1;
-
-            return Point3(x, y, 1);
-        }
-
-        auto v = a.intersection(b);
-
-        return Point3(v.x(), v.y(), 1);
-    }
-
     template<typename TP> TP CalibrateMapper<TP>::distance2(Point3 p1, Point3 p2) {
         return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
-    }
-
-    template<typename TP> TP CalibrateMapper<TP>::distance3(Point3 p1, Point3 p2) {
-        return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2) + std::pow(p1.z - p2.z, 2));
     }
 
     template<typename TP> TP CalibrateMapper<TP>::distanceSqr(Point3 p1, Point3 p2) {

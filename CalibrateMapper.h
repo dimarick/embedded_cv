@@ -1,17 +1,9 @@
-//
-// Created by dima on 19.10.25.
-//
-
 #ifndef EMBEDDED_CV_CALIBRATEMAPPER_H
 #define EMBEDDED_CV_CALIBRATEMAPPER_H
 
 #include <cstdlib>
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
-
-
-#include <ext/pb_ds/assoc_container.hpp>
-#include <ext/pb_ds/tree_policy.hpp>
 
 namespace ecv {
     template<typename TP> class CalibrateMapper {
@@ -44,7 +36,7 @@ namespace ecv {
         void createCheckBoardPatterns(cv::Mat &t1);
         void findPeaks(const cv::Mat &mat, std::vector<Point3> &points, size_t *size, int kernel, int noiseTolerance);
         Point3 findMassCenter(const cv::Mat &mat, int x, int y, int searchRadius);
-        Point3 findPointsMassCenter(const std::vector<Point3> points);
+        Point3 findPointsMassCenter(const std::vector<Point3> &points);
         std::pair<TP, TP> squareQualityNormRms(const BaseSquare &square);
         TP findSquareBy3Points(const std::vector<Point3> &points, size_t size, BaseSquare &result);
         TP findSquareByTop(const std::vector<Point3> &points, size_t size, BaseSquare &result);
@@ -54,10 +46,7 @@ namespace ecv {
         void cropGrid(std::vector<Point3> &grid, size_t *w, size_t *h);
         void fillGridRow(size_t w, int cH, int cW, int j, const std::vector<Point3> &peaks, std::vector<Point3> &grid);
         Point3 findNearestPoint(const Point3 &point, const std::vector<Point3> &points, TP searchRadius);
-        TP autoFitGrid(std::vector<Point3> &grid, const std::vector<Point3> &fitTo, size_t w, size_t h);
-        Point3 lineLineIntersection(const Point3 &a1, const Point3 &a2, const Point3 &b1, const Point3 &b2);
         TP distance2(Point3 p1, Point3 p2);
-        TP distance3(Point3 p1, Point3 p2);
         TP distanceSqr(Point3 p1, Point3 p2);
         TP sign(TP val);
     public:
@@ -71,8 +60,7 @@ namespace ecv {
         TP detectFrameImagePointsGrid(const cv::Mat &frame, std::vector<Point3> &imageGrid, size_t *w, size_t *h, cv::Mat &debugFrame);
         TP detectFrameImagePointsGrid(const cv::Mat &frame, std::vector<Point3> &imageGrid, size_t *w, size_t *h);
         size_t suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, size_t w, size_t h);
-        TP generateFrameObjectPointsGrid(const cv::Size &frameSize, const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
-        TP generateFrameObjectPointsGrid2(const cv::Size &frameSize, const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
+        TP generateFrameObjectPointsGrid(const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
         bool isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h);
         void convertTo2dPoints(const std::vector<Point3> &points3d, std::vector<cv::Point2f> &points2d);
         void convertToPlain3dPoints(const std::vector<Point3> &points1, std::vector<cv::Point3f> &points2);
@@ -86,8 +74,6 @@ namespace ecv {
             auto topVector = square.topRight - square.topLeft;
             return topVector.y / topVector .x;
         }
-
-        void cropGrid2(std::vector<Point3> &vector, size_t *w, size_t *h);
     };
 } // ecv
 

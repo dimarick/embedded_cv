@@ -1,6 +1,5 @@
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
-#include "opencv2/imgcodecs.hpp"
 #ifdef HAVE_OPENCV_HIGHGUI
 #include "opencv2/highgui.hpp"
 #endif
@@ -19,7 +18,6 @@
 #include <SocketFactory.h>
 #include <csignal>
 #include <core/opencl/ocl_defs.hpp>
-#include <fstream>
 
 #include "CalibrateMapper.h"
 #include "Calibrator.h"
@@ -273,9 +271,9 @@ int main(int argc, const char **argv) {
     std::vector<cv::Mat> bestMap1(frames.size()), bestMap2(frames.size());
     std::vector<cv::Mat> invBestMap1(frames.size()), invBestMap2(frames.size());
 
-    matread("map0.bin", bestMap1[0]);
-    matread("map1.bin", bestMap1[1]);
-    matread("mapa.bin", alignedMap);
+//    matread("map0.bin", bestMap1[0]);
+//    matread("map1.bin", bestMap1[1]);
+//    matread("mapa.bin", alignedMap);
 
     std::vector<double> avgDistCoeff(14);
     std::vector<double> prevStdRmseUndistorted(frames.size(), 1e6);
@@ -365,8 +363,9 @@ int main(int argc, const char **argv) {
 
             auto stdGridRmse = 1e6;
             if (calibrateMapper[j].isGridValid(colorFrame.size(), imageGrid[j], gridWidth[j], gridHeight[j])) {
-                stdGridRmse = calibrateMapper[j].generateFrameObjectPointsGrid2(colorFrame.size(), imageGrid[j], objectGrid[j], gridWidth[j],
-                                                                                gridHeight[j]);
+                stdGridRmse = calibrateMapper[j].generateFrameObjectPointsGrid(imageGrid[j], objectGrid[j],
+                                                                               gridWidth[j],
+                                                                               gridHeight[j]);
             }
 
             calibrateMapper[j].drawGrid(colorFrame, imageGrid[j], gridWidth[j], gridHeight[j], cv::Scalar(255, 0, 0));
@@ -404,7 +403,9 @@ int main(int argc, const char **argv) {
 
                 auto plainStdGridRmse = 1e6;
                 if (calibrateMapper2[j].isGridValid(plainCurrent.size(), plainImageGrid, plainGridWidth, plainGridHeight)) {
-                    plainStdGridRmse = calibrateMapper2[j].generateFrameObjectPointsGrid(plainCurrent.size(), plainImageGrid, plainObjectGrid, plainGridWidth,
+                    plainStdGridRmse = calibrateMapper2[j].generateFrameObjectPointsGrid(plainImageGrid,
+                                                                                         plainObjectGrid,
+                                                                                         plainGridWidth,
                                                                                          plainGridHeight);
                 }
 
@@ -582,9 +583,9 @@ int main(int argc, const char **argv) {
                 }
                 invMap(alignedMap, invAlignedMap);
 
-                matwrite("map0.bin", bestMap1[0]);
-                matwrite("map1.bin", bestMap1[1]);
-                matwrite("mapa.bin", alignedMap);
+//                matwrite("map0.bin", bestMap1[0]);
+//                matwrite("map1.bin", bestMap1[1]);
+//                matwrite("mapa.bin", alignedMap);
             }
         }
 

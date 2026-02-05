@@ -1,27 +1,18 @@
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
-#include "opencv2/imgcodecs.hpp"
 #include "opencv2/videoio.hpp"
 #ifdef HAVE_OPENCV_HIGHGUI
 #include "opencv2/highgui.hpp"
 #endif
-#include "ImageProcessor.h"
-#include "CvCommandHandler.h"
 #include <iostream>
 #include <chrono>
 #include <cpptrace/cpptrace.hpp>
-#include <CommandServer.h>
 #include <BroadcastingServer.h>
 #include <unistd.h>
 #include <thread>
 #include <atomic>
 #include <SocketFactory.h>
-#include <csignal>
-#include <core/opencl/ocl_defs.hpp>
-#include <fstream>
 #include <core/ocl.hpp>
-
-#include "DisparityEvaluator.h"
 #include "Calibrator.h"
 #include "CalibrateMapper.h"
 #include "MatStorage.h"
@@ -43,8 +34,8 @@ void noAction(cv::Mat &map)
     for (int y = 0; y < map.rows; ++y) {
         for (int x = 0; x < map.cols; ++x) {
             auto p = map.at<cv::Point2f>(y, x);
-            p.x = x;
-            p.y = y;
+            p.x = (float)x;
+            p.y = (float)y;
             map.at<cv::Point2f>(y, x) = p;
         }
     }
@@ -223,14 +214,11 @@ int main(int argc, const char **argv) {
         }
 
         double ema = 2. / (10. + 1.);
-        double avgRemapTime = 0., avgDrawPeaks = 0., avgDetectGridTime = 0.;
+        double avgRemapTime = 0., avgDetectGridTime = 0.;
         long lastShow = 0;
 
         for (int i = 0; i < plainFrames.size(); ++i) {
-            std::vector<ecv::CalibrateMapper<double>::Point3> peaks(500);
-            ecv::CalibrateMapper<double>::BaseSquare sq;
-            std::vector<ecv::CalibrateMapper<double>::Point3> imageGrid(peaks.size()), objectGrid(peaks.size());
-            size_t peaksSize = 0;
+            std::vector<ecv::CalibrateMapper<double>::Point3> imageGrid(500), objectGrid(500);
             size_t w = 0, h = 0;
             double gridQ = 0;
 
@@ -240,12 +228,10 @@ int main(int argc, const char **argv) {
             auto srcGridQ = calibrateMapper[i].detectFrameImagePointsGrid(plainFrames[i], imageGrid, &w, &h, plainFrames[i]);
 
             if (w > 0 && h > 0) {
-                gridQ = calibrateMapper[i].generateFrameObjectPointsGrid2(plainFrames[i].size(), imageGrid, objectGrid, w, h);
+                gridQ = calibrateMapper[i].generateFrameObjectPointsGrid(imageGrid, objectGrid, w, h);
             }
 
             auto detectGridTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-
-            calibrateMapper[i].drawPeaks(plainFrames[i], peaks, peaksSize, cv::Scalar(255, 255, 0));
 
             avgRemapTime = ema * (double)(remapTime - start) + (1 - ema) * avgRemapTime;
             avgDetectGridTime = ema * (double)(detectGridTime - remapTime) + (1 - ema) * avgDetectGridTime;
