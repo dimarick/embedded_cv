@@ -89,6 +89,7 @@ target_link_libraries(calibrator PUBLIC OpenCL::OpenCL mini_server cpptrace::cpp
 
 add_executable(calib
         calib.cpp
+        CalibrateFrameCollector.cpp
         CalibrateMapper.cpp
         Calibrator.cpp
         Calibrator.h
@@ -118,6 +119,8 @@ add_executable(benchmark
         benchmark/KitDisparityBenchmark.cpp
         DisparityEvaluator.cpp
         DisparityEvaluator.h
+        CalibrateFrameCollector.cpp
+        CalibrateFrameCollector.h
 )
 
 target_link_libraries(benchmark PUBLIC OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS})

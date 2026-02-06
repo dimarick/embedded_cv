@@ -10,7 +10,26 @@
 namespace ecv {
 
     class Calibrator {
+    private:
+        void convertTo2dPoints(const std::vector<cv::Point3d> &points3d, std::vector<cv::Point2f> &points2d);
+        void convertToPlain3dPoints(const std::vector<cv::Point3d> &points1, std::vector<cv::Point3f> &points2);
+        void convertTo2dPoints(const std::vector<cv::Point3f> &points3d, std::vector<cv::Point2f> &points2d);
+        void convertToPlain3dPoints(const std::vector<cv::Point3f> &points1, std::vector<cv::Point3f> &points2);
     public:
+        bool calibrate(
+                cv::Size frameSize,
+                const std::vector<std::vector<cv::Point3d>> &objectPoints,
+                const std::vector<std::vector<cv::Point3d>> &imagePoints,
+                cv::Mat &map1,
+                cv::Mat &map2
+        );
+        bool calibrate(
+                cv::Size frameSize,
+                const std::vector<std::vector<cv::Point3f>> &objectPoints,
+                const std::vector<std::vector<cv::Point3f>> &imagePoints,
+                cv::Mat &map1,
+                cv::Mat &map2
+        );
         bool calibrate(
                 cv::Size frameSize,
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,

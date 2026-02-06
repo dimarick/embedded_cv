@@ -350,18 +350,6 @@ namespace ecv {
         return true;
     }
 
-    template<typename TP> void CalibrateMapper<TP>::convertTo2dPoints(const std::vector<Point3> &points3d, std::vector<cv::Point2f> &points2d) {
-        for (int j = 0; j < points2d.size(); ++j) {
-            points2d[j] = Point(points3d[j].x, points3d[j].y);
-        }
-    }
-
-    template<typename TP> void CalibrateMapper<TP>::convertToPlain3dPoints(const std::vector<Point3> &points1, std::vector<cv::Point3f> &points2) {
-        for (int j = 0; j < points2.size(); ++j) {
-            points2[j] = Point3(points1[j].x, points1[j].y, 0);
-        }
-    }
-
     template<typename TP> void CalibrateMapper<TP>::drawPeaks(cv::Mat &target, const std::vector<Point3> &peaks, size_t size, cv::Scalar color) {
         for (int i = 0; i < size; ++i) {
             auto p = peaks[i];
