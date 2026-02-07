@@ -1,6 +1,5 @@
 #include <3d.hpp>
 #include "CalibrateFrameCollector.h"
-#include <json_object.h>
 
 using namespace ecv;
 
@@ -61,6 +60,12 @@ double getIntersectionAreaSize(const std::vector<cv::Point2d> &quad, const cv::R
     return (double)hits / total;
 };
 
+/**
+ * Определяет список классов, которым принадлежит кадр: центр, левый верхний угол, сильный крен и т.п. CalibrateFrameCollector::FrameClass::*
+ *
+ * @param frame
+ * @return
+ */
 std::vector<CalibrateFrameCollector::FrameClass> CalibrateFrameCollector::getClasses(const CalibrateFrameCollector::Frame &frame) const {
     int w = frameSize.width;
     int h = frameSize.height;
@@ -103,8 +108,8 @@ std::vector<CalibrateFrameCollector::FrameClass> CalibrateFrameCollector::getCla
     double yaw = 0, roll = 0, pitch = 0;
 
     cv::Mat cameraMatrix = (cv::Mat_<double>(3,3) <<
-            100000, 0, w2,
-            0, 100000, h2,
+            100000, 0, w2, // fx fy заведомо запредельные,
+            0, 100000, h2, // так стабильнее оценивается угол по искажениям независимо от реального фокусного и расстояния до сетки
             0, 0, 1);
 
     cv::Mat distCoeffs = cv::Mat::zeros(5, 1, CV_64F);  // Без дисторсии
@@ -190,21 +195,52 @@ std::vector<CalibrateFrameCollector::FrameClass> CalibrateFrameCollector::getCla
     return result;
 }
 
+/**
+ * Регистрирует кадр в двух хранилищах: с классификацией по классам (map) и без (frames с контролем уникальности).
+ * Каждый кадр может присутствовать не более FRAMES_PER_CLASS раз в каждом класса.
+ * Если кадров больше - выбираются наиболее удачные FRAMES_PER_CLASS кадров.
+ * Заполнение FrameClass::COUNT * FRAMES_PER_CLASS кадров означает полное завершение калибровки
+ *
+ * @param imageGrid
+ * @param objectGrid
+ * @param w
+ * @param h
+ * @param cost
+ */
 void CalibrateFrameCollector::addFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost) {
-    Frame frame = {imageGrid, objectGrid, w, h, cost};
-    const auto &frameClasses = getClasses(frame);
-    const auto &storedFrame = frames.emplace_back(frame);
+    auto frameRef = std::shared_ptr<Frame>(new Frame({imageGrid, objectGrid, w, h, cost}));
+    auto result = frames.insert({frameRef, 0});
+    auto frame = result.first->first.get();
+
+    const auto &frameClasses = getClasses(*frame);
 
     for (auto cls : frameClasses) {
         const auto &item = map.find(cls);
         if (item == map.end()) {
-            map.insert({cls, std::multiset<Frame, FrameCompare>({storedFrame})});
+            map.insert({cls, std::multiset<std::shared_ptr<Frame>, FrameCompare>({frameRef})});
+            result.first->second++;
         } else {
             auto &set = item->second;
+            set.insert({frameRef});
+            result.first->second++;
+        }
+    }
 
-            set.insert(frame);
+    for (auto cls : frameClasses) {
+        const auto &item = map.find(cls);
+        if (item != map.end()) {
+            auto &set = item->second;
             while (set.size() > FRAMES_PER_CLASS) {
-                set.erase(set.begin());
+                const auto &it = set.begin();
+                const auto &refToDelete = *it;
+                set.erase(it);
+                const auto &frameIt = frames.find(refToDelete);
+                if (frameIt != frames.end()) {
+                    frameIt->second--;
+                    if (frameIt->second <= 0) {
+                        frames.erase(frameIt);
+                    }
+                }
             }
         }
     }
@@ -257,7 +293,7 @@ std::vector<std::vector<cv::Point3d>> CalibrateFrameCollector::getCollectedImage
 
     for (const auto &kv : map) {
         for (const auto &frame : kv.second) {
-            result.push_back(frame.imageGrid);
+            result.push_back(frame->imageGrid);
         }
     }
 
@@ -269,12 +305,9 @@ std::vector<std::vector<cv::Point3d>> CalibrateFrameCollector::getCollectedObjec
 
     for (const auto &kv : map) {
         for (const auto &frame : kv.second) {
-            result.push_back(frame.objectGrid);
+            result.push_back(frame->objectGrid);
         }
     }
 
     return result;
-}
-std::vector<CalibrateFrameCollector::Frame> CalibrateFrameCollector::getFrames() const {
-    return frames;
 }

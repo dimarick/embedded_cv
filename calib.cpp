@@ -197,7 +197,7 @@ int main(int argc, const char **argv) {
     std::unordered_map<int, std::vector<ecv::CalibrateMapper<double>::Point3>> framesMap;
     std::vector<ecv::CalibrateFrameCollector> frameCollectors(frames.size(), ecv::CalibrateFrameCollector(frames[0].size()));
 
-    std::vector<cv::FileStorage> frameDataStorage;
+    std::vector<cv::FileStorage> frameDataStorage(frames.size());
 
     for (int i = 0; i < frames.size(); ++i) {
         frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::READ);
@@ -221,6 +221,8 @@ int main(int argc, const char **argv) {
 
         frameDataStorage[i].release();
     }
+
+    long lastShow = 0;
 
     while (true) {
         bool hasNewFrames = false;
@@ -247,7 +249,6 @@ int main(int argc, const char **argv) {
 
         double ema = 2. / (10. + 1.);
         double avgRemapTime = 0., avgDetectGridTime = 0., avgVerifyCalibrateTime = 0., avgCalibrateTime = 0.;
-        long lastShow = 0;
 
         for (int i = 0; i < plainFrames.size(); ++i) {
             if (i == 1) {
@@ -285,30 +286,6 @@ int main(int argc, const char **argv) {
                 objectGrid.resize(w * h);
 
                 frameCollectors[i].addFrame(imageGrid, objectGrid, w, h, gridQ);
-
-                frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::WRITE);
-
-                if (frameDataStorage[i].isOpened()) {
-                    frameDataStorage[i] << "frames" << "{";
-                    for (const auto &frame: frameCollectors[i].getFrames()) {
-                        frameDataStorage[i] << "w" << (int)frame.w << "h" << (int)frame.h << "cost" << frame.cost;
-                        std::vector<cv::Point3d> imagePoints, objectPoints;
-                        frameDataStorage[i] << "imagePoints" << "[";
-                        for (const auto &point: frame.imageGrid) {
-                            frameDataStorage[i] << "x" << point.x << "y" << point.y << "z" << point.z;
-                        }
-                        frameDataStorage[i] << "]";
-                        frameDataStorage[i] << "objectPoints" << "[";
-                        for (const auto &point: frame.objectGrid) {
-                            frameDataStorage[i] << "x" << point.x << "y" << point.y << "z" << point.z;
-                        }
-                        frameDataStorage[i] << "]";
-                        frameCollectors[i].addFrame(imagePoints, objectPoints, (int)frame["w"], (int)frame["h"], (double)frame["cost"]);
-                    }
-
-                    frameDataStorage[i].release();
-                }
-
 
                 double progress = frameCollectors[i].getProgress();
                 if (progress >= 0.67) {
@@ -376,11 +353,39 @@ int main(int argc, const char **argv) {
 
         auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 
-        if ((now - lastShow) > (long)1e9) {
+        if ((now - lastShow) > (long)5e9) {
             lastShow = now;
 
             std::cout << std::format("avgRemapTime = {} ms, avgDetectGridTime = {} ms, avgCalibrateTime = {} ms, avgVerifyCalibrateTime = {} ms",
                                      (double)avgRemapTime / 1e6, (double)avgDetectGridTime / 1e6, (double)avgCalibrateTime / 1e6, (double)avgVerifyCalibrateTime / 1e6) << std::endl;
+
+            for (int i = 0; i < frames.size(); ++i) {
+                frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::WRITE);
+
+                if (frameDataStorage[i].isOpened()) {
+                    frameDataStorage[i] << "frames" << "[";
+                    for (const auto &item: frameCollectors[i].getFrames()) {
+                        const auto frame  = item.first;
+                        frameDataStorage[i] << "{" << "w" << (int) frame->w << "h" << (int) frame->h << "cost"
+                                            << frame->cost;
+                        std::vector<cv::Point3d> imagePoints, objectPoints;
+                        frameDataStorage[i] << "imagePoints" << "[";
+                        for (const auto &point: frame->imageGrid) {
+                            frameDataStorage[i] << "{" << "x" << point.x << "y" << point.y << "z" << point.z << "}";
+                        }
+                        frameDataStorage[i] << "]";
+                        frameDataStorage[i] << "objectPoints" << "[";
+                        for (const auto &point: frame->objectGrid) {
+                            frameDataStorage[i] << "{" << "x" << point.x << "y" << point.y << "z" << point.z << "}";
+                        }
+                        frameDataStorage[i] << "]" << "}";
+                    }
+
+                    frameDataStorage[i] << "]";
+
+                    frameDataStorage[i].release();
+                }
+            }
         }
 #ifdef HAVE_OPENCV_HIGHGUI
         if (cv::waitKey(1) != -1) {

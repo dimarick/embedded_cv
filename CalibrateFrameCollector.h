@@ -48,9 +48,9 @@ namespace ecv {
 
 
         struct FrameCompare {
-            bool operator()(const Frame &a, const Frame &b) const {
-                if (a.cost == b.cost) return true;
-                return a.cost > b.cost;
+            bool operator()(const std::shared_ptr<Frame> &a, const std::shared_ptr<Frame> &b) const {
+                if (a->cost == b->cost) return true;
+                return a->cost > b->cost;
             }
         };
 
@@ -63,8 +63,9 @@ namespace ecv {
 
         const cv::Size &frameSize;
 
-        std::unordered_map<FrameClass, std::multiset<Frame, FrameCompare>> map;
-        std::vector<Frame> frames;
+        std::unordered_map<FrameClass, std::multiset<std::shared_ptr<Frame>, FrameCompare>> map;
+        std::unordered_map<std::shared_ptr<Frame>, int> frames;
+        int frameId = 1;
 
         std::vector<FrameClass> getClasses(const Frame &frame) const;
     public:
@@ -78,7 +79,9 @@ namespace ecv {
 
         std::vector<std::vector<cv::Point3d>> getCollectedObjectGrids() const;
 
-        std::vector<CalibrateFrameCollector::Frame> getFrames() const;
+        auto getFrames() const {
+            return frames;
+        }
     };
 };
 
