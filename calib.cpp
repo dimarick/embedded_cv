@@ -197,6 +197,31 @@ int main(int argc, const char **argv) {
     std::unordered_map<int, std::vector<ecv::CalibrateMapper<double>::Point3>> framesMap;
     std::vector<ecv::CalibrateFrameCollector> frameCollectors(frames.size(), ecv::CalibrateFrameCollector(frames[0].size()));
 
+    std::vector<cv::FileStorage> frameDataStorage;
+
+    for (int i = 0; i < frames.size(); ++i) {
+        frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::READ);
+
+        if (!frameDataStorage[i].isOpened()) {
+            continue;
+        }
+
+        cv::FileNode framesNode = frameDataStorage[i]["frames"];
+
+        for (const auto &frame: framesNode) {
+            std::vector<cv::Point3d> imagePoints, objectPoints;
+            for (const auto &point: frame["imagePoints"]) {
+                imagePoints.push_back({point["x"], point["y"], point["z"]});
+            }
+            for (const auto &point: frame["objectPoints"]) {
+                objectPoints.push_back({point["x"], point["y"], point["z"]});
+            }
+            frameCollectors[i].addFrame(imagePoints, objectPoints, (int)frame["w"], (int)frame["h"], (double)frame["cost"]);
+        }
+
+        frameDataStorage[i].release();
+    }
+
     while (true) {
         bool hasNewFrames = false;
         for (int i = 0; i < frames.size(); ++i) {
@@ -261,12 +286,36 @@ int main(int argc, const char **argv) {
 
                 frameCollectors[i].addFrame(imageGrid, objectGrid, w, h, gridQ);
 
+                frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::WRITE);
+
+                if (frameDataStorage[i].isOpened()) {
+                    frameDataStorage[i] << "frames" << "{";
+                    for (const auto &frame: frameCollectors[i].getFrames()) {
+                        frameDataStorage[i] << "w" << (int)frame.w << "h" << (int)frame.h << "cost" << frame.cost;
+                        std::vector<cv::Point3d> imagePoints, objectPoints;
+                        frameDataStorage[i] << "imagePoints" << "[";
+                        for (const auto &point: frame.imageGrid) {
+                            frameDataStorage[i] << "x" << point.x << "y" << point.y << "z" << point.z;
+                        }
+                        frameDataStorage[i] << "]";
+                        frameDataStorage[i] << "objectPoints" << "[";
+                        for (const auto &point: frame.objectGrid) {
+                            frameDataStorage[i] << "x" << point.x << "y" << point.y << "z" << point.z;
+                        }
+                        frameDataStorage[i] << "]";
+                        frameCollectors[i].addFrame(imagePoints, objectPoints, (int)frame["w"], (int)frame["h"], (double)frame["cost"]);
+                    }
+
+                    frameDataStorage[i].release();
+                }
+
+
                 double progress = frameCollectors[i].getProgress();
-                if (progress >= 0.99) {
+                if (progress >= 0.67) {
                     const auto &iGrids = frameCollectors[i].getCollectedImageGrids();
                     const auto &oGrids = frameCollectors[i].getCollectedObjectGrids();
                     cv::Mat mat;
-                    auto calibrated = calibrator[i].calibrate(plainFrames[i].size(), {objectGrid}, {imageGrid}, map, mat);
+                    auto calibrated = calibrator[i].calibrate(plainFrames[i].size(), oGrids, iGrids, map, mat);
 
                     if (calibrated) {
                         cv::remap(frames[i], testFrame, map, cv::noArray(), cv::InterpolationFlags::INTER_NEAREST,

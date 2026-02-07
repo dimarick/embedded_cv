@@ -54,23 +54,19 @@ namespace ecv {
             }
         };
 
-        static constexpr double tang(double d) noexcept {
-            return tan(d / 180 * std::numbers::pi);
-        }
-
-        const double RECT_MATCH_THRESHOLD = 0.67;
+        const double RECT_MATCH_THRESHOLD = 0.7;
         const double NEAR_THRESHOLD = 0.5;
         const double FAR_THRESHOLD = 0.25;
-        const double SMALL_ANGLE_TAN = tang(10);
-        const double LARGE_ANGLE_TAN = tang(20);
+        const double SMALL_ANGLE = 10;
+        const double LARGE_ANGLE = 25;
         const size_t FRAMES_PER_CLASS = 5;
 
         const cv::Size &frameSize;
 
         std::unordered_map<FrameClass, std::multiset<Frame, FrameCompare>> map;
+        std::vector<Frame> frames;
 
         std::vector<FrameClass> getClasses(const Frame &frame) const;
-
     public:
         explicit CalibrateFrameCollector(const cv::Size &frameSize) : frameSize(frameSize) {};
 
@@ -82,6 +78,7 @@ namespace ecv {
 
         std::vector<std::vector<cv::Point3d>> getCollectedObjectGrids() const;
 
+        std::vector<CalibrateFrameCollector::Frame> getFrames() const;
     };
 };
 

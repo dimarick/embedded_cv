@@ -40,13 +40,12 @@ namespace ecv {
         BaseSquare square;
         detectPeaks(frame, peaks, &size);
         peaks.resize(size);
+        drawPeaks(debugFrame, peaks, size, cv::Scalar(0, 255, 0));
         auto squareRmse = detectBaseSquare(frame.size(), peaks , square);
 
-        if (squareRmse > 0.1) {
+        if (squareRmse > 0.2) {
             *w = 0;
             *h = 0;
-
-            setPattern(prevPatternSize, prevSkew);
 
             return 1. / 0.;
         }
@@ -69,7 +68,6 @@ namespace ecv {
         auto result = detectFrameImagePointsGrid(frame.size(), peaks, square, imageGrid, w, h);
 
         if (!debugFrame.empty()) {
-            drawPeaks(debugFrame, peaks, size, cv::Scalar(0, 255, 0));
             drawBaseSquare(debugFrame, square, squareRmse < 0.1f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255));
             drawGrid(debugFrame, imageGrid, *w, *h, cv::Scalar(255, 0, 0));
         }
@@ -205,7 +203,7 @@ namespace ecv {
         };
         auto pSize = (size_t)(std::min(list) * 0.8f);
         pSize -= pSize % 2;
-        pSize = std::min((size_t)256, std::max((size_t)24, pSize));
+        pSize = std::clamp(pSize, (size_t)24, (size_t)256);
 
         return pSize;
     }
@@ -632,7 +630,7 @@ namespace ecv {
             auto p = points[i];
             auto dp = p - result.topLeft;
             double d = distance2(p, result.topLeft);
-            if (d > (patternSize * 0.4) && dp.x > 0 && std::abs(dp.x / dp.y) > 1.5f) {
+            if (d > (patternSize * 0.4) && d < (patternSize * 4) && dp.x > 0 && std::abs(dp.x / dp.y) > 1.5f) {
                 BaseSquare quad;
                 quad.topLeft = result.topLeft;
                 quad.topRight = p;
