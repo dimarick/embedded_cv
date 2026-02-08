@@ -211,10 +211,10 @@ int main(int argc, const char **argv) {
         for (const auto &frame: framesNode) {
             std::vector<cv::Point3d> imagePoints, objectPoints;
             for (const auto &point: frame["imagePoints"]) {
-                imagePoints.push_back({point["x"], point["y"], point["z"]});
+                imagePoints.push_back({point["x"], point["y"], 0});
             }
             for (const auto &point: frame["objectPoints"]) {
-                objectPoints.push_back({point["x"], point["y"], point["z"]});
+                objectPoints.push_back({point["x"], point["y"], 0});
             }
             frameCollectors[i].addFrame(imagePoints, objectPoints, (int)frame["w"], (int)frame["h"], (double)frame["cost"]);
         }
@@ -281,7 +281,7 @@ int main(int argc, const char **argv) {
             cv::Mat map;
             cv::Mat testFrame;
 
-            if (srcGridQ < 10 && w >= 6 && h >= 4 && i == 0) {
+            if (srcGridQ < 10 && w >= 6 && h >= 4) {
                 imageGrid.resize(w * h);
                 objectGrid.resize(w * h);
 
@@ -371,12 +371,12 @@ int main(int argc, const char **argv) {
                         std::vector<cv::Point3d> imagePoints, objectPoints;
                         frameDataStorage[i] << "imagePoints" << "[";
                         for (const auto &point: frame->imageGrid) {
-                            frameDataStorage[i] << "{" << "x" << point.x << "y" << point.y << "z" << point.z << "}";
+                            frameDataStorage[i] << "{" << "x" << point.x << "y" << point.y << "}";
                         }
                         frameDataStorage[i] << "]";
                         frameDataStorage[i] << "objectPoints" << "[";
                         for (const auto &point: frame->objectGrid) {
-                            frameDataStorage[i] << "{" << "x" << point.x << "y" << point.y << "z" << point.z << "}";
+                            frameDataStorage[i] << "{" << "x" << point.x << "y" << point.y << "}";
                         }
                         frameDataStorage[i] << "]" << "}";
                     }

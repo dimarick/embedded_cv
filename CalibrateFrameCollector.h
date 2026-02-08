@@ -59,7 +59,7 @@ namespace ecv {
         const double FAR_THRESHOLD = 0.25;
         const double SMALL_ANGLE = 10;
         const double LARGE_ANGLE = 25;
-        const size_t FRAMES_PER_CLASS = 5;
+        const size_t FRAMES_PER_CLASS = 3;
 
         const cv::Size &frameSize;
 
