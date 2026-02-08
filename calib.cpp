@@ -132,7 +132,7 @@ int main(int argc, const char **argv) {
     }
 
     std::vector<cv::VideoCapture> captures({captureLeft, captureRight});
-    std::vector<cv::Mat> frames(captures.size());
+    std::vector<cv::UMat> frames(captures.size());
     std::vector<cv::Mat> plainFrames(frames.size());
     std::vector<std::mutex> framesMutex(frames.size());
     std::vector<cv::Mat> readingFrames(frames.size());
@@ -241,7 +241,11 @@ int main(int argc, const char **argv) {
 
         std::mutex avgTimeMutex;
 
-#pragma omp parallel for default(none) shared(ema, plainFrames, frames, maps, bestQ, calibrateMapper, frameCollectors, calibrator, avgTimeMutex, avgRemapTime, avgDetectGridTime, avgCalibrateTime, avgVerifyCalibrateTime, std::cout)
+        if (!cv::ocl::useOpenCL()) {
+            throw std::runtime_error("OCL not available");
+        }
+
+//#pragma omp parallel for default(none) shared(ema, plainFrames, frames, maps, bestQ, calibrateMapper, frameCollectors, calibrator, avgTimeMutex, avgRemapTime, avgDetectGridTime, avgCalibrateTime, avgVerifyCalibrateTime, std::cout)
         for (int i = 0; i < plainFrames.size(); ++i) {
             if (i == 1) {
                 cv::rotate(frames[i], frames[i], cv::RotateFlags::ROTATE_180);

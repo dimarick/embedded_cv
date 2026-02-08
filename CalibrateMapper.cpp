@@ -27,7 +27,8 @@ namespace ecv {
                            pattern.size());
 
             const cv::Rect2i &crop = cv::Rect((int) sz, (int) sz, (int) sz, (int) sz);
-            this->checkBoardCornerPattern = pattern(crop).clone().getUMat(cv::ACCESS_READ);
+            const cv::Mat &mat = pattern(crop).clone();
+            mat.convertTo(this->checkBoardCornerPattern, CV_32F);
 
             this->patternSize = sz;
             this->skew = _skew;
@@ -35,7 +36,7 @@ namespace ecv {
     }
 
     template<typename TP>
-    TP CalibrateMapper<TP>::detectFrameImagePointsGrid(const cv::Mat &frame, std::vector<Point3> &imageGrid,
+    TP CalibrateMapper<TP>::detectFrameImagePointsGrid(const cv::UMat &frame, std::vector<Point3> &imageGrid,
                                                        size_t *w, size_t *h, cv::Mat &debugFrame) {
         std::vector<Point3> peaks(imageGrid.size());
         size_t size = peaks.size();
@@ -82,27 +83,28 @@ namespace ecv {
     }
 
     template<typename TP>
-    TP CalibrateMapper<TP>::detectFrameImagePointsGrid(const cv::Mat &frame, std::vector<Point3> &imageGrid,
+    TP CalibrateMapper<TP>::detectFrameImagePointsGrid(const cv::UMat &frame, std::vector<Point3> &imageGrid,
                                                        size_t *w, size_t *h) {
         cv::Mat nullFrame;
 
         return detectFrameImagePointsGrid(frame, imageGrid, w, h, nullFrame);
     }
 
-    template<typename TP> void CalibrateMapper<TP>::detectPeaks(const cv::Mat &frame, std::vector<Point3> &peaks, size_t *size) {
-        cv::UMat gray;
-        cv::cvtColor(frame.getUMat(cv::AccessFlag::ACCESS_READ), gray, cv::ColorConversionCodes::COLOR_BGR2GRAY);
+    template<typename TP> void CalibrateMapper<TP>::detectPeaks(const cv::UMat &frame, std::vector<Point3> &peaks, size_t *size) {
+        cv::UMat gray, grayf;
+        cv::cvtColor(frame, gray, cv::ColorConversionCodes::COLOR_BGR2GRAY);
         auto clahe = cv::createCLAHE(1, cv::Size(3,3));
         clahe->apply(gray, gray);
+        gray.convertTo(grayf, CV_32F);
         auto matches = cv::UMat(gray.size(), CV_32F);
 
-        cv::matchTemplate(gray, this->checkBoardCornerPattern, matches, cv::TemplateMatchModes::TM_CCOEFF_NORMED, cv::noArray());
+        cv::matchTemplate(grayf, this->checkBoardCornerPattern, matches, cv::TemplateMatchModes::TM_CCOEFF, cv::noArray());
         cv::multiply(matches, matches, matches);
 
-        auto halfPattern = (int)patternSize / 2;
-        cv::copyMakeBorder(matches, matches, halfPattern, halfPattern, halfPattern, halfPattern, cv::BorderTypes::BORDER_REPLICATE);
+        cv::Mat mat;
+        matches.copyTo(mat);
 
-        findPeaks(matches.getMat(cv::AccessFlag::ACCESS_READ), peaks, size, halfPattern, 2);
+        findPeaks(mat, peaks, size, patternSize, 2);
     }
 
     /**
@@ -361,46 +363,11 @@ namespace ecv {
 
         for (int x = 0; x < w; ++x) {
             for (int y = 0; y < h; ++y) {
-                o[y * w + x] = Point3(x, y, 1);
+                objectGrid[y * w + x] = Point3(x, y, 1);
             }
         }
 
-        const std::vector<cv::Point2f> src = {
-            {(float)o[0 * w + 0].x, (float)o[0 * w + 0].y},
-            {(float)o[0 * w + w - 1].x, (float)o[0 * w + w - 1].y},
-            {(float)o[(h - 1) * w + 0].x, (float)o[(h - 1) * w + 0].y},
-            {(float)o[(h - 1) * w + w - 1].x, (float)o[(h - 1) * w + w - 1].y},
-        };
-        const std::vector<cv::Point2f> dest = {
-                {(float)imageGrid[0 * w + 0].x, (float)imageGrid[0 * w + 0].y},
-                {(float)imageGrid[0 * w + w - 1].x, (float)imageGrid[0 * w + w - 1].y},
-                {(float)imageGrid[(h - 1) * w + 0].x, (float)imageGrid[(h - 1) * w + 0].y},
-                {(float)imageGrid[(h - 1) * w + w - 1].x, (float)imageGrid[(h - 1) * w + w - 1].y},
-        };
-        auto transform = cv::getPerspectiveTransform(src, dest);
-
-        CV_Assert(transform.type() == CV_64FC1);
-
-        cv::gemm(
-                transform,
-                cv::Mat(w * h, 3, CV_64FC1, o.data()),
-                1,
-                cv::Mat(),
-                0,
-                cv::Mat(3, w * h, CV_64FC1, o2.data()),
-                cv::GemmFlags::GEMM_2_T
-        );
-
-        cv::transpose(cv::Mat(3, w * h, CV_64FC1, o2.data()), cv::Mat(w * h, 3, CV_64FC1, o3.data()));
-
-        TP err = 0;
-        for (int i = 0; i < w * h; ++i) {
-            auto p = o[i];
-            objectGrid[i] = p / p.z;
-            err += distance2(o3[i], imageGrid[i]);
-        }
-
-        return err / (w * h);
+        return 0.0;
     }
 
     template<typename TP> bool CalibrateMapper<TP>::isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h) {
@@ -428,7 +395,7 @@ namespace ecv {
             char info[256];
             snprintf(info, sizeof info - sizeof("\0"), "%d", i);
 
-            cv::drawMarker(target, Point((int)p.x, (int)p.y), color, cv::MarkerTypes::MARKER_TILTED_CROSS, std::max(1., 20. * p.z), 2);
+            cv::drawMarker(target, Point((int)p.x, (int)p.y), color, cv::MarkerTypes::MARKER_TILTED_CROSS, std::clamp(50. * p.z, 1., 100.), 1);
         }
     }
     template<typename TP> void CalibrateMapper<TP>::drawBaseSquare(cv::Mat &target, const BaseSquare &square, cv::Scalar color) {
@@ -509,7 +476,7 @@ namespace ecv {
 
         const cv::Mat mask = cv::Mat::zeros(mat.size(), CV_8SC1);
 
-        const int kernelRadius = (kernel - 1) / 2;
+        const int kernelRadius = (kernel - 1) / 3;
         const int w = mat.cols;
         const auto step = 1;
 
@@ -566,22 +533,41 @@ namespace ecv {
                     auto point = findMassCenter(mat, j, i, kernelRadius);
                     j+=kernel;
 
-                    if (point.z > 1e-2) {
-                        pointsSetLock.lock();
-                        pointsSet.insert(point);
-                        while (pointsSet.size() >= points.size()) {
-                            pointsSet.erase(std::prev(pointsSet.end()));
-                        }
-                        pointsSetLock.unlock();
+                    pointsSetLock.lock();
+                    pointsSet.insert(point);
+                    while (pointsSet.size() >= points.size()) {
+                        pointsSet.erase(std::prev(pointsSet.end()));
                     }
-
+                    pointsSetLock.unlock();
                 }
             }
         }
 
-        std::copy(pointsSet.begin(), pointsSet.end(), points.begin());
+        TP zMin = 1.0 / 0.0;
+        TP zMax = 0.0;
+        for (const auto &p : pointsSet) {
+            zMin = std::min(p.z, zMin);
+            zMax = std::max(p.z, zMax);
+        }
 
-        *size = pointsSet.size();
+        TP range = zMax - zMin;
+
+        int i = 0;
+        for (const auto &p : pointsSet) {
+            points[i].x = p.x + (TP)kernel / 2;
+            points[i].y = p.y + (TP)kernel / 2;
+            const auto &z = (p.z - zMin) / range;
+            points[i].z = z;
+            if (z > 0.1) {
+                i++;
+            }
+
+            if (i > points.size()) {
+                break;
+            }
+        }
+
+        *size = i;
     }
 
     template<typename TP> typename CalibrateMapper<TP>::Point3 CalibrateMapper<TP>::findMassCenter(const cv::Mat &mat, int x, int y, int searchRadius) {
@@ -758,7 +744,7 @@ namespace ecv {
         size_t cH = *h / 2;
 
         auto wScore = 0.0f, hScore = 0.0f;
-        auto threshold = 0.5f;
+        auto threshold = 0.1f;
 
         for (int x = 2; x < *w - 2; ++x) {
             wScore += std::max((TP)0., grid[cH * *w + x].z);

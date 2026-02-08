@@ -54,11 +54,11 @@ namespace ecv {
         explicit CalibrateMapper();
         // Задает размер шаблона
         void setPattern(size_t patternSize, float _skew);
-        void detectPeaks(const cv::Mat &frame, std::vector<Point3> &peaks, size_t *size);
+        void detectPeaks(const cv::UMat &frame, std::vector<Point3> &peaks, size_t *size);
         TP detectBaseSquare(const cv::Size &frameSize, const std::vector<Point3> &peaks, BaseSquare &square);
         TP detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks, const BaseSquare &square, std::vector<Point3> &imageGrid, size_t *w, size_t *h);
-        TP detectFrameImagePointsGrid(const cv::Mat &frame, std::vector<Point3> &imageGrid, size_t *w, size_t *h, cv::Mat &debugFrame);
-        TP detectFrameImagePointsGrid(const cv::Mat &frame, std::vector<Point3> &imageGrid, size_t *w, size_t *h);
+        TP detectFrameImagePointsGrid(const cv::UMat &frame, std::vector<Point3> &imageGrid, size_t *w, size_t *h, cv::Mat &debugFrame);
+        TP detectFrameImagePointsGrid(const cv::UMat &frame, std::vector<Point3> &imageGrid, size_t *w, size_t *h);
         size_t suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, size_t w, size_t h);
         TP generateFrameObjectPointsGrid(const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
         TP generateFrameObjectPointsGrid2(const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);

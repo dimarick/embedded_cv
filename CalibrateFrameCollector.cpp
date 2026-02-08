@@ -75,19 +75,17 @@ std::vector<CalibrateFrameCollector::FrameClass> CalibrateFrameCollector::getCla
     int h4 = h / 4;
     int w8 = w / 8;
     int h8 = h / 8;
-    int w16 = w / 16;
-    int h16 = h / 16;
-    int w2_16 = w2 - w16;
-    int h2_16 = h2 - h16;
-    int w_8 = w - w8;
-    int h_8 = h - h8;
-    auto rTopLeft =     cv::Rect(w16, w16, w2_16, w2_16);
-    auto rTopRight =    cv::Rect(w2,  w16, w2_16, h2_16);
-    auto rBottomLeft =  cv::Rect(w16, h2,  w2_16, h2_16);
-    auto rBottomRight = cv::Rect(w2,  h2,  w2_16, h2_16);
+    int w2_8 = w2 - w8;
+    int h2_8 = h2 - h8;
+    int w_4 = w - w4;
+    int h_4 = h - h4;
+    auto rTopLeft =     cv::Rect(w8, w8, w2_8, w2_8);
+    auto rTopRight =    cv::Rect(w2,  w8, w2_8, h2_8);
+    auto rBottomLeft =  cv::Rect(w8, h2,  w2_8, h2_8);
+    auto rBottomRight = cv::Rect(w2,  h2,  w2_8, h2_8);
 
     auto rCenter = cv::Rect(w4, h4, w2, h2);
-    auto rAll =    cv::Rect(w16, h16, w_8, h_8);
+    auto rAll =    cv::Rect(w8, h8, w_4, h_4);
 
     const auto &g = frame.imageGrid;
     const auto gw = frame.w;
