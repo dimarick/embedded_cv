@@ -5,7 +5,7 @@
 #include "Calibrator.h"
 
 namespace ecv {
-    bool Calibrator::calibrate(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
+    double Calibrator::calibrate(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
                                const std::vector<std::vector<cv::Point2f>> &imagePoints,
                                cv::Mat &map1, cv::Mat &map2) {
         size_t objectSize = 0;
@@ -73,7 +73,7 @@ namespace ecv {
         } catch (const std::exception &e) {
             std::cerr << "cv::calibrateCamera failed" << std::endl;
 
-            return false;
+            return 1. / 0.;
         }
 
         std::cout << std::format("result = {}, camera.fx = {}, camera.fy = {}, camera.cx = {}, camera.cy = {}, distCoeff = {}\n",
@@ -83,7 +83,7 @@ namespace ecv {
                                     CV_32FC2,
                                     map1, map2);
 
-        return true;
+        return result;
     }
 
     void Calibrator::convertTo2dPoints(const std::vector<cv::Point3d> &points3d, std::vector<cv::Point2f> &points2d) {
@@ -110,7 +110,7 @@ namespace ecv {
         }
     }
 
-    bool Calibrator::calibrate(cv::Size frameSize, const std::vector<std::vector<cv::Point3d>> &objectPoints,
+    double Calibrator::calibrate(cv::Size frameSize, const std::vector<std::vector<cv::Point3d>> &objectPoints,
                                const std::vector<std::vector<cv::Point3d>> &imagePoints, cv::Mat &map1, cv::Mat &map2) {
         std::vector<std::vector<cv::Point3f>> objectPoints2(objectPoints.size());
         std::vector<std::vector<cv::Point2f>> imagePoints2(imagePoints.size());
@@ -128,7 +128,7 @@ namespace ecv {
         return calibrate(frameSize, objectPoints2, imagePoints2, map1, map2);
     }
 
-    bool Calibrator::calibrate(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
+    double Calibrator::calibrate(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
                                const std::vector<std::vector<cv::Point3f>> &imagePoints, cv::Mat &map1, cv::Mat &map2) {
         std::vector<std::vector<cv::Point2f>> imagePoints2;
         for (int i = 0; i < imagePoints.size(); ++i) {

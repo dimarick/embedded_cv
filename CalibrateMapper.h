@@ -32,7 +32,7 @@ namespace ecv {
         size_t prevPatternSize = 64;
         float prevSkew = 0;
         BaseSquare prevSquare;
-        cv::Mat checkBoardCornerPattern;
+        cv::UMat checkBoardCornerPattern;
         void createCheckBoardPatterns(cv::Mat &t1);
         void findPeaks(const cv::Mat &mat, std::vector<Point3> &points, size_t *size, int kernel, int noiseTolerance);
         Point3 findMassCenter(const cv::Mat &mat, int x, int y, int searchRadius);
@@ -61,9 +61,8 @@ namespace ecv {
         TP detectFrameImagePointsGrid(const cv::Mat &frame, std::vector<Point3> &imageGrid, size_t *w, size_t *h);
         size_t suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, size_t w, size_t h);
         TP generateFrameObjectPointsGrid(const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
+        TP generateFrameObjectPointsGrid2(const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
         bool isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h);
-        void convertTo2dPoints(const std::vector<Point3> &points3d, std::vector<cv::Point2f> &points2d);
-        void convertToPlain3dPoints(const std::vector<Point3> &points1, std::vector<cv::Point3f> &points2);
 
         void drawPeaks(cv::Mat &target, const std::vector<Point3> &peaks, size_t size, cv::Scalar color);
         void drawBaseSquare(cv::Mat &target, const BaseSquare &square, cv::Scalar color);

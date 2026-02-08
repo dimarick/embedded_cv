@@ -26,7 +26,9 @@ namespace ecv {
             cv::warpAffine(pattern, pattern, rot,
                            pattern.size());
 
-            this->checkBoardCornerPattern = pattern(cv::Rect((int)sz, (int)sz, (int)sz, (int)sz)).clone();
+            const cv::Rect2i &crop = cv::Rect((int) sz, (int) sz, (int) sz, (int) sz);
+            this->checkBoardCornerPattern = pattern(crop).clone().getUMat(cv::ACCESS_READ);
+
             this->patternSize = sz;
             this->skew = _skew;
         }
@@ -90,10 +92,13 @@ namespace ecv {
     template<typename TP> void CalibrateMapper<TP>::detectPeaks(const cv::Mat &frame, std::vector<Point3> &peaks, size_t *size) {
         cv::UMat gray;
         cv::cvtColor(frame.getUMat(cv::AccessFlag::ACCESS_READ), gray, cv::ColorConversionCodes::COLOR_BGR2GRAY);
-        cv::equalizeHist(gray, gray);
+        auto clahe = cv::createCLAHE(1, cv::Size(3,3));
+        clahe->apply(gray, gray);
         auto matches = cv::UMat(gray.size(), CV_32F);
+
         cv::matchTemplate(gray, this->checkBoardCornerPattern, matches, cv::TemplateMatchModes::TM_CCOEFF_NORMED, cv::noArray());
         cv::multiply(matches, matches, matches);
+
         auto halfPattern = (int)patternSize / 2;
         cv::copyMakeBorder(matches, matches, halfPattern, halfPattern, halfPattern, halfPattern, cv::BorderTypes::BORDER_REPLICATE);
 
@@ -335,6 +340,64 @@ namespace ecv {
         for (int i = 0; i < w * h; ++i) {
             objectGrid[i] /= objectGrid[i].z;
             err += distance2(objectGrid[i], imageGrid[i]);
+        }
+
+        return err / (w * h);
+    }
+
+    /**
+     * @tparam TP
+     * @param imageGrid
+     * @param objectGrid
+     * @param w
+     * @param h
+     * @return возвращает среднюю дистанцию между точкой объекта и точкой на изображении, скорректированную на площадь сетки на изображении.
+     */
+    template<typename TP> TP CalibrateMapper<TP>::generateFrameObjectPointsGrid2(const std::vector<Point3> &imageGrid,
+                                                                                std::vector<Point3> &objectGrid, size_t w, size_t h) {
+        CV_Assert(w * h <= objectGrid.size());
+
+        std::vector<Point3> o(w * h), o2(w * h), o3(w * h);
+
+        for (int x = 0; x < w; ++x) {
+            for (int y = 0; y < h; ++y) {
+                o[y * w + x] = Point3(x, y, 1);
+            }
+        }
+
+        const std::vector<cv::Point2f> src = {
+            {(float)o[0 * w + 0].x, (float)o[0 * w + 0].y},
+            {(float)o[0 * w + w - 1].x, (float)o[0 * w + w - 1].y},
+            {(float)o[(h - 1) * w + 0].x, (float)o[(h - 1) * w + 0].y},
+            {(float)o[(h - 1) * w + w - 1].x, (float)o[(h - 1) * w + w - 1].y},
+        };
+        const std::vector<cv::Point2f> dest = {
+                {(float)imageGrid[0 * w + 0].x, (float)imageGrid[0 * w + 0].y},
+                {(float)imageGrid[0 * w + w - 1].x, (float)imageGrid[0 * w + w - 1].y},
+                {(float)imageGrid[(h - 1) * w + 0].x, (float)imageGrid[(h - 1) * w + 0].y},
+                {(float)imageGrid[(h - 1) * w + w - 1].x, (float)imageGrid[(h - 1) * w + w - 1].y},
+        };
+        auto transform = cv::getPerspectiveTransform(src, dest);
+
+        CV_Assert(transform.type() == CV_64FC1);
+
+        cv::gemm(
+                transform,
+                cv::Mat(w * h, 3, CV_64FC1, o.data()),
+                1,
+                cv::Mat(),
+                0,
+                cv::Mat(3, w * h, CV_64FC1, o2.data()),
+                cv::GemmFlags::GEMM_2_T
+        );
+
+        cv::transpose(cv::Mat(3, w * h, CV_64FC1, o2.data()), cv::Mat(w * h, 3, CV_64FC1, o3.data()));
+
+        TP err = 0;
+        for (int i = 0; i < w * h; ++i) {
+            auto p = o[i];
+            objectGrid[i] = p / p.z;
+            err += distance2(o3[i], imageGrid[i]);
         }
 
         return err / (w * h);

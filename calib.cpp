@@ -239,6 +239,9 @@ int main(int argc, const char **argv) {
         double ema = 2. / (10. + 1.);
         double avgRemapTime = 0., avgDetectGridTime = 0., avgVerifyCalibrateTime = 0., avgCalibrateTime = 0.;
 
+        std::mutex avgTimeMutex;
+
+#pragma omp parallel for default(none) shared(ema, plainFrames, frames, maps, bestQ, calibrateMapper, frameCollectors, calibrator, avgTimeMutex, avgRemapTime, avgDetectGridTime, avgCalibrateTime, avgVerifyCalibrateTime, std::cout)
         for (int i = 0; i < plainFrames.size(); ++i) {
             if (i == 1) {
                 cv::rotate(frames[i], frames[i], cv::RotateFlags::ROTATE_180);
@@ -258,13 +261,13 @@ int main(int argc, const char **argv) {
             auto srcGridQ = calibrateMapper[i].detectFrameImagePointsGrid(frames[i], imageGrid, &w, &h, debug);
 
             if (w > 0 && h > 0) {
-                gridQ = calibrateMapper[i].generateFrameObjectPointsGrid(imageGrid, objectGrid, w, h);
+                gridQ = calibrateMapper[i].generateFrameObjectPointsGrid2(imageGrid, objectGrid, w, h);
                 calibrateMapper[i].drawGrid(debug, objectGrid, w, h, cv::Scalar(255, 0, 255), 2);
             }
 
             auto detectGridTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 
-            double calibGridQ = 0;
+            double calibGridQ = 1. / 0.;
             std::vector<ecv::CalibrateMapper<double>::Point3> calibImageGrid(500), calibObjectGrid(500);
             size_t calibW = 0, calibH = 0;
             cv::Mat map;
@@ -274,57 +277,65 @@ int main(int argc, const char **argv) {
                 imageGrid.resize(w * h);
                 objectGrid.resize(w * h);
 
-                frameCollectors[i].addFrame(imageGrid, objectGrid, w, h, gridQ);
-
                 double progress = frameCollectors[i].getProgress();
-                if (progress >= 0.67) {
-                    const auto &iGrids = frameCollectors[i].getCollectedImageGrids();
-                    const auto &oGrids = frameCollectors[i].getCollectedObjectGrids();
-                    cv::Mat mat;
-                    auto calibrated = calibrator[i].calibrate(plainFrames[i].size(), oGrids, iGrids, map, mat);
 
-                    if (calibrated) {
-                        cv::remap(frames[i], testFrame, map, cv::noArray(), cv::InterpolationFlags::INTER_NEAREST,
-                                  cv::BorderTypes::BORDER_CONSTANT);
-                    }
+                const auto &iGrids = frameCollectors[i].getCollectedImageGrids();
+                const auto &oGrids = frameCollectors[i].getCollectedObjectGrids();
+                cv::Mat mat;
+                std::vector<std::vector<cv::Point3d>> imageGrids(iGrids.size());
+                std::vector<std::vector<cv::Point3d>> objectGrids(oGrids.size());
+                std::copy(iGrids.begin(), iGrids.end(), imageGrids.begin());
+                std::copy(oGrids.begin(), oGrids.end(), objectGrids.begin());
+                imageGrids.emplace_back(imageGrid);
+                objectGrids.emplace_back(objectGrid);
+                auto cost = calibrator[i].calibrate(plainFrames[i].size(), objectGrids, imageGrids, map, mat);
+
+                if (cost < 1. / 0.) {
+                    cv::remap(frames[i], testFrame, map, cv::noArray(), cv::InterpolationFlags::INTER_NEAREST,
+                              cv::BorderTypes::BORDER_CONSTANT);
+                }
+                std::cout << "Calib" << i << ": " << progress * 100 << "%" << std::endl;
+
+
+                if (cost < bestQ[i]) {
+                    bestQ[i] = cost;
+                    maps[i] = map;
+                    frameCollectors[i].addFrame(imageGrid, objectGrid, w, h, cost);
                 } else {
-                    std::cout << "Calib" << progress * 100 << "%" << std::endl;
+                    bestQ[i] *= 1.002;
                 }
             }
 
             auto calibrateTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 
             if (!map.empty()) {
-                debug = testFrame.clone();
+//                debug = testFrame.clone();
+//
+//                testCalibrateMapper[i].setPattern(calibrateMapper[i].patternSize, calibrateMapper[i].skew);
+//                auto calibSrcGridQ = testCalibrateMapper[i].detectFrameImagePointsGrid(testFrame, calibImageGrid,
+//                                                                                   &calibW, &calibH, testFrame);
+//
+//                if (calibW > 0 && calibH > 0) {
+//                    calibGridQ = testCalibrateMapper[i].generateFrameObjectPointsGrid(calibImageGrid, calibObjectGrid,
+//                                                                                      calibW, calibH);
+//                }
+//                testCalibrateMapper[i].drawGrid(testFrame, calibObjectGrid, w, h, cv::Scalar(255, 0, 255), 2);
 
-                testCalibrateMapper[i].setPattern(calibrateMapper[i].patternSize, calibrateMapper[i].skew);
-                auto calibSrcGridQ = testCalibrateMapper[i].detectFrameImagePointsGrid(testFrame, calibImageGrid,
-                                                                                   &calibW, &calibH, testFrame);
-
-                if (calibW == bestW[i] && calibH == bestH[i] && calibW > 0 && calibH > 0) {
-                    calibGridQ = testCalibrateMapper[i].generateFrameObjectPointsGrid(calibImageGrid, calibObjectGrid,
-                                                                                      calibW, calibH);
-                }
-                testCalibrateMapper[i].drawGrid(testFrame, calibObjectGrid, w, h, cv::Scalar(255, 0, 255), 2);
-
-                if (calibGridQ < gridQ && calibGridQ < bestQ[i] && calibW >= bestW[i] && calibH >= bestH[i]) {
-                    bestQ[i] = calibGridQ;
-                    bestW[i] = calibW;
-                    bestH[i] = calibH;
-                    maps[i] = map;
-                }
             }
 
             auto verifyCalibrateTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 
-
+            avgTimeMutex.lock();
             avgRemapTime = ema * (double)(remapTime - start) + (1 - ema) * avgRemapTime;
             avgDetectGridTime = ema * (double)(detectGridTime - remapTime) + (1 - ema) * avgDetectGridTime;
             avgCalibrateTime = ema * (double)(calibrateTime - detectGridTime) + (1 - ema) * avgCalibrateTime;
             avgVerifyCalibrateTime = ema * (double)(verifyCalibrateTime - calibrateTime) + (1 - ema) * avgVerifyCalibrateTime;
+            avgTimeMutex.unlock();
 
-            cv::putText(debug, std::format("sz = {}x{}\nsrcGridQ = {}\ngridQ = {}\nbestQ = {}\npatternSize = {}\npatternSkew = {}",
-                                                    w, h, srcGridQ, calibGridQ, bestQ[i], calibrateMapper[i].patternSize, calibrateMapper[i].skew), cv::Point2i(30, 30), 1, 2,
+            double progress = frameCollectors[i].getProgress();
+
+            cv::putText(debug, std::format("sz = {}x{}\nsrcGridQ = {}\ngridQ = {}\nbestQ = {}\npatternSize = {}\npatternSkew = {}\nprogress = {}%",
+                                                    w, h, srcGridQ, calibGridQ, bestQ[i], calibrateMapper[i].patternSize, calibrateMapper[i].skew, progress * 100), cv::Point2i(30, 30), 1, 2,
                         cv::Scalar(0,0,255));
 #ifdef HAVE_OPENCV_HIGHGUI
             if (!plainFrames[i].empty()) {
