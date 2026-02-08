@@ -315,3 +315,44 @@ std::vector<std::vector<cv::Point3d>> CalibrateFrameCollector::getCollectedObjec
 
     return result;
 }
+
+void CalibrateFrameCollector::load(const cv::FileStorage &fs) {
+    cv::FileNode framesNode = fs["frames"];
+
+    for (const auto &frame: framesNode) {
+        std::vector<cv::Point3d> imagePoints, objectPoints;
+        if (frame["imagePoints"].size() != frame["objectPoints"].size()) {
+            continue;
+        }
+
+        for (const auto &point: frame["imagePoints"]) {
+            imagePoints.emplace_back(point["x"], point["y"], 0);
+        }
+        for (const auto &point: frame["objectPoints"]) {
+            objectPoints.emplace_back(point["x"], point["y"], 0);
+        }
+        addFrame(imagePoints, objectPoints, (int)frame["w"], (int)frame["h"], (double)frame["cost"]);
+    }
+}
+
+void CalibrateFrameCollector::store(cv::FileStorage &fs) {
+    fs << "frames" << "[";
+    for (const auto &item: getFrames()) {
+        const auto frame  = item.first;
+        fs << "{" << "w" << (int) frame->w << "h" << (int) frame->h << "cost"
+           << frame->cost;
+        std::vector<cv::Point3d> imagePoints, objectPoints;
+        fs << "imagePoints" << "[";
+        for (const auto &point: frame->imageGrid) {
+            fs << "{" << "x" << point.x << "y" << point.y << "}";
+        }
+        fs << "]";
+        fs << "objectPoints" << "[";
+        for (const auto &point: frame->objectGrid) {
+            fs << "{" << "x" << point.x << "y" << point.y << "}";
+        }
+        fs << "]" << "}";
+    }
+
+    fs << "]";
+}

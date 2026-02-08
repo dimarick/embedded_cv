@@ -206,18 +206,7 @@ int main(int argc, const char **argv) {
             continue;
         }
 
-        cv::FileNode framesNode = frameDataStorage[i]["frames"];
-
-        for (const auto &frame: framesNode) {
-            std::vector<cv::Point3d> imagePoints, objectPoints;
-            for (const auto &point: frame["imagePoints"]) {
-                imagePoints.push_back({point["x"], point["y"], 0});
-            }
-            for (const auto &point: frame["objectPoints"]) {
-                objectPoints.push_back({point["x"], point["y"], 0});
-            }
-            frameCollectors[i].addFrame(imagePoints, objectPoints, (int)frame["w"], (int)frame["h"], (double)frame["cost"]);
-        }
+        frameCollectors[i].load(frameDataStorage[i]);
 
         frameDataStorage[i].release();
     }
@@ -363,26 +352,7 @@ int main(int argc, const char **argv) {
                 frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::WRITE);
 
                 if (frameDataStorage[i].isOpened()) {
-                    frameDataStorage[i] << "frames" << "[";
-                    for (const auto &item: frameCollectors[i].getFrames()) {
-                        const auto frame  = item.first;
-                        frameDataStorage[i] << "{" << "w" << (int) frame->w << "h" << (int) frame->h << "cost"
-                                            << frame->cost;
-                        std::vector<cv::Point3d> imagePoints, objectPoints;
-                        frameDataStorage[i] << "imagePoints" << "[";
-                        for (const auto &point: frame->imageGrid) {
-                            frameDataStorage[i] << "{" << "x" << point.x << "y" << point.y << "}";
-                        }
-                        frameDataStorage[i] << "]";
-                        frameDataStorage[i] << "objectPoints" << "[";
-                        for (const auto &point: frame->objectGrid) {
-                            frameDataStorage[i] << "{" << "x" << point.x << "y" << point.y << "}";
-                        }
-                        frameDataStorage[i] << "]" << "}";
-                    }
-
-                    frameDataStorage[i] << "]";
-
+                    frameCollectors[i].store(frameDataStorage[i]);
                     frameDataStorage[i].release();
                 }
             }

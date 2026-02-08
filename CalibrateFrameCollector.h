@@ -79,6 +79,9 @@ namespace ecv {
 
         std::vector<std::vector<cv::Point3d>> getCollectedObjectGrids() const;
 
+        void load(const cv::FileStorage &fs);
+        void store(cv::FileStorage &fs);
+
         auto getFrames() const {
             return frames;
         }
