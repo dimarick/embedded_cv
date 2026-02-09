@@ -250,7 +250,8 @@ int main(int argc, const char **argv) {
             if (i == 1) {
                 cv::rotate(frames[i], frames[i], cv::RotateFlags::ROTATE_180);
             }
-            cv::Mat debug = plainFrames[i];
+            cv::Mat debug;
+            frames[i].copyTo(debug);
             std::vector<ecv::CalibrateMapper<double>::Point3> imageGrid(500), objectGrid(500);
             size_t w = 0, h = 0;
             double gridQ = 0;
@@ -265,7 +266,7 @@ int main(int argc, const char **argv) {
             auto srcGridQ = calibrateMapper[i].detectFrameImagePointsGrid(frames[i], imageGrid, &w, &h, debug);
 
             if (w > 0 && h > 0) {
-                gridQ = calibrateMapper[i].generateFrameObjectPointsGrid2(imageGrid, objectGrid, w, h);
+                gridQ = calibrateMapper[i].generateFrameObjectPointsGrid(imageGrid, objectGrid, w, h);
                 calibrateMapper[i].drawGrid(debug, objectGrid, w, h, cv::Scalar(255, 0, 255), 2);
             }
 
@@ -273,7 +274,6 @@ int main(int argc, const char **argv) {
 
             double calibGridQ = 1. / 0.;
             std::vector<ecv::CalibrateMapper<double>::Point3> calibImageGrid(500), calibObjectGrid(500);
-            size_t calibW = 0, calibH = 0;
             cv::Mat map;
             cv::Mat testFrame;
 
@@ -292,7 +292,7 @@ int main(int argc, const char **argv) {
                 std::copy(oGrids.begin(), oGrids.end(), objectGrids.begin());
                 imageGrids.emplace_back(imageGrid);
                 objectGrids.emplace_back(objectGrid);
-                auto cost = calibrator[i].calibrate(plainFrames[i].size(), objectGrids, imageGrids, map, mat);
+                auto cost = calibrator[i].calibrate(frames[i].size(), objectGrids, imageGrids, map, mat);
 
                 if (cost < 1. / 0.) {
                     cv::remap(frames[i], testFrame, map, cv::noArray(), cv::InterpolationFlags::INTER_NEAREST,
@@ -306,7 +306,7 @@ int main(int argc, const char **argv) {
                     maps[i] = map;
                     frameCollectors[i].addFrame(imageGrid, objectGrid, w, h, cost);
                 } else {
-                    bestQ[i] *= 1.002;
+                    bestQ[i] *= 1.05;
                 }
             }
 

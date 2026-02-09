@@ -58,7 +58,7 @@ namespace ecv {
                 cv::CALIB_TILTED_MODEL|
                 cv::CALIB_THIN_PRISM_MODEL|
                 cv::CALIB_FIX_ASPECT_RATIO|
-//                cv::CALIB_FIX_PRINCIPAL_POINT|
+                cv::CALIB_FIX_PRINCIPAL_POINT|
                 cv::CALIB_USE_INTRINSIC_GUESS;
 
         double result = 0;

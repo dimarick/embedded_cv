@@ -223,23 +223,31 @@ namespace ecv {
         }
 
         auto imageArea = frameSize.width * frameSize.height;
-        auto pixelsPerPoint = std::sqrt(imageArea / pointsCount);
-        auto _w = (size_t)(frameSize.width / pixelsPerPoint);
-        auto _h = (size_t)(frameSize.height / pixelsPerPoint);
-        *w = _w;
-        *h = _h;
-
-        CV_Assert(_w * _h <= imageGrid.size());
-        CV_Assert(!frameSize.empty());
+        auto pixelsPerPointW = (
+                distance2(square.topLeft, square.topRight) +
+                distance2(square.bottomLeft, square.bottomRight)
+        ) / 2;
+        auto pixelsPerPointH = (
+                distance2(square.topLeft, square.bottomLeft) +
+                distance2(square.bottomRight, square.topRight)
+        ) / 2;
+//        auto pixelsPerPoint = std::sqrt(imageArea / pointsCount);
+        auto _w = (size_t)(frameSize.width / pixelsPerPointW);
+        auto _h = (size_t)(frameSize.height / pixelsPerPointH);
+        auto ratio = (TP)_w / (TP)_h;
 
         for (int i = 0; i < imageGrid.size(); ++i) {
             imageGrid[i] = Point3(0, 0, -1);
         }
 
-        auto gridMaxOffset = &imageGrid[imageGrid.size() - 1];
+        _h = std::min((int)(_h - 3) * 2, (int)std::sqrt(imageGrid.size() / ratio));
+        _w = std::min((int)(_w - 3) * 2, (int)std::sqrt(imageGrid.size() * ratio));
+        auto cH = _h / 2 - 1;
+        auto cW = _w / 2 - 1;
+        *w = _w;
+        *h = _h;
 
-        auto cH = (int)(_h / 2);
-        auto cW = (int)(_w / 2);
+        auto gridMaxOffset = &imageGrid[imageGrid.size() - 1];
 
         imageGrid[cH * _w + cW] = square.topLeft;
         imageGrid[cH * _w + cW + 1] = square.topRight;
@@ -253,9 +261,9 @@ namespace ecv {
 
         auto err = (TP)0.0;
 
-        // заполним 2 столбца сетки вверх и вниз от центрального квадрата
         for (auto i = 0; i < cH; i++) {
-            for (auto s = -1; s <= 1; s += 2) {
+            for (auto s = -1; s <= 1; s += 2) { // двигаемся в обе стороны от центра
+                // заполним 2 столбца сетки вверх и вниз от центрального квадрата
                 for (auto j = 0; j < 2; j++) {
                     auto current = imageGrid[(cH + s * i) * _w + cW + j];
                     auto prev = imageGrid[(cH + s * (i - 1)) * _w + cW + j];
@@ -268,6 +276,7 @@ namespace ecv {
 
                     err += distance2(*next, nextApproximated);
                 }
+                // заполним остальную сетку аппроксимируя по двум точкам
                 for (auto k = 0; k < cW; k++) {
                     for (auto ks = -1; ks <= 1; ks += 2) {
                         auto current = imageGrid[(cH + s * i) * _w + cW + ks * k];
@@ -742,25 +751,27 @@ namespace ecv {
         int top = 0, left = 0, right = 0, bottom = 0;
         size_t cW = *w / 2;
         size_t cH = *h / 2;
+        int w4 = (int)*w / 4;
+        int h4 = (int)*h / 4;
 
         auto wScore = 0.0f, hScore = 0.0f;
-        auto threshold = 0.1f;
+        auto threshold = 0.2f; // чем меньше - тем больше площадь сетки, но тем больше шанс захвата невалидных точек
 
-        for (int x = 2; x < *w - 2; ++x) {
+        for (int x = w4; x < *w - w4; ++x) {
             wScore += std::max((TP)0., grid[cH * *w + x].z);
         }
 
-        for (int y = 2; y < *h - 2; ++y) {
+        for (int y = h4; y < *h - h4; ++y) {
             hScore += std::max((TP)0., grid[y * *w + cW].z);
         }
 
         double wThreshold = wScore * threshold;
         double hThreshold = hScore * threshold;
 
-        for (int y = 0; y < cH; ++y) {
+        for (int y = 0; y < cH - 1; ++y) {
             top = y;
             auto rowScore = 0.0f;
-            for (int x = 2; x < *w - 2; ++x) {
+            for (int x = w4; x < *w - w4; ++x) {
                 rowScore += grid[y * *w + x].z;
             }
 
@@ -769,11 +780,11 @@ namespace ecv {
             }
         }
 
-        for (int y = (int)*h; y > cH + 1; --y) {
-            bottom = y;
+        for (int y = (int)*h - 1; y > cH; --y) {
+            bottom = y + 1;
             auto rowScore = 0.0f;
-            for (int x = 2; x < *w - 2; ++x) {
-                rowScore += grid[(y - 1) * *w + x].z;
+            for (int x = w4; x < *w - w4; ++x) {
+                rowScore += grid[y * *w + x].z;
             }
 
             if (rowScore > wThreshold) {
@@ -781,10 +792,10 @@ namespace ecv {
             }
         }
 
-        for (int x = 0; x < cW; ++x) {
+        for (int x = 0; x < cW - 1; ++x) {
             left = x;
             auto rowScore = 0.0f;
-            for (int y = 2; y < *h - 2; ++y) {
+            for (int y = h4; y < *h - h4; ++y) {
                 rowScore += grid[y * *w + x].z;
             }
 
@@ -793,11 +804,11 @@ namespace ecv {
             }
         }
 
-        for (int x = (int)*w; x > cW + 1; --x) {
-            right = x;
+        for (int x = (int)*w - 1; x > cW; --x) {
+            right = x + 1;
             auto rowScore = 0.0f;
-            for (int y = 2; y < *h - 2; ++y) {
-                rowScore += grid[y * *w + x - 1].z;
+            for (int y = h4; y < *h - h4; ++y) {
+                rowScore += grid[y * *w + x].z;
             }
 
             if (rowScore > hThreshold) {
@@ -819,6 +830,9 @@ namespace ecv {
     template<typename TP> void CalibrateMapper<TP>::fillGridRow(size_t w, int cH, int cW, int j, const std::vector<Point3> &peaks, std::vector<Point3> &grid) {
         for (auto i = 0; i < cW; i++) {
             for (auto s = -1; s <= 1; s += 2) {
+                if (cW + s * i >= w || cW + s * i < 0) {
+                    continue;
+                }
                 auto current = grid[(cH + j) * w + cW + s * i];
                 auto prev = grid[(cH + j) * w + cW + s * (i - 1)];
                 auto next = &grid[(cH + j) * w + cW + s * (i + 1)];
