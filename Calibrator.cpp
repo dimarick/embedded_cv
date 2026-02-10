@@ -104,12 +104,6 @@ namespace ecv {
         }
     }
 
-    void Calibrator::convertToPlain3dPoints(const std::vector<cv::Point3f> &points1, std::vector<cv::Point3f> &points2) {
-        for (int j = 0; j < points2.size(); ++j) {
-            points2[j] = cv::Point3f(points1[j].x, points1[j].y, 0);
-        }
-    }
-
     double Calibrator::calibrate(cv::Size frameSize, const std::vector<std::vector<cv::Point3d>> &objectPoints,
                                const std::vector<std::vector<cv::Point3d>> &imagePoints, cv::Mat &map1, cv::Mat &map2) {
         std::vector<std::vector<cv::Point3f>> objectPoints2(objectPoints.size());
@@ -138,4 +132,69 @@ namespace ecv {
 
         return calibrate(frameSize, objectPoints, imagePoints2, map1, map2);
     }
+
+    void Calibrator::stereoCalibrate(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
+                                     const std::vector<std::vector<cv::Point3f>> &imagePoints, cv::Mat &map1,
+                                     cv::Mat &map2) {
+//        cv::stereoCalibrate();
+
+
+//        if (plainWidth[0] == plainWidth[1] && plainHeight[0] == plainHeight[1] && plainHeight[0] > 0 && plainHeight[1] > 0) {
+//            const auto &baseFrame = plain[0];
+//            const auto &otherFrame = plain[1];
+//
+//            const auto &baseSize = baseFrame.size();
+//            cv::Point2f imageCenter = {(float)(baseSize.width - 1) / 2, (float)(baseSize.height - 1) / 2};
+//            auto gridCenter = findNearestPoint(imageCenter, plainImageGrid[0], (double)calibrateMapper3[0].patternSize);
+//            auto gridCenter2 = findNearestPoint(imageCenter, plainImageGrid[1], (double)calibrateMapper3[1].patternSize);
+//
+//            if (gridCenter < 0 || gridCenter2 < 0) {
+//                continue;
+//            }
+//
+//            cv::Mat transform;
+//
+//            auto gridCenterX = (size_t) gridCenter % plainWidth[0];
+//            auto gridCenterY = (size_t) gridCenter / plainWidth[0];
+//            auto gridCenterX2 = (size_t) gridCenter2 % plainWidth[1];
+//            auto gridCenterY2 = gridCenterY;
+//            auto rw = std::min({
+//                                       gridCenterX,
+//                                       gridCenterX2,
+//                                       plainWidth[0] - gridCenterX,
+//                                       plainWidth[1] - gridCenterX2,
+//                               });
+//            auto rh = std::min({
+//                                       gridCenterY,
+//                                       gridCenterY2,
+//                                       plainHeight[0] - gridCenterY,
+//                                       plainHeight[1] - gridCenterY2,
+//                               });
+//
+//            if (rw < 1) {
+//                continue;
+//            }
+//
+//            if (rh < 1) {
+//                continue;
+//            }
+//
+//            const std::vector<cv::Point2f> src = {
+//                    {(float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX - rw].x, (float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX - rw].y},
+//                    {(float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX + rw - 1].x, (float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX + rw - 1].y},
+//                    {(float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX - rw].x, (float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX - rw].y},
+//                    {(float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX + rw - 1].x, (float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX + rw - 1].y},
+//            };
+//            const std::vector<cv::Point2f> dest = {
+//                    {(float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[1] + gridCenterX2 - rw].x, (float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[0] + gridCenterX2 - rw].y},
+//                    {(float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[1] + gridCenterX2 + rw - 1].x, (float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[0] + gridCenterX2 + rw - 1].y},
+//                    {(float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[1] + gridCenterX2 - rw].x, (float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[0] + gridCenterX2 - rw].y},
+//                    {(float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[1] + gridCenterX2 + rw - 1].x, (float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[0] + gridCenterX2 + rw - 1].y},
+//            };
+//            transform = cv::getPerspectiveTransform(src, dest);
+//
+//            CV_Assert(transform.type() == CV_64FC1);
+//
+//            bestMap1[1].copyTo(alignedMap);
+        }
 } // ecv

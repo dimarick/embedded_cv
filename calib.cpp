@@ -245,8 +245,8 @@ int main(int argc, const char **argv) {
             throw std::runtime_error("OCL not available");
         }
 
-//#pragma omp parallel for default(none) shared(ema, plainFrames, frames, maps, bestQ, calibrateMapper, frameCollectors, calibrator, avgTimeMutex, avgRemapTime, avgDetectGridTime, avgCalibrateTime, avgVerifyCalibrateTime, std::cout)
-        for (int i = 0; i < plainFrames.size(); ++i) {
+#pragma omp parallel for default(none) shared(ema, plainFrames, frames, maps, bestQ, calibrateMapper, frameCollectors, calibrator, avgTimeMutex, avgRemapTime, avgDetectGridTime, avgCalibrateTime, avgVerifyCalibrateTime, std::cout)
+        for (int i = 0; i < frames.size(); ++i) {
             if (i == 1) {
                 cv::rotate(frames[i], frames[i], cv::RotateFlags::ROTATE_180);
             }
@@ -281,8 +281,6 @@ int main(int argc, const char **argv) {
                 imageGrid.resize(w * h);
                 objectGrid.resize(w * h);
 
-                double progress = frameCollectors[i].getProgress();
-
                 const auto &iGrids = frameCollectors[i].getCollectedImageGrids();
                 const auto &oGrids = frameCollectors[i].getCollectedObjectGrids();
                 cv::Mat mat;
@@ -298,8 +296,9 @@ int main(int argc, const char **argv) {
                     cv::remap(frames[i], testFrame, map, cv::noArray(), cv::InterpolationFlags::INTER_NEAREST,
                               cv::BorderTypes::BORDER_CONSTANT);
                 }
-                std::cout << "Calib" << i << ": " << progress * 100 << "%" << std::endl;
+                double progress = frameCollectors[i].getProgress();
 
+                std::cout << "Calib" << i << ": " << progress * 100 << "%" << std::endl;
 
                 if (cost < bestQ[i]) {
                     bestQ[i] = cost;
@@ -308,24 +307,15 @@ int main(int argc, const char **argv) {
                 } else {
                     bestQ[i] *= 1.05;
                 }
+
+                auto calibrateTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
+                if (!map.empty() && frameCollectors[i].getProgress() > 0.5 && cost < 2) {
+//                    calibrator[i].stereoCalibrate(frames[i].size(), objectGrids, imageGrids, map, mat);
+                }
             }
 
             auto calibrateTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-
-            if (!map.empty()) {
-//                debug = testFrame.clone();
-//
-//                testCalibrateMapper[i].setPattern(calibrateMapper[i].patternSize, calibrateMapper[i].skew);
-//                auto calibSrcGridQ = testCalibrateMapper[i].detectFrameImagePointsGrid(testFrame, calibImageGrid,
-//                                                                                   &calibW, &calibH, testFrame);
-//
-//                if (calibW > 0 && calibH > 0) {
-//                    calibGridQ = testCalibrateMapper[i].generateFrameObjectPointsGrid(calibImageGrid, calibObjectGrid,
-//                                                                                      calibW, calibH);
-//                }
-//                testCalibrateMapper[i].drawGrid(testFrame, calibObjectGrid, w, h, cv::Scalar(255, 0, 255), 2);
-
-            }
 
             auto verifyCalibrateTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 

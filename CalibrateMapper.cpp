@@ -82,14 +82,6 @@ namespace ecv {
         return result;
     }
 
-    template<typename TP>
-    TP CalibrateMapper<TP>::detectFrameImagePointsGrid(const cv::UMat &frame, std::vector<Point3> &imageGrid,
-                                                       size_t *w, size_t *h) {
-        cv::Mat nullFrame;
-
-        return detectFrameImagePointsGrid(frame, imageGrid, w, h, nullFrame);
-    }
-
     template<typename TP> void CalibrateMapper<TP>::detectPeaks(const cv::UMat &frame, std::vector<Point3> &peaks, size_t *size) {
         cv::UMat gray, grayf;
         cv::cvtColor(frame, gray, cv::ColorConversionCodes::COLOR_BGR2GRAY);
@@ -98,11 +90,13 @@ namespace ecv {
         gray.convertTo(grayf, CV_32F);
         auto matches = cv::UMat(gray.size(), CV_32F);
 
-        cv::matchTemplate(grayf, this->checkBoardCornerPattern, matches, cv::TemplateMatchModes::TM_CCOEFF, cv::noArray());
+        cv::matchTemplate(grayf, this->checkBoardCornerPattern, matches, cv::TemplateMatchModes::TM_CCOEFF_NORMED, cv::noArray());
         cv::multiply(matches, matches, matches);
 
         cv::Mat mat;
         matches.copyTo(mat);
+
+        cv::imshow("m", mat);
 
         findPeaks(mat, peaks, size, patternSize, 2);
     }
@@ -208,7 +202,16 @@ namespace ecv {
                 (imageGrid[(h - 1) * w].y - imageGrid[(h - 2) * w].y),
                 (imageGrid[(h - 1) * w + w - 1].y - imageGrid[(h - 2) * w + w - 1].y),
         };
-        auto pSize = (size_t)(std::min(list) * 0.8f);
+
+        TP m = 1000;
+
+        for (auto item : list) {
+            if (item > 0) {
+                m = std::min(m, item);
+            }
+        }
+
+        auto pSize = (size_t)(m * 0.8f);
         pSize -= pSize % 2;
         pSize = std::clamp(pSize, (size_t)24, (size_t)256);
 
@@ -356,29 +359,6 @@ namespace ecv {
         return err / (w * h);
     }
 
-    /**
-     * @tparam TP
-     * @param imageGrid
-     * @param objectGrid
-     * @param w
-     * @param h
-     * @return возвращает среднюю дистанцию между точкой объекта и точкой на изображении, скорректированную на площадь сетки на изображении.
-     */
-    template<typename TP> TP CalibrateMapper<TP>::generateFrameObjectPointsGrid2(const std::vector<Point3> &imageGrid,
-                                                                                std::vector<Point3> &objectGrid, size_t w, size_t h) {
-        CV_Assert(w * h <= objectGrid.size());
-
-        std::vector<Point3> o(w * h), o2(w * h), o3(w * h);
-
-        for (int x = 0; x < w; ++x) {
-            for (int y = 0; y < h; ++y) {
-                objectGrid[y * w + x] = Point3(x, y, 1);
-            }
-        }
-
-        return 0.0;
-    }
-
     template<typename TP> bool CalibrateMapper<TP>::isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h) {
         if (w < 5 || h < 5 || w > frameSize.width || h > frameSize.height || w * h >= gridPoints.size()) {
             return false;
@@ -485,7 +465,7 @@ namespace ecv {
 
         const cv::Mat mask = cv::Mat::zeros(mat.size(), CV_8SC1);
 
-        const int kernelRadius = (kernel - 1) / 3;
+        const int kernelRadius = (kernel - 1) / 5;
         const int w = mat.cols;
         const auto step = 1;
 
@@ -567,7 +547,7 @@ namespace ecv {
             points[i].y = p.y + (TP)kernel / 2;
             const auto &z = (p.z - zMin) / range;
             points[i].z = z;
-            if (z > 0.1) {
+            if (z > 0.0) {
                 i++;
             }
 
@@ -638,6 +618,37 @@ namespace ecv {
         return {cX, cY, 0};
     }
 
+// Быстрая проверка с использованием Bounding Box
+    template<typename TP> bool CalibrateMapper<TP>::isInsideQuadSimple(const Point3& p, BaseSquare quad) {
+        // Считаем сумму углов - если 360°, то точка внутри
+        double angleSum = 0;
+
+        Point3 q[4] = {
+                quad.topLeft,
+                quad.topRight,
+                quad.bottomRight,
+                quad.bottomLeft,
+        };
+
+        for (int i = 0; i < 4; i++) {
+            int j = (i + 1) % 4;
+
+            // Векторы от точки к вершинам
+            double dx1 = q[i].x - p.x;
+            double dy1 = q[i].y - p.y;
+            double dx2 = q[j].x - p.x;
+            double dy2 = q[j].y - p.y;
+
+            // Угол между векторами через скалярное произведение
+            double dot = dx1 * dx2 + dy1 * dy2;
+            double cross = dx1 * dy2 - dy1 * dx2;
+            angleSum += fabs(atan2(cross, dot));
+        }
+
+        // Если сумма углов ~±2π, точка внутри
+        return fabs(angleSum - 2 * 3.14) < 0.1;
+    }
+
     template<typename TP> TP CalibrateMapper<TP>::findSquareBy3Points(const std::vector<Point3> &points, size_t size, BaseSquare &result) {
         auto q = 1.0f / 0.0f;
         for (int i = 0; i < size; ++i) {
@@ -649,6 +660,18 @@ namespace ecv {
                 quad.bottomLeft = result.bottomLeft;
                 quad.bottomRight = p;
                 auto [q2, sz] = squareQualityNormRms(quad);
+
+                for (int j = 0; j < size; ++j) {
+                    auto p3 = points[j];
+                    if (p3.x > result.topLeft.x && p3.y > result.topLeft.y) {
+                        if (isInsideQuadSimple(p3, quad)) {
+                            auto z = p3.z * 4;
+                            if (z > result.topLeft.z || z > result.bottomRight.z) {
+                                q2 = 1. / 0.;
+                            }
+                        }
+                    }
+                }
 
                 if (q2 * sz < q) {
                     q = q2 * sz;
@@ -723,6 +746,8 @@ namespace ecv {
                 std::pow(avg - d1, 2) + std::pow(avg - d2, 2)
         ) / 6;
 
+
+
         return {sqrt(cost) / min + 1e-16, max};
     }
 
@@ -755,7 +780,7 @@ namespace ecv {
         int h4 = (int)*h / 4;
 
         auto wScore = 0.0f, hScore = 0.0f;
-        auto threshold = 0.2f; // чем меньше - тем больше площадь сетки, но тем больше шанс захвата невалидных точек
+        auto threshold = 0.5f; // чем меньше - тем больше площадь сетки, но тем больше шанс захвата невалидных точек
 
         for (int x = w4; x < *w - w4; ++x) {
             wScore += std::max((TP)0., grid[cH * *w + x].z);
@@ -859,7 +884,7 @@ namespace ecv {
             }
         }
 
-        if (found.z == 0) {
+        if (found.z <= 0) {
             return {point.x, point.y, -1};
         }
 
