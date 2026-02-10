@@ -285,7 +285,7 @@ double CalibrateFrameCollector::getProgress() const {
     appendIf(missing, "yawLargeN", map.find(yawLargeN) == map.end() || map.find(yawLargeN)->second.size() < FRAMES_PER_CLASS);
     appendIf(missing, "pitchLargeN", map.find(pitchLargeN) == map.end() || map.find(pitchLargeN)->second.size() < FRAMES_PER_CLASS);
 
-    std::cout << std:: format("Missing: {}\n", missing) << std::endl;
+//    std::cout << std:: format("Missing: {}\n", missing) << std::endl;
 
     return (double)total / (double)maxTotal;
 }

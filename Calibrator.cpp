@@ -41,10 +41,13 @@ namespace ecv {
         cameraMatrix.setTo(cv::Scalar::all(0));
         auto cameraData = (double *)cameraMatrix.data;
 
-        cameraData[0] = 1000.;
-        cameraData[4] = 1000.;
-        cameraData[2] = (float)frameSize.width / 2;
-        cameraData[5] = (float)frameSize.height / 2;
+        cx = cx == 0 ? (float)frameSize.width / 2 : cx;
+        cy = cy == 0 ? (float)frameSize.height / 2 : cy;
+
+        cameraData[0] = fx;
+        cameraData[4] = fy;
+        cameraData[2] = cx;
+        cameraData[5] = cy;
         cameraData[8] = 1.;
 
 
@@ -58,7 +61,6 @@ namespace ecv {
                 cv::CALIB_TILTED_MODEL|
                 cv::CALIB_THIN_PRISM_MODEL|
                 cv::CALIB_FIX_ASPECT_RATIO|
-                cv::CALIB_FIX_PRINCIPAL_POINT|
                 cv::CALIB_USE_INTRINSIC_GUESS;
 
         double result = 0;
@@ -78,6 +80,12 @@ namespace ecv {
 
         std::cout << std::format("result = {}, camera.fx = {}, camera.fy = {}, camera.cx = {}, camera.cy = {}, distCoeff = {}\n",
                                  result, cameraData[0], cameraData[4], cameraData[2], cameraData[5], distCoeff);
+
+        auto ema = 2. / (5. + 1.);
+        fx = ema * cameraData[0] + (1 - ema) * fx;
+        fy = ema * cameraData[4] + (1 - ema) * fy;
+        cx = ema * cameraData[2] + (1 - ema) * cx;
+        cy = ema * cameraData[5] + (1 - ema) * cy;
 
         cv::initUndistortRectifyMap(cameraMatrix, distCoeff, cv::noArray(), cameraMatrix, frameSize,
                                     CV_32FC2,
@@ -197,4 +205,12 @@ namespace ecv {
 //
 //            bestMap1[1].copyTo(alignedMap);
         }
+
+    double Calibrator::getFx() const {
+        return fx;
+    }
+
+    double Calibrator::getFy() const {
+        return fy;
+    }
 } // ecv

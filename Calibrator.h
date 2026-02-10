@@ -11,6 +11,11 @@ namespace ecv {
 
     class Calibrator {
     private:
+        double fx = 700.; // значения в диапазоне 100-10000 довольно быстро сходятся к ожидаемому
+        double fy = 700.; // значения в диапазоне 100-10000 довольно быстро сходятся к ожидаемому
+        double cx = 0.;
+        double cy = 0.;
+
         void convertTo2dPoints(const std::vector<cv::Point3d> &points3d, std::vector<cv::Point2f> &points2d);
         void convertToPlain3dPoints(const std::vector<cv::Point3d> &points1, std::vector<cv::Point3f> &points2);
         void convertTo2dPoints(const std::vector<cv::Point3f> &points3d, std::vector<cv::Point2f> &points2d);
@@ -44,6 +49,10 @@ namespace ecv {
                 cv::Mat &map1,
                 cv::Mat &map2
         );
+
+        double getFx() const;
+
+        double getFy() const;
     };
 
 } // ecv

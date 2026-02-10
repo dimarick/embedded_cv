@@ -245,6 +245,11 @@ namespace ecv {
 
         _h = std::min((int)(_h - 3) * 2, (int)std::sqrt(imageGrid.size() / ratio));
         _w = std::min((int)(_w - 3) * 2, (int)std::sqrt(imageGrid.size() * ratio));
+
+        if (_h < 3 || _w < 3) {
+            return 1.0 / 0.0;
+        }
+
         auto cH = _h / 2 - 1;
         auto cW = _w / 2 - 1;
         *w = _w;
@@ -316,47 +321,15 @@ namespace ecv {
 
         std::vector<Point3> o(w * h);
 
+        double sellSize = 1;
+
         for (int x = 0; x < w; ++x) {
             for (int y = 0; y < h; ++y) {
-                o[y * w + x] = Point3(x, y, 1);
+                objectGrid[y * w + x] = Point3(x, y, 0) * sellSize;
             }
         }
 
-        const std::vector<cv::Point2f> src = {
-            {(float)o[0 * w + 0].x, (float)o[0 * w + 0].y},
-            {(float)o[0 * w + w - 1].x, (float)o[0 * w + w - 1].y},
-            {(float)o[(h - 1) * w + 0].x, (float)o[(h - 1) * w + 0].y},
-            {(float)o[(h - 1) * w + w - 1].x, (float)o[(h - 1) * w + w - 1].y},
-        };
-        const std::vector<cv::Point2f> dest = {
-                {(float)imageGrid[0 * w + 0].x, (float)imageGrid[0 * w + 0].y},
-                {(float)imageGrid[0 * w + w - 1].x, (float)imageGrid[0 * w + w - 1].y},
-                {(float)imageGrid[(h - 1) * w + 0].x, (float)imageGrid[(h - 1) * w + 0].y},
-                {(float)imageGrid[(h - 1) * w + w - 1].x, (float)imageGrid[(h - 1) * w + w - 1].y},
-        };
-        auto transform = cv::getPerspectiveTransform(src, dest);
-
-        CV_Assert(transform.type() == CV_64FC1);
-
-        cv::gemm(
-                transform,
-                cv::Mat(w * h, 3, CV_64FC1, o.data()),
-                1,
-                cv::Mat(),
-                0,
-                cv::Mat(3, w * h, CV_64FC1, o.data()),
-                cv::GemmFlags::GEMM_2_T
-        );
-
-        cv::transpose(cv::Mat(3, w * h, CV_64FC1, o.data()), cv::Mat(w * h, 3, CV_64FC1, objectGrid.data()));
-
-        TP err = 0;
-        for (int i = 0; i < w * h; ++i) {
-            objectGrid[i] /= objectGrid[i].z;
-            err += distance2(objectGrid[i], imageGrid[i]);
-        }
-
-        return err / (w * h);
+        return 0.0;
     }
 
     template<typename TP> bool CalibrateMapper<TP>::isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h) {
@@ -547,7 +520,7 @@ namespace ecv {
             points[i].y = p.y + (TP)kernel / 2;
             const auto &z = (p.z - zMin) / range;
             points[i].z = z;
-            if (z > 0.0) {
+            if (z > 0.01) {
                 i++;
             }
 

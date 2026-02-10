@@ -328,8 +328,8 @@ int main(int argc, const char **argv) {
 
             double progress = frameCollectors[i].getProgress();
 
-            cv::putText(debug, std::format("sz = {}x{}\nsrcGridQ = {}\ngridQ = {}\nbestQ = {}\npatternSize = {}\npatternSkew = {}\nprogress = {}%",
-                                                    w, h, srcGridQ, calibGridQ, bestQ[i], calibrateMapper[i].patternSize, calibrateMapper[i].skew, progress * 100), cv::Point2i(30, 30), 1, 2,
+            cv::putText(debug, std::format("sz = {}x{}\nsrcGridQ = {}\ngridQ = {}\nbestQ = {}\npatternSize = {}\npatternSkew = {}\nfx/fy = {} / {}\nprogress = {}%",
+                                                    w, h, srcGridQ, calibGridQ, bestQ[i], calibrateMapper[i].patternSize, calibrateMapper[i].skew, calibrator[i].getFx(), calibrator[i].getFy(), progress * 100), cv::Point2i(30, 30), 1, 2,
                         cv::Scalar(0,0,255));
 #ifdef HAVE_OPENCV_HIGHGUI
             if (!plainFrames[i].empty()) {
