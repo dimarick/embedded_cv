@@ -20,41 +20,74 @@ namespace ecv {
         void convertToPlain3dPoints(const std::vector<cv::Point3d> &points1, std::vector<cv::Point3f> &points2);
         void convertTo2dPoints(const std::vector<cv::Point3f> &points3d, std::vector<cv::Point2f> &points2d);
     public:
-        double calibrate(
+        struct CalibrationData {
+            cv::Mat cameraMatrix;
+            std::vector<double> distCoeff;
+            cv::Mat rvecs;
+            cv::Mat tvecs;
+            cv::Mat R;
+            cv::Mat T;
+            cv::Mat E;
+            cv::Mat F;
+
+            CalibrationData() {
+                cameraMatrix = cv::Mat::zeros(3, 3, CV_64F);
+                rvecs = cv::Mat::zeros(3, 3, CV_64F);
+                tvecs = cv::Mat::zeros(3, 3, CV_64F);
+                distCoeff = std::vector<double>(12);
+            }
+        };
+
+        double calibrateSingleCamera(
                 cv::Size frameSize,
                 const std::vector<std::vector<cv::Point3d>> &objectPoints,
                 const std::vector<std::vector<cv::Point3d>> &imagePoints,
-                cv::Mat &map1,
-                cv::Mat &map2
+                CalibrationData &data
         );
-        double calibrate(
+        double calibrateSingleCamera(
                 cv::Size frameSize,
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
                 const std::vector<std::vector<cv::Point3f>> &imagePoints,
-                cv::Mat &map1,
-                cv::Mat &map2
+                CalibrationData &data
         );
-        double calibrate(
+        double calibrateSingleCamera(
                 cv::Size frameSize,
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
                 const std::vector<std::vector<cv::Point2f>> &imagePoints,
-                cv::Mat &map1,
-                cv::Mat &map2
+                CalibrationData &data
         );
 
-        void stereoCalibrate(
+        double calibrateCameraPair(
                 cv::Size frameSize,
+                const std::vector<std::vector<cv::Point3f>> &objectPointsCam1,
+                const std::vector<std::vector<cv::Point2f>> &imagePointsCam1,
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
-                const std::vector<std::vector<cv::Point3f>> &imagePoints,
-                cv::Mat &map1,
-                cv::Mat &map2
+                const std::vector<std::vector<cv::Point2f>> &imagePoints,
+                const CalibrationData &dataCam1,
+                CalibrationData &data
         );
 
-        double getFx() const;
+        double calibrateCameraPair(
+                cv::Size frameSize,
+                const std::vector<std::vector<cv::Point3d>> &objectPointsCam1,
+                const std::vector<std::vector<cv::Point3d>> &imagePointsCam1,
+                const std::vector<std::vector<cv::Point3d>> &objectPoints,
+                const std::vector<std::vector<cv::Point3d>> &imagePoints,
+                const CalibrationData &dataCam1,
+                CalibrationData &data
+        );
 
-        double getFy() const;
+        cv::Mat getUndistortMap(cv::Size frameSize, const CalibrationData &data);
+        cv::Mat getUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current);
+
+        double getFx() const {
+            return fx;
+        }
+
+        double getFy() const {
+            return fy;
+        }
     };
-
 } // ecv
 
 #endif //EMBEDDED_CV_CALIBRATOR_H

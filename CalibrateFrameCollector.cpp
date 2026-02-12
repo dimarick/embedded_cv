@@ -1,5 +1,6 @@
 #include <3d.hpp>
 #include "CalibrateFrameCollector.h"
+#include <ranges>
 
 using namespace ecv;
 
@@ -197,6 +198,20 @@ std::vector<CalibrateFrameCollector::FrameClass> CalibrateFrameCollector::getCla
     return result;
 }
 
+std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::createFrame(const std::vector<cv::Point3d> &imageGrid,
+                                                                                     const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost) {
+
+    auto frameRef = std::shared_ptr<Frame>(new Frame({{}, imageGrid, objectGrid, w, h, cost}));
+    auto result = frames.insert({frameRef, 0});
+    auto frame = result.first->first.get();
+
+    const auto &frameClasses = getClasses(*frame);
+
+    frameRef->classes = frameClasses;
+
+    return frameRef;
+}
+
 /**
  * Регистрирует кадр в двух хранилищах: с классификацией по классам (map) и без (frames с контролем уникальности).
  * Каждый кадр может присутствовать не более FRAMES_PER_CLASS раз в каждом класса.
@@ -209,12 +224,11 @@ std::vector<CalibrateFrameCollector::FrameClass> CalibrateFrameCollector::getCla
  * @param h
  * @param cost
  */
-void CalibrateFrameCollector::addFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost) {
-    auto frameRef = std::shared_ptr<Frame>(new Frame({imageGrid, objectGrid, w, h, cost}));
+void CalibrateFrameCollector::addFrame(const std::shared_ptr<Frame> &frameRef) {
     auto result = frames.insert({frameRef, 0});
     auto frame = result.first->first.get();
 
-    const auto &frameClasses = getClasses(*frame);
+    const auto &frameClasses = frameRef->classes;
 
     for (auto cls : frameClasses) {
         const auto &item = map.find(cls);
@@ -246,6 +260,47 @@ void CalibrateFrameCollector::addFrame(const std::vector<cv::Point3d> &imageGrid
             }
         }
     }
+}
+
+void CalibrateFrameCollector::addMulticamFrame(const std::shared_ptr<Frame> &baseFrameRef,
+                                               const std::shared_ptr<Frame> &frameRef, double cost) {
+    auto pair = std::shared_ptr<FramePair>(new FramePair{cost, baseFrameRef, frameRef});
+
+    const auto &frameClasses = frameRef->classes;
+
+    for (auto cls : frameClasses) {
+        const auto &item = pairs.find(cls);
+        if (item == pairs.end()) {
+            pairs.insert({cls, std::multiset<std::shared_ptr<FramePair>, FramePairCompare>({pair})});
+        } else {
+            auto &set = item->second;
+            set.insert(pair);
+        }
+    }
+
+    for (auto cls : frameClasses) {
+        const auto &item = pairs.find(cls);
+        if (item != pairs.end()) {
+            auto &set = item->second;
+            while (set.size() > FRAMES_PER_CLASS) {
+                const auto &it = set.begin();
+                set.erase(it);
+            }
+        }
+    }
+}
+
+
+std::set<std::shared_ptr<CalibrateFrameCollector::FramePair>> CalibrateFrameCollector::getValidFramePairs() {
+    std::set<std::shared_ptr<CalibrateFrameCollector::FramePair>> result;
+
+    for (const auto &item : pairs) {
+        for (const auto &pair : item.second | std::views::reverse | std::views::take(FRAMES_PER_CLASS)) {
+            result.insert(pair);
+        }
+    }
+
+    return result;
 }
 
 double CalibrateFrameCollector::getProgress() const {
@@ -318,38 +373,83 @@ void CalibrateFrameCollector::load(const cv::FileStorage &fs) {
     cv::FileNode framesNode = fs["frames"];
 
     for (const auto &frame: framesNode) {
-        std::vector<cv::Point3d> imagePoints, objectPoints;
-        if (frame["imagePoints"].size() != frame["objectPoints"].size()) {
+        if (!frame.isMap()) {
+            continue;
+        }
+        const auto &frameRef = loadFrame(frame);
+
+        if (frameRef == nullptr) {
             continue;
         }
 
-        for (const auto &point: frame["imagePoints"]) {
-            imagePoints.emplace_back(point["x"], point["y"], 0);
+        addFrame(frameRef);
+    }
+    cv::FileNode framesPairsNode = fs["multicam"];
+
+    for (const auto &framePair: framesPairsNode) {
+        if (!framePair.isMap() || !framePair["a"].isMap() || !framePair["b"].isMap()) {
+            continue;
         }
-        for (const auto &point: frame["objectPoints"]) {
-            objectPoints.emplace_back(point["x"], point["y"], 0);
+        const auto &baseFrameRef = loadFrame(framePair["a"]);
+        const auto &frameRef = loadFrame(framePair["b"]);
+
+        if (baseFrameRef == nullptr || frameRef == nullptr) {
+            continue;
         }
-        addFrame(imagePoints, objectPoints, (int)frame["w"], (int)frame["h"], (double)frame["cost"]);
+
+        addMulticamFrame(baseFrameRef, frameRef, (double)framePair["cost"]);
     }
 }
 
-void CalibrateFrameCollector::store(cv::FileStorage &fs) {
+std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::loadFrame(const cv::FileNode &frame) {
+    std::vector<cv::Point3d> imagePoints, objectPoints;
+    if (frame["imagePoints"].size() != frame["objectPoints"].size()) {
+        return nullptr;
+    }
+
+    for (const auto &point: frame["imagePoints"]) {
+        imagePoints.emplace_back(point["x"], point["y"], 0);
+    }
+    for (const auto &point: frame["objectPoints"]) {
+        objectPoints.emplace_back(point["x"], point["y"], 0);
+    }
+    if (imagePoints.empty() || objectPoints.empty()) {
+        return nullptr;
+    }
+
+    return createFrame(imagePoints, objectPoints, (int)frame["w"], (int)frame["h"], (double)frame["cost"]);
+}
+
+cv::FileStorage& operator << (cv::FileStorage& fs, const std::shared_ptr<CalibrateFrameCollector::Frame> &frame) {
+    fs << "{" << "w" << (int) frame->w << "h" << (int) frame->h << "cost" << frame->cost;
+    fs << "imagePoints" << "[";
+    for (const auto &point: frame->imageGrid) {
+        fs << "{" << "x" << point.x << "y" << point.y << "}";
+    }
+    fs << "]";
+    fs << "objectPoints" << "[";
+    for (const auto &point: frame->objectGrid) {
+        fs << "{" << "x" << point.x << "y" << point.y << "}";
+    }
+    fs << "]" << "}";
+
+    return fs;
+}
+
+void CalibrateFrameCollector::store(cv::FileStorage &fs) const {
     fs << "frames" << "[";
     for (const auto &item: getFrames()) {
-        const auto frame  = item.first;
-        fs << "{" << "w" << (int) frame->w << "h" << (int) frame->h << "cost"
-           << frame->cost;
-        std::vector<cv::Point3d> imagePoints, objectPoints;
-        fs << "imagePoints" << "[";
-        for (const auto &point: frame->imageGrid) {
-            fs << "{" << "x" << point.x << "y" << point.y << "}";
+        fs << item.first;
+    }
+
+    fs << "]";
+    fs << "multicam" << "[";
+    for (const auto &item: pairs) {
+        for (const auto &framePair : item.second) {
+            fs << "a" << framePair->base;
+            fs << "b" << framePair->current;
+            fs << "cost" << framePair->cost;
         }
-        fs << "]";
-        fs << "objectPoints" << "[";
-        for (const auto &point: frame->objectGrid) {
-            fs << "{" << "x" << point.x << "y" << point.y << "}";
-        }
-        fs << "]" << "}";
     }
 
     fs << "]";

@@ -243,12 +243,12 @@ namespace ecv {
             imageGrid[i] = Point3(0, 0, -1);
         }
 
-        _h = std::min((int)(_h - 3) * 2, (int)std::sqrt(imageGrid.size() / ratio));
-        _w = std::min((int)(_w - 3) * 2, (int)std::sqrt(imageGrid.size() * ratio));
-
-        if (_h < 3 || _w < 3) {
+        if (_h <= 3 || _w <= 3) {
             return 1.0 / 0.0;
         }
+
+        _h = std::min((size_t)(_h - 3) * 2, (size_t)std::sqrt(imageGrid.size() / ratio));
+        _w = std::min((size_t)(_w - 3) * 2, (size_t)std::sqrt(imageGrid.size() * ratio));
 
         auto cH = _h / 2 - 1;
         auto cW = _w / 2 - 1;
@@ -278,11 +278,12 @@ namespace ecv {
                     auto next = &imageGrid[(cH + s * (i + 1)) * _w + cW + j];
                     CV_Assert(next < gridMaxOffset);
 
-                    auto searchRadius = distance2(current, prev) * 0.2f;
+                    auto tp = distance2(current, prev);
+                    auto searchRadius = tp * 0.2f;
                     auto nextApproximated = approximate(current, prev);
                     *next = findNearestPoint(nextApproximated, peaks, searchRadius);
 
-                    err += distance2(*next, nextApproximated);
+                    err += distance2(*next, nextApproximated) / tp;
                 }
                 // заполним остальную сетку аппроксимируя по двум точкам
                 for (auto k = 0; k < cW; k++) {
@@ -292,11 +293,12 @@ namespace ecv {
                         auto top = imageGrid[(cH + s * i) * _w + cW + ks * (k + 1)];
                         auto next = &imageGrid[(cH + s * (i + 1)) * _w + cW + ks * (k + 1)];
                         CV_Assert(next < gridMaxOffset);
-                        auto searchRadius = distance2(current, left) * 0.2f;
+                        auto tp = distance2(current, left);
+                        auto searchRadius = tp * 0.2f;
                         auto nextApproximated = approximate2(current, left, top);
                         *next = findNearestPoint(nextApproximated, peaks, searchRadius);
 
-                        err += distance2(*next, nextApproximated);
+                        err += distance2(*next, nextApproximated) / tp;
                     }
                 }
             }
