@@ -1,5 +1,6 @@
 #include "Calibrator.h"
 #include <opencv2/calib3d.hpp>
+#include <iomanip>
 
 namespace ecv {
     double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
@@ -70,7 +71,7 @@ namespace ecv {
         std::cout << std::format("result = {}, camera.fx = {}, camera.fy = {}, camera.cx = {}, camera.cy = {}, distCoeff = {}\n",
                                  result, cameraData[0], cameraData[4], cameraData[2], cameraData[5], data.distCoeff);
 
-        auto ema = 2. / (5. + 1.);
+        auto ema = 2. / (11. + 1.);
         fx = ema * cameraData[0] + (1 - ema) * fx;
         fy = ema * cameraData[4] + (1 - ema) * fy;
         cx = ema * cameraData[2] + (1 - ema) * cx;
@@ -88,28 +89,49 @@ namespace ecv {
         return map;
     }
 
-    cv::Mat Calibrator::getUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current, cv::Mat &baseMap) {
+    std::pair<cv::Mat, cv::Mat> Calibrator::getUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current) {
         cv::Rect roi1, roi2;
-        cv::Mat  map, tmp, R1, P1, R2, P2, Q;
+        cv::Mat  baseMap, map, tmp, R1, P1, R2, P2, Q;
+
+        double alpha = 0.0;
+        cv::Mat newBaseCamMat = cv::getOptimalNewCameraMatrix(base.cameraMatrix, base.distCoeff, frameSize, alpha, frameSize, &roi1);
+        cv::Mat newCamMat = cv::getOptimalNewCameraMatrix(current.cameraMatrix, current.distCoeff, frameSize, alpha, frameSize, &roi2);
+
         cv::stereoRectify(
-                base.cameraMatrix, base.distCoeff,
-                current.cameraMatrix, current.distCoeff,
+                newBaseCamMat, base.distCoeff,
+                newCamMat, current.distCoeff,
                 frameSize, current.R, current.T,
                 R1, R2, P1, P2, Q,
-                cv::CALIB_ZERO_DISPARITY, 0.0, frameSize, &roi1, &roi2
+                cv::CALIB_ZERO_DISPARITY, alpha, frameSize, &roi1, &roi2
         );
-        cv::initUndistortRectifyMap(current.cameraMatrix, current.distCoeff, R1, P1, frameSize, CV_32FC2, baseMap, tmp);
-        cv::stereoRectify(
-                base.cameraMatrix, base.distCoeff,
-                current.cameraMatrix, current.distCoeff,
-                frameSize, R1.t() * R2, current.T,
-                R1, R2, P1, P2, Q,
-                cv::CALIB_ZERO_DISPARITY, 0.0, frameSize, &roi1, &roi2
-        );
+        cv::Mat rvec;
+        cv::Rodrigues(current.R, rvec);
 
-        cv::initUndistortRectifyMap(current.cameraMatrix, current.distCoeff, R2, P2, frameSize, CV_32FC2, map, tmp);
+        std::cout << "rvec (rad): " << rvec.t() << std::endl;
+        std::cout << "T (mm): " << current.T.t() << std::endl;
 
-        return map;
+        std::cout << "cam1:\n" << newBaseCamMat << std::endl;
+        std::cout << "cam2:\n" << newCamMat << std::endl;
+
+        std::cout << "P1:\n" << P1 << std::endl;
+        std::cout << "P2:\n" << P2 << std::endl;
+        std::cout << "R1:\n" << R1 << std::endl;
+        std::cout << "R2:\n" << R2 << std::endl;
+
+        printStereoCalibrationStats(base.cameraMatrix, current.cameraMatrix, current.R, current.T);
+
+        cv::initUndistortRectifyMap(base.cameraMatrix, base.distCoeff, R2, P2, frameSize, CV_32FC2, baseMap, tmp);
+//        cv::stereoRectify(
+//                base.cameraMatrix, base.distCoeff,
+//                current.cameraMatrix, current.distCoeff,
+//                frameSize, R1.t() * R2, current.T,
+//                R1, R2, P1, P2, Q,
+//                cv::CALIB_ZERO_DISPARITY, 0.0, frameSize, &roi1, &roi2
+//        );
+
+        cv::initUndistortRectifyMap(current.cameraMatrix, current.distCoeff, R1, P1, frameSize, CV_32FC2, map, tmp);
+
+        return {baseMap, map};
     }
 
     void Calibrator::convertTo2dPoints(const std::vector<cv::Point3d> &points3d, std::vector<cv::Point2f> &points2d) {
@@ -167,7 +189,7 @@ namespace ecv {
             const std::vector<std::vector<cv::Point3d>> &imagePointsCam1,
             const std::vector<std::vector<cv::Point3d>> &objectPoints,
             const std::vector<std::vector<cv::Point3d>> &imagePoints,
-            const CalibrationData &dataCam1,
+            CalibrationData &dataCam1,
             CalibrationData &data) {
 
         std::vector<std::vector<cv::Point3f>> _objectPointsCam1(objectPointsCam1.size());
@@ -206,7 +228,7 @@ namespace ecv {
             const std::vector<std::vector<cv::Point2f>> &imagePointsCam1,
             const std::vector<std::vector<cv::Point3f>> &objectPoints,
             const std::vector<std::vector<cv::Point2f>> &imagePoints,
-            const CalibrationData &dataCam1,
+            CalibrationData &dataCam1,
             CalibrationData &data) {
 
         cv::Mat perViewErrors;
@@ -214,69 +236,102 @@ namespace ecv {
         auto cost = cv::registerCameras(objectPoints, objectPointsCam1, imagePoints, imagePointsCam1,
             data.cameraMatrix, data.distCoeff, cv::CameraModel::CALIB_MODEL_PINHOLE,
             dataCam1.cameraMatrix, dataCam1.distCoeff, cv::CameraModel::CALIB_MODEL_PINHOLE,
-            data.R, data.T, data.E, data.F, perViewErrors, 0, cv::TermCriteria(10, 1e-7));
+            data.R, data.T, data.E, data.F, perViewErrors, cv::CALIB_FIX_INTRINSIC, cv::TermCriteria(10, 1e-7));
 
         return cost;
+    }
 
-//        cv::stereoCalibrate();
+    /**
+     * @brief Выводит в std::cout параметры взаимного расположения камер и сравнивает их внутренние параметры.
+     *
+     * @param camMatrixL  Матрица левой камеры (3x3)
+     * @param camMatrixR  Матрица правой камеры (3x3)
+     * @param R           Матрица вращения правой камеры относительно левой (3x3)
+     * @param T           Вектор трансляции правой камеры относительно левой (3x1 или 1x3)
+     */
+    void Calibrator::printStereoCalibrationStats(const cv::Mat& camMatrixL, const cv::Mat& camMatrixR,
+                                     const cv::Mat& R, const cv::Mat& T) {
+        CV_Assert(!camMatrixL.empty() && camMatrixL.size() == cv::Size(3, 3));
+        CV_Assert(!camMatrixR.empty() && camMatrixR.size() == cv::Size(3, 3));
+        CV_Assert(!R.empty() && R.size() == cv::Size(3, 3));
+        CV_Assert(!T.empty() && (T.total() == 3));
 
+        std::cout << std::fixed << std::setprecision(4);
+        std::cout << "\n========== Стерео-калибровка: анализ соосности ==========\n";
 
-//        if (plainWidth[0] == plainWidth[1] && plainHeight[0] == plainHeight[1] && plainHeight[0] > 0 && plainHeight[1] > 0) {
-//            const auto &baseFrame = plain[0];
-//            const auto &otherFrame = plain[1];
-//
-//            const auto &baseSize = baseFrame.size();
-//            cv::Point2f imageCenter = {(float)(baseSize.width - 1) / 2, (float)(baseSize.height - 1) / 2};
-//            auto gridCenter = findNearestPoint(imageCenter, plainImageGrid[0], (double)calibrateMapper3[0].patternSize);
-//            auto gridCenter2 = findNearestPoint(imageCenter, plainImageGrid[1], (double)calibrateMapper3[1].patternSize);
-//
-//            if (gridCenter < 0 || gridCenter2 < 0) {
-//                continue;
-//            }
-//
-//            cv::Mat transform;
-//
-//            auto gridCenterX = (size_t) gridCenter % plainWidth[0];
-//            auto gridCenterY = (size_t) gridCenter / plainWidth[0];
-//            auto gridCenterX2 = (size_t) gridCenter2 % plainWidth[1];
-//            auto gridCenterY2 = gridCenterY;
-//            auto rw = std::min({
-//                                       gridCenterX,
-//                                       gridCenterX2,
-//                                       plainWidth[0] - gridCenterX,
-//                                       plainWidth[1] - gridCenterX2,
-//                               });
-//            auto rh = std::min({
-//                                       gridCenterY,
-//                                       gridCenterY2,
-//                                       plainHeight[0] - gridCenterY,
-//                                       plainHeight[1] - gridCenterY2,
-//                               });
-//
-//            if (rw < 1) {
-//                continue;
-//            }
-//
-//            if (rh < 1) {
-//                continue;
-//            }
-//
-//            const std::vector<cv::Point2f> src = {
-//                    {(float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX - rw].x, (float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX - rw].y},
-//                    {(float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX + rw - 1].x, (float)plainImageGrid[0][(gridCenterY - rh) * plainWidth[0] + gridCenterX + rw - 1].y},
-//                    {(float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX - rw].x, (float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX - rw].y},
-//                    {(float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX + rw - 1].x, (float)plainImageGrid[0][(gridCenterY + rh - 1) * plainWidth[0] + gridCenterX + rw - 1].y},
-//            };
-//            const std::vector<cv::Point2f> dest = {
-//                    {(float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[1] + gridCenterX2 - rw].x, (float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[0] + gridCenterX2 - rw].y},
-//                    {(float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[1] + gridCenterX2 + rw - 1].x, (float)plainImageGrid[1][(gridCenterY2 - rh) * plainWidth[0] + gridCenterX2 + rw - 1].y},
-//                    {(float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[1] + gridCenterX2 - rw].x, (float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[0] + gridCenterX2 - rw].y},
-//                    {(float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[1] + gridCenterX2 + rw - 1].x, (float)plainImageGrid[1][(gridCenterY2 + rh - 1) * plainWidth[0] + gridCenterX2 + rw - 1].y},
-//            };
-//            transform = cv::getPerspectiveTransform(src, dest);
-//
-//            CV_Assert(transform.type() == CV_64FC1);
-//
-//            bestMap1[1].copyTo(alignedMap);
+        // --- 1. Трансляция (смещение правой камеры относительно левой) ---
+        cv::Vec3d t;
+        if (T.rows == 3 && T.cols == 1)
+            t = cv::Vec3d(T.at<double>(0,0), T.at<double>(1,0), T.at<double>(2,0));
+        else if (T.rows == 1 && T.cols == 3)
+            t = cv::Vec3d(T.at<double>(0,0), T.at<double>(0,1), T.at<double>(0,2));
+        else
+            CV_Error(cv::Error::StsBadArg, "T должен быть 3x1 или 1x3");
+
+        double baseline = cv::norm(t);
+        std::cout << "\n--- Трансляция (T, мм / ваши единицы) ---\n";
+        std::cout << "  T_x = " << t[0] << "\n  T_y = " << t[1] << "\n  T_z = " << t[2] << "\n";
+        std::cout << "  Базовая линия (|T|) = " << baseline << "\n";
+        std::cout << "  Отклонение от горизонтальной соосности:\n";
+        std::cout << "    по вертикали (T_y) : " << t[1] << " (" << (t[1] / baseline * 100) << "% от базлайна)\n";
+        std::cout << "    по глубине   (T_z) : " << t[2] << " (" << (t[2] / baseline * 100) << "% от базлайна)\n";
+
+        // --- 2. Вращение (отклонение ориентации правой камеры) ---
+        cv::Vec3d rvec;
+        cv::Rodrigues(R, rvec);
+        double angle = cv::norm(rvec);               // угол поворота в радианах
+        double angle_deg = angle * 180.0 / CV_PI;    // в градусах
+        cv::Vec3d axis = rvec / (angle + 1e-12);     // ось поворота (единичный вектор)
+
+        std::cout << "\n--- Вращение (R) ---\n";
+        std::cout << "  Угол поворота: " << angle_deg << "°\n";
+        std::cout << "  Ось поворота: [ " << axis[0] << ", " << axis[1] << ", " << axis[2] << " ]\n";
+        std::cout << "  Разложение по осям (приблизительно):\n";
+        // приближённое разложение на компоненты (для малых углов)
+        if (angle_deg < 10.0) {
+            std::cout << "    roll  (вращение вокруг X) : " << rvec[0] * 180.0 / CV_PI << "°\n";
+            std::cout << "    pitch (вращение вокруг Y) : " << rvec[1] * 180.0 / CV_PI << "°\n";
+            std::cout << "    yaw   (вращение вокруг Z) : " << rvec[2] * 180.0 / CV_PI << "°\n";
+        } else {
+            // для больших углов просто выводим вектор Родригеса
+            std::cout << "  Вектор Родригеса (rx, ry, rz): [ "
+                      << rvec[0] << ", " << rvec[1] << ", " << rvec[2] << " ] рад\n";
         }
+
+        // --- 3. Сравнение внутренних параметров (масштаб и смещение главной точки) ---
+        double fxL = camMatrixL.at<double>(0,0);
+        double fyL = camMatrixL.at<double>(1,1);
+        double cxL = camMatrixL.at<double>(0,2);
+        double cyL = camMatrixL.at<double>(1,2);
+
+        double fxR = camMatrixR.at<double>(0,0);
+        double fyR = camMatrixR.at<double>(1,1);
+        double cxR = camMatrixR.at<double>(0,2);
+        double cyR = camMatrixR.at<double>(1,2);
+
+        std::cout << "\n--- Внутренние параметры (cameraMatrix) ---\n";
+        std::cout << "            Левая камера   Правая камера   Разница (Правая - Левая)  Отн. разница (%)\n";
+        std::cout << "fx        : " << std::setw(10) << fxL << "   " << std::setw(10) << fxR
+                  << "   " << std::setw(10) << (fxR - fxL) << "   "
+                  << std::setw(10) << ((fxR - fxL) / fxL * 100) << "\n";
+        std::cout << "fy        : " << std::setw(10) << fyL << "   " << std::setw(10) << fyR
+                  << "   " << std::setw(10) << (fyR - fyL) << "   "
+                  << std::setw(10) << ((fyR - fyL) / fyL * 100) << "\n";
+        std::cout << "cx        : " << std::setw(10) << cxL << "   " << std::setw(10) << cxR
+                  << "   " << std::setw(10) << (cxR - cxL) << "\n";
+        std::cout << "cy        : " << std::setw(10) << cyL << "   " << std::setw(10) << cyR
+                  << "   " << std::setw(10) << (cyR - cyL) << "\n";
+
+        // --- 4. Соотношение фокусных расстояний (дополнительная метрика масштаба) ---
+        double fx_ratio = fxR / fxL;
+        double fy_ratio = fyR / fyL;
+        std::cout << "\n--- Отношение фокусных расстояний (Правая / Левая) ---\n";
+        std::cout << "  fx_ratio = " << fx_ratio << "\n";
+        std::cout << "  fy_ratio = " << fy_ratio << "\n";
+        if (std::abs(fx_ratio - 1.0) > 0.05 || std::abs(fy_ratio - 1.0) > 0.05) {
+            std::cout << "  ⚠️  Заметная разница в масштабе (>5%) — рекомендуется унификация.\n";
+        }
+
+        std::cout << "\n========== Конец анализа ==========\n\n";
+    }
 } // ecv

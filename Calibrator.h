@@ -63,7 +63,7 @@ namespace ecv {
                 const std::vector<std::vector<cv::Point2f>> &imagePointsCam1,
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
                 const std::vector<std::vector<cv::Point2f>> &imagePoints,
-                const CalibrationData &dataCam1,
+                CalibrationData &dataCam1,
                 CalibrationData &data
         );
 
@@ -73,12 +73,12 @@ namespace ecv {
                 const std::vector<std::vector<cv::Point3d>> &imagePointsCam1,
                 const std::vector<std::vector<cv::Point3d>> &objectPoints,
                 const std::vector<std::vector<cv::Point3d>> &imagePoints,
-                const CalibrationData &dataCam1,
+                CalibrationData &dataCam1,
                 CalibrationData &data
         );
 
         cv::Mat getUndistortMap(cv::Size frameSize, const CalibrationData &data);
-        cv::Mat getUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current);
+        std::pair<cv::Mat, cv::Mat> getUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current);
 
         double getFx() const {
             return fx;
@@ -87,6 +87,10 @@ namespace ecv {
         double getFy() const {
             return fy;
         }
+
+        void
+        printStereoCalibrationStats(const cv::Mat &camMatrixL, const cv::Mat &camMatrixR, const cv::Mat &R,
+                                    const cv::Mat &T);
     };
 } // ecv
 

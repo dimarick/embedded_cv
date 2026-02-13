@@ -2,6 +2,8 @@
 #include <ext/pb_ds/assoc_container.hpp>
 #ifdef HAVE_OPENCV_HIGHGUI
 #include <highgui.hpp>
+#include <iostream>
+
 #endif
 
 namespace ecv {
@@ -36,13 +38,10 @@ namespace ecv {
     }
 
     template<typename TP>
-    TP CalibrateMapper<TP>::detectFrameImagePointsGrid(const cv::UMat &frame, std::vector<Point3> &imageGrid,
+    TP CalibrateMapper<TP>::detectFrameImagePointsGrid(const cv::UMat &frame, std::vector<Point3> peaks, std::vector<Point3> &imageGrid,
                                                        size_t *w, size_t *h, cv::Mat &debugFrame) {
-        std::vector<Point3> peaks(imageGrid.size());
-        size_t size = peaks.size();
         BaseSquare square;
-        detectPeaks(frame, peaks, &size);
-        peaks.resize(size);
+        size_t size = peaks.size();
         drawPeaks(debugFrame, peaks, size, cv::Scalar(0, 255, 0));
         auto squareRmse = detectBaseSquare(frame.size(), peaks , square);
 
@@ -52,6 +51,8 @@ namespace ecv {
 
             return 1. / 0.;
         }
+
+        std::cout << "Sq size " << (distance2(square.topLeft, square.bottomLeft) + distance2(square.topRight, square.bottomRight)) / 2 << std::endl;
 
         bool updatePattern = false;
 

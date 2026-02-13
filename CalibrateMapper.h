@@ -57,7 +57,7 @@ namespace ecv {
         void detectPeaks(const cv::UMat &frame, std::vector<Point3> &peaks, size_t *size);
         TP detectBaseSquare(const cv::Size &frameSize, const std::vector<Point3> &peaks, BaseSquare &square);
         TP detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks, const BaseSquare &square, std::vector<Point3> &imageGrid, size_t *w, size_t *h);
-        TP detectFrameImagePointsGrid(const cv::UMat &frame, std::vector<Point3> &imageGrid, size_t *w, size_t *h, cv::Mat &debugFrame);
+        TP detectFrameImagePointsGrid(const cv::UMat &frame, std::vector<Point3> peaks, std::vector<Point3> &imageGrid, size_t *w, size_t *h, cv::Mat &debugFrame);
         size_t suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, size_t w, size_t h);
         TP generateFrameObjectPointsGrid(const std::vector<Point3> &imageGrid, std::vector<Point3> &objectGrid, size_t w, size_t h);
         bool isGridValid(const cv::Size &frameSize, const std::vector<Point3> &gridPoints, size_t w, size_t h);

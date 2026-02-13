@@ -239,11 +239,18 @@ int main(int argc, const char **argv) {
 
         baseFrameRef.reset();
 
-//#pragma omp parallel for default(none) shared(ema, plainFrames, frames, frameSetId, maps, calibrationData, bestQ, calibrateMapper, frameCollectors, calibrator, avgTimeMutex, avgRemapTime, avgDetectGridTime, avgCalibrateTime, avgVerifyCalibrateTime, std::cout)
+        std::vector<std::vector<ecv::CalibrateMapper<double>::Point3>> peaks(frames.size(), std::vector<ecv::CalibrateMapper<double>::Point3>(500));
+#pragma omp parallel for default(none) shared(peaks, frames, calibrateMapper)
         for (int i = 0; i < frames.size(); ++i) {
             if (i == 1) {
                 cv::rotate(frames[i], frames[i], cv::RotateFlags::ROTATE_180);
             }
+            size_t peaksSize;
+            calibrateMapper[i].detectPeaks(frames[i], peaks[i], &peaksSize);
+            peaks[i].resize(peaksSize);
+        }
+
+        for (int i = 0; i < frames.size(); ++i) {
             cv::Mat debug;
             frames[i].copyTo(debug);
             std::vector<ecv::CalibrateMapper<double>::Point3> imageGrid(500), objectGrid(500);
@@ -257,7 +264,8 @@ int main(int argc, const char **argv) {
                 frames[i].copyTo(plainFrames[i]);
             }
             auto remapTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-            auto srcGridQ = calibrateMapper[i].detectFrameImagePointsGrid(frames[i], imageGrid, &w, &h, debug);
+
+            auto srcGridQ = calibrateMapper[i].detectFrameImagePointsGrid(frames[i], peaks[i], imageGrid, &w, &h, debug);
 
             if (w > 0 && h > 0) {
                 gridQ = calibrateMapper[i].generateFrameObjectPointsGrid(imageGrid, objectGrid, w, h);
@@ -300,7 +308,7 @@ int main(int argc, const char **argv) {
 
                 double costOfPair = 0.0;
 
-                if (i != 0 && baseFrameRef != nullptr) {
+                if (i != 0 && baseFrameRef != nullptr && baseFrameRef->w == frameRef->w && baseFrameRef->h == frameRef->h) {
                     const auto &pairs = frameCollectors[i].getValidFramePairs();
                     std::vector<std::vector<cv::Point3d>> imageGrids0, imageGrids1;
                     std::vector<std::vector<cv::Point3d>> objectGrids0, objectGrids1;
@@ -335,7 +343,7 @@ int main(int argc, const char **argv) {
 
                 if (i == 0) {
                     baseFrameRef = frameRef;
-                    maps[i] = calibrator[i].getUndistortMap(frames[i].size(), calibrationData[i]);
+//                    maps[i] = calibrator[i].getUndistortMap(frames[i].size(), calibrationData[i]);
                 } else if (costOfPair > 0 && costOfPair < bestPairQ[i]
                         && !baseFrameRef->imageGrid.empty()
                         && baseFrameRef->w == w && baseFrameRef->h == h
@@ -345,10 +353,10 @@ int main(int argc, const char **argv) {
                     frameCollectors[i].addMulticamFrame(baseFrameRef, frameRef, costOfPair);
                     bestPairQ[i] = costOfPair;
 
-                    maps[i] = calibrator[i].getUndistortMap(frames[i].size(), calibrationData[0], calibrationData[i]);
+                    std::tie(maps[0], maps[i]) = calibrator[i].getUndistortMap(frames[i].size(), calibrationData[0], calibrationData[i]);
                 }
 
-                if (cost < 1. / 0.) {
+                if (cost < 1. / 0. && !maps[i].empty()) {
                     cv::remap(frames[i], testFrame, maps[i], cv::noArray(), cv::InterpolationFlags::INTER_NEAREST,
                               cv::BorderTypes::BORDER_CONSTANT);
                 }
@@ -374,6 +382,13 @@ int main(int argc, const char **argv) {
                         cv::Scalar(0,0,255));
 #ifdef HAVE_OPENCV_HIGHGUI
             if (!plainFrames[i].empty()) {
+                int height = plainFrames[i].rows;
+                int step = height / (10 + 1);
+                for (int j = 1; j <= 10; ++j) {
+                    int y = j * step;
+                    cv::line(plainFrames[i], cv::Point(0, y), cv::Point(plainFrames[i].cols - 1, y), cv::Scalar(0, 255, 0), 1);
+                }
+
                 cv::imshow(std::format("Plain {}", i), plainFrames[i]);
             }
             if (!frames[i].empty()) {

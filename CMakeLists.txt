@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(embedded_cv)
 
+set(CMAKE_PREFIX_PATH release/amd64/Debug/OpenCV)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
@@ -74,19 +75,6 @@ add_subdirectory(./mini_server)
 #add_subdirectory(./hw_ctl)
 add_subdirectory(./ws_ctl)
 
-add_executable(calibrator
-        calibrator.cpp
-        ImageProcessor.cpp
-        CvCommandHandler.cpp
-        CalibrateMapper.cpp
-        Calibrator.cpp
-        Calibrator.h
-        DisparityEvaluator.cpp
-        DisparityEvaluator.h
-)
-
-target_link_libraries(calibrator PUBLIC OpenCL::OpenCL mini_server cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
-
 add_executable(calib
         calib.cpp
         CalibrateFrameCollector.cpp
@@ -101,7 +89,6 @@ add_executable(calib
 
 target_link_libraries(calib PUBLIC OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
 
-install(TARGETS calibrator DESTINATION bin)
 install(TARGETS calib DESTINATION bin)
 
 add_executable(cv
