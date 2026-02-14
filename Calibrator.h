@@ -6,6 +6,7 @@
 #include "opencv2/imgproc.hpp"
 #include "opencv2/calib.hpp"
 #include "opencv2/3d.hpp"
+#include "CalibrateFrameCollector.h"
 
 namespace ecv {
 
@@ -44,6 +45,15 @@ namespace ecv {
                 const std::vector<std::vector<cv::Point3d>> &imagePoints,
                 CalibrationData &data
         );
+
+        double calibrateSingleCamera(
+                cv::Size frameSize,
+                const std::vector<std::vector<cv::Point3d>> &collectedObjectPoints,
+                const std::vector<std::vector<cv::Point3d>> &collectedImagePoints,
+                const std::vector<cv::Point3d> &newObjectPoints,
+                const std::vector<cv::Point3d> &newImagePoints,
+                CalibrationData &data
+        );
         double calibrateSingleCamera(
                 cv::Size frameSize,
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
@@ -76,6 +86,15 @@ namespace ecv {
                 CalibrationData &dataCam1,
                 CalibrationData &data
         );
+        double calibrateCameraPair(
+                cv::Size frameSize,
+                const std::set<std::shared_ptr<CalibrateFrameCollector::FramePair>> &pairs,
+                const std::vector<cv::Point3d> &objectPointsCam1,
+                const std::vector<cv::Point3d> &imagePointsCam1,
+                const std::vector<cv::Point3d> &objectPoints,
+                const std::vector<cv::Point3d> &imagePoints,
+                CalibrationData &dataCam1,
+                CalibrationData &data);
 
         cv::Mat getUndistortMap(cv::Size frameSize, const CalibrationData &data);
         std::pair<cv::Mat, cv::Mat> getUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current);

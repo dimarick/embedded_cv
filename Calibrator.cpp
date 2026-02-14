@@ -152,6 +152,23 @@ namespace ecv {
         }
     }
 
+    double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3d>> &collectedObjectPoints,
+                                             const std::vector<std::vector<cv::Point3d>> &collectedImagePoints,
+                                             const std::vector<cv::Point3d> &newObjectPoints,
+                                             const std::vector<cv::Point3d> &newImagePoints,
+                                             CalibrationData &data) {
+
+        cv::Mat mat;
+        std::vector<std::vector<cv::Point3d>> objectGrids(collectedObjectPoints.size());
+        std::vector<std::vector<cv::Point3d>> imageGrids(collectedImagePoints.size());
+        std::copy(collectedImagePoints.begin(), collectedImagePoints.end(), imageGrids.begin());
+        std::copy(collectedObjectPoints.begin(), collectedObjectPoints.end(), objectGrids.begin());
+        objectGrids.emplace_back(newObjectPoints);
+        imageGrids.emplace_back(newImagePoints);
+
+        return calibrateSingleCamera(frameSize, objectGrids, imageGrids, data);
+    }
+
     double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3d>> &objectPoints,
                                              const std::vector<std::vector<cv::Point3d>> &imagePoints,
                                              CalibrationData &data) {
@@ -217,8 +234,41 @@ namespace ecv {
             convertToPlain3dPoints(objectPoints[i], _objectPoints[i]);
         }
 
-
         return calibrateCameraPair(frameSize, _objectPointsCam1, _imagePointsCam1, _objectPoints, _imagePoints,
+                                   dataCam1, data);
+    }
+
+    double Calibrator::calibrateCameraPair(
+            cv::Size frameSize,
+            const std::set<std::shared_ptr<CalibrateFrameCollector::FramePair>> &pairs,
+            const std::vector<cv::Point3d> &objectPointsCam1,
+            const std::vector<cv::Point3d> &imagePointsCam1,
+            const std::vector<cv::Point3d> &objectPoints,
+            const std::vector<cv::Point3d> &imagePoints,
+            CalibrationData &dataCam1,
+            CalibrationData &data) {
+
+        std::vector<std::vector<cv::Point3d>> imageGrids0, imageGrids1;
+        std::vector<std::vector<cv::Point3d>> objectGrids0, objectGrids1;
+
+        for (const auto &pair : pairs) {
+            const auto &baseFrame = pair->base;
+            const auto &frame = pair->current;
+
+            imageGrids0.emplace_back(baseFrame->imageGrid);
+            imageGrids1.emplace_back(frame->imageGrid);
+
+            objectGrids0.emplace_back(baseFrame->objectGrid);
+            objectGrids1.emplace_back(frame->objectGrid);
+        }
+
+        imageGrids0.emplace_back(imagePointsCam1);
+        imageGrids1.emplace_back(imagePoints);
+
+        objectGrids0.emplace_back(objectPointsCam1);
+        objectGrids1.emplace_back(objectPoints);
+
+        return calibrateCameraPair(frameSize, objectGrids0, imageGrids0, objectGrids1, imageGrids1,
                                    dataCam1, data);
     }
 

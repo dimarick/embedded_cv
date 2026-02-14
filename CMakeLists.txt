@@ -83,6 +83,7 @@ add_executable(calib
         Calibrator.h
         DisparityEvaluator.cpp
         DisparityEvaluator.h
+        BlurFrameFilter.cpp
         MatStorage.cpp
         MatStorage.h
 )
@@ -108,6 +109,8 @@ add_executable(benchmark
         DisparityEvaluator.h
         CalibrateFrameCollector.cpp
         CalibrateFrameCollector.h
+        BlurFrameFilter.cpp
+        BlurFrameFilter.h
 )
 
 target_link_libraries(benchmark PUBLIC OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS})
