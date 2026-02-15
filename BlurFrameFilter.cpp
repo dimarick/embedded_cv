@@ -3,35 +3,55 @@
 
 using namespace ecv;
 
-bool BlurFrameFilter::apply(const cv::UMat &frame) {
+/**
+ * Вычисляет резкость кадра в абстрактных ненормированных единицах
+ * @param frame
+ * @return
+ */
+double BlurFrameFilter::getValue(const cv::UMat &frame) {
     cv::UMat thumb, lap;
-    cv::extractChannel(frame, thumb, 1); // green
+    int w3 = frame.cols / 3;
+    int h3 = frame.rows / 3;
+    cv::extractChannel(frame(cv::Rect(w3, h3, w3, h3)), thumb, 1); // green
     cv::resize(frame, thumb, cv::Size(320, 240), cv::INTER_NEAREST);
     cv::Laplacian(thumb, lap, CV_32F);
     cv::absdiff(lap, 0, lap);
-    auto mean = cv::mean(lap)[0];
+    return cv::mean(lap)[0];
+}
 
+/**
+ * Отделяет percentile лучших value. Лучше == больше.
+ * Используется адаптивный порог резкости, устанавливающийся автоматически для достижения
+ * целевого percentile.
+ * @param frame
+ * @return
+ */
+bool BlurFrameFilter::streamingPercentile(double value) {
     if (currentThreshold == 0) {
-        currentThreshold = mean;
+        currentThreshold = value;
     }
 
-    bool solution = mean > currentThreshold;
+    bool solution = value > currentThreshold;
     if (solution) {
         trueValues++;
     } else {
         falseValues++;
     }
 
+    double relDiff = std::abs(value - currentThreshold) / std::max(value, currentThreshold);
+    auto step = relDiff * currentThresholdStep;
+
     if (trueValues / falseValues > percentile) {
-        currentThreshold *= 1 + currentThresholdStep;
+        currentThreshold *= 1 + step;
     } else {
-        currentThreshold /= 1 + currentThresholdStep;
+        currentThreshold /= 1 + step;
     }
 
     if ((trueValues + falseValues) > 1000) {
-        trueValues *= 0.95;
-        falseValues *= 0.95;
+        trueValues *= 0.998;
+        falseValues *= 0.998;
     }
 
-    return solution;
+    bool result = solution || relDiff < 1e-2;
+    return result;
 }

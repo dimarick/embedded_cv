@@ -5,7 +5,8 @@
 namespace ecv {
     double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
                                              const std::vector<std::vector<cv::Point2f>> &imagePoints,
-                                             CalibrationData &data) {
+                                             CalibrationData &data,
+                                             cv::TermCriteria term) {
         size_t objectSize = 0;
         for (const auto & objectPoint : objectPoints) {
             if (objectPoint.empty()) {
@@ -31,11 +32,13 @@ namespace ecv {
             imagePointsSlice = std::vector(imagePoints.begin(), imagePoints.begin() + (int)inputSize);
         }
 
-        data.cameraMatrix.setTo(cv::Scalar::all(0));
         auto cameraData = (double *)data.cameraMatrix.data;
 
-        cx = cx == 0 ? (float)frameSize.width / 2 : cx;
-        cy = cy == 0 ? (float)frameSize.height / 2 : cy;
+        fx = cameraData[0] == 0 ? 1000 : cameraData[0];
+        fy = cameraData[4] == 0 ? 1000 : cameraData[4];
+
+        cx = cameraData[2] == 0 ? (float)frameSize.width / 2 : cameraData[2];
+        cy = cameraData[5] == 0 ? (float)frameSize.height / 2 : cameraData[5];
 
         cameraData[0] = fx;
         cameraData[4] = fy;
@@ -43,15 +46,13 @@ namespace ecv {
         cameraData[5] = cy;
         cameraData[8] = 1.;
 
-
-//        data.map1.setTo(cv::Scalar::all(0));
-//        data.map2.setTo(cv::Scalar::all(0));
+        auto random = std::rand() % 8;
 
         int baseFlags =
                 cv::CALIB_USE_LU|
-                cv::CALIB_RATIONAL_MODEL|
-                cv::CALIB_TILTED_MODEL|
-                cv::CALIB_THIN_PRISM_MODEL|
+                (cv::CALIB_RATIONAL_MODEL && random & 1)|
+                (cv::CALIB_TILTED_MODEL && random & 2)|
+                (cv::CALIB_THIN_PRISM_MODEL && random & 4)|
                 cv::CALIB_FIX_ASPECT_RATIO|
                 cv::CALIB_USE_INTRINSIC_GUESS;
 
@@ -59,23 +60,20 @@ namespace ecv {
 
         try {
             result = cv::calibrateCamera(objectPointsSlice, imagePointsSlice, frameSize, data.cameraMatrix,
-                                data.distCoeff, data.rvecs, data.tvecs, baseFlags,
-                                cv::TermCriteria(10, 1e-7)
-            );
+                                data.distCoeff, data.rvecs, data.tvecs, baseFlags, term);
         } catch (const std::exception &e) {
             std::cerr << "cv::calibrateCamera failed" << std::endl;
 
             return 1. / 0.;
         }
 
-        std::cout << std::format("result = {}, camera.fx = {}, camera.fy = {}, camera.cx = {}, camera.cy = {}, distCoeff = {}\n",
-                                 result, cameraData[0], cameraData[4], cameraData[2], cameraData[5], data.distCoeff);
+//        std::cout << std::format("result = {}, camera.fx = {}, camera.fy = {}, camera.cx = {}, camera.cy = {}, distCoeff = {}\n",
+//                                 result, cameraData[0], cameraData[4], cameraData[2], cameraData[5], data.distCoeff);
 
-        auto ema = 2. / (11. + 1.);
-        fx = ema * cameraData[0] + (1 - ema) * fx;
-        fy = ema * cameraData[4] + (1 - ema) * fy;
-        cx = ema * cameraData[2] + (1 - ema) * cx;
-        cy = ema * cameraData[5] + (1 - ema) * cy;
+        fx = cameraData[0];
+        fy = cameraData[4];
+        cx = cameraData[2];
+        cy = cameraData[5];
 
         return result;
     }
@@ -89,17 +87,18 @@ namespace ecv {
         return map;
     }
 
-    std::pair<cv::Mat, cv::Mat> Calibrator::getUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current) {
+    std::tuple<cv::Mat, cv::Mat, double> Calibrator::getStereoUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current) {
         cv::Rect roi1, roi2;
         cv::Mat  baseMap, map, tmp, R1, P1, R2, P2, Q;
 
-        double alpha = 0.0;
-        cv::Mat newBaseCamMat = cv::getOptimalNewCameraMatrix(base.cameraMatrix, base.distCoeff, frameSize, alpha, frameSize, &roi1);
-        cv::Mat newCamMat = cv::getOptimalNewCameraMatrix(current.cameraMatrix, current.distCoeff, frameSize, alpha, frameSize, &roi2);
+        double alpha = 1.0;
+//        cv::Mat newBaseCamMat = cv::getOptimalNewCameraMatrix(base.cameraMatrix, base.distCoeff, frameSize, alpha, frameSize, &roi1);
+//        cv::Mat newCamMat = cv::getOptimalNewCameraMatrix(current.cameraMatrix, current.distCoeff, frameSize, alpha, frameSize, &roi2);
+//        cv::Mat avgMat = (newBaseCamMat + newCamMat) / 2;
 
         cv::stereoRectify(
-                newBaseCamMat, base.distCoeff,
-                newCamMat, current.distCoeff,
+                base.cameraMatrix, base.distCoeff,
+                current.cameraMatrix, current.distCoeff,
                 frameSize, current.R, current.T,
                 R1, R2, P1, P2, Q,
                 cv::CALIB_ZERO_DISPARITY, alpha, frameSize, &roi1, &roi2
@@ -107,18 +106,18 @@ namespace ecv {
         cv::Mat rvec;
         cv::Rodrigues(current.R, rvec);
 
-        std::cout << "rvec (rad): " << rvec.t() << std::endl;
-        std::cout << "T (mm): " << current.T.t() << std::endl;
+//        std::cout << "rvec (rad): " << rvec.t() << std::endl;
+//        std::cout << "T (mm): " << current.T.t() << std::endl;
+//
+//        std::cout << "cam1:\n" << base.cameraMatrix << std::endl;
+//        std::cout << "cam2:\n" << current.cameraMatrix << std::endl;
+//
+//        std::cout << "P1:\n" << P1 << std::endl;
+//        std::cout << "P2:\n" << P2 << std::endl;
+//        std::cout << "R1:\n" << R1 << std::endl;
+//        std::cout << "R2:\n" << R2 << std::endl;
 
-        std::cout << "cam1:\n" << newBaseCamMat << std::endl;
-        std::cout << "cam2:\n" << newCamMat << std::endl;
-
-        std::cout << "P1:\n" << P1 << std::endl;
-        std::cout << "P2:\n" << P2 << std::endl;
-        std::cout << "R1:\n" << R1 << std::endl;
-        std::cout << "R2:\n" << R2 << std::endl;
-
-        printStereoCalibrationStats(base.cameraMatrix, current.cameraMatrix, current.R, current.T);
+//        printStereoCalibrationStats(base.cameraMatrix, current.cameraMatrix, current.R, current.T);
 
         cv::initUndistortRectifyMap(base.cameraMatrix, base.distCoeff, R2, P2, frameSize, CV_32FC2, baseMap, tmp);
 //        cv::stereoRectify(
@@ -131,7 +130,7 @@ namespace ecv {
 
         cv::initUndistortRectifyMap(current.cameraMatrix, current.distCoeff, R1, P1, frameSize, CV_32FC2, map, tmp);
 
-        return {baseMap, map};
+        return {baseMap, map, roi1.width * roi1.height};
     }
 
     void Calibrator::convertTo2dPoints(const std::vector<cv::Point3d> &points3d, std::vector<cv::Point2f> &points2d) {
@@ -156,7 +155,8 @@ namespace ecv {
                                              const std::vector<std::vector<cv::Point3d>> &collectedImagePoints,
                                              const std::vector<cv::Point3d> &newObjectPoints,
                                              const std::vector<cv::Point3d> &newImagePoints,
-                                             CalibrationData &data) {
+                                             CalibrationData &data,
+                                             cv::TermCriteria term) {
 
         cv::Mat mat;
         std::vector<std::vector<cv::Point3d>> objectGrids(collectedObjectPoints.size());
@@ -166,12 +166,13 @@ namespace ecv {
         objectGrids.emplace_back(newObjectPoints);
         imageGrids.emplace_back(newImagePoints);
 
-        return calibrateSingleCamera(frameSize, objectGrids, imageGrids, data);
+        return calibrateSingleCamera(frameSize, objectGrids, imageGrids, data, term);
     }
 
     double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3d>> &objectPoints,
                                              const std::vector<std::vector<cv::Point3d>> &imagePoints,
-                                             CalibrationData &data) {
+                                             CalibrationData &data,
+                                             cv::TermCriteria term) {
         std::vector<std::vector<cv::Point3f>> objectPoints2(objectPoints.size());
         std::vector<std::vector<cv::Point2f>> imagePoints2(imagePoints.size());
 
@@ -185,19 +186,20 @@ namespace ecv {
             convertToPlain3dPoints(objectPoints[i], objectPoints2[i]);
         }
 
-        return calibrateSingleCamera(frameSize, objectPoints2, imagePoints2, data);
+        return calibrateSingleCamera(frameSize, objectPoints2, imagePoints2, data, term);
     }
 
     double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
                                              const std::vector<std::vector<cv::Point3f>> &imagePoints,
-                                             CalibrationData &data) {
+                                             CalibrationData &data,
+                                             cv::TermCriteria term) {
         std::vector<std::vector<cv::Point2f>> imagePoints2;
         for (int i = 0; i < imagePoints.size(); ++i) {
             imagePoints2[i].resize(imagePoints[i].size());
             convertTo2dPoints(imagePoints[i], imagePoints2[i]);
         }
 
-        return calibrateSingleCamera(frameSize, objectPoints, imagePoints2, data);
+        return calibrateSingleCamera(frameSize, objectPoints, imagePoints2, data, term);
     }
 
     double Calibrator::calibrateCameraPair(
@@ -240,7 +242,7 @@ namespace ecv {
 
     double Calibrator::calibrateCameraPair(
             cv::Size frameSize,
-            const std::set<std::shared_ptr<CalibrateFrameCollector::FramePair>> &pairs,
+            const std::vector<CalibrateFrameCollector::FramePairRef> &pairs,
             const std::vector<cv::Point3d> &objectPointsCam1,
             const std::vector<cv::Point3d> &imagePointsCam1,
             const std::vector<cv::Point3d> &objectPoints,
@@ -274,6 +276,30 @@ namespace ecv {
 
     double Calibrator::calibrateCameraPair(
             cv::Size frameSize,
+            const std::vector<CalibrateFrameCollector::FramePairRef> &pairs,
+            CalibrationData &dataCam1,
+            CalibrationData &data) {
+
+        std::vector<std::vector<cv::Point3d>> imageGrids0, imageGrids1;
+        std::vector<std::vector<cv::Point3d>> objectGrids0, objectGrids1;
+
+        for (const auto &pair : pairs) {
+            const auto &baseFrame = pair->base;
+            const auto &frame = pair->current;
+
+            imageGrids0.emplace_back(baseFrame->imageGrid);
+            imageGrids1.emplace_back(frame->imageGrid);
+
+            objectGrids0.emplace_back(baseFrame->objectGrid);
+            objectGrids1.emplace_back(frame->objectGrid);
+        }
+
+        return calibrateCameraPair(frameSize, objectGrids0, imageGrids0, objectGrids1, imageGrids1,
+                                   dataCam1, data);
+    }
+
+    double Calibrator::calibrateCameraPair(
+            cv::Size frameSize,
             const std::vector<std::vector<cv::Point3f>> &objectPointsCam1,
             const std::vector<std::vector<cv::Point2f>> &imagePointsCam1,
             const std::vector<std::vector<cv::Point3f>> &objectPoints,
@@ -286,7 +312,7 @@ namespace ecv {
         auto cost = cv::registerCameras(objectPoints, objectPointsCam1, imagePoints, imagePointsCam1,
             data.cameraMatrix, data.distCoeff, cv::CameraModel::CALIB_MODEL_PINHOLE,
             dataCam1.cameraMatrix, dataCam1.distCoeff, cv::CameraModel::CALIB_MODEL_PINHOLE,
-            data.R, data.T, data.E, data.F, perViewErrors, cv::CALIB_FIX_INTRINSIC, cv::TermCriteria(10, 1e-7));
+            data.R, data.T, data.E, data.F, perViewErrors, cv::CALIB_FIX_INTRINSIC, cv::TermCriteria(5, 1e-7));
 
         return cost;
     }

@@ -161,7 +161,7 @@ int main(int argc, const char **argv) {
     }
 
     std::vector<ecv::CalibrateMapper<double>> calibrateMapper(frames.size()), testCalibrateMapper(frames.size());
-    std::vector<ecv::BlurFrameFilter> blurFrameFilter(frames.size(), ecv::BlurFrameFilter(0.1));
+    std::vector<ecv::BlurFrameFilter> blurFrameFilter(frames.size(), ecv::BlurFrameFilter(0.2));
     std::vector<ecv::Calibrator> calibrator(frames.size());
     std::vector<ecv::Calibrator::CalibrationData> calibrationData(frames.size());
 
@@ -183,10 +183,10 @@ int main(int argc, const char **argv) {
         }
     }
 
-//    rotate180(maps[1]);
-
+    std::vector<double> frameBlur(frames.size());
     std::vector<double> bestQ(frames.size(), 1. / 0.);
     std::vector<double> bestPairQ(frames.size(), 1. / 0.);
+    std::vector<double> bestRoiQ(frames.size(), 0.);
     std::vector<size_t> bestW(frames.size(), 0);
     std::vector<size_t> bestH(frames.size(), 0);
     std::vector<std::vector<std::vector<ecv::CalibrateMapper<double>::Point3>>> bestImagePoints(frames.size()), bestObjectPoints(frames.size());
@@ -250,12 +250,13 @@ int main(int argc, const char **argv) {
         }
 
         std::vector<std::vector<ecv::CalibrateMapper<double>::Point3>> peaks(frames.size(), std::vector<ecv::CalibrateMapper<double>::Point3>(500));
-#pragma omp parallel for default(none) shared(peaks, frames, calibrateMapper, blurFrameFilter, abortCalibration, std::cout)
+#pragma omp parallel for default(none) shared(frameBlur, peaks, frames, calibrateMapper, blurFrameFilter, abortCalibration, std::cout)
         for (int i = 0; i < frames.size(); ++i) {
-            if (!blurFrameFilter[i].apply(frames[i])) {
-                abortCalibration[i] = true;
-                continue;
-            }
+            frameBlur[i] = blurFrameFilter[i].getValue(frames[i]);
+//            if (!blurFrameFilter[i].streamingPercentile(frameBlur[i])) {
+//                abortCalibration[i] = true;
+//                continue;
+//            }
 
             size_t peaksSize;
 
@@ -297,57 +298,130 @@ int main(int argc, const char **argv) {
                     imageGrid.resize(w * h);
                     objectGrid.resize(w * h);
 
-                    auto cost = calibrator[i].calibrateSingleCamera(
+                    ecv::Calibrator::CalibrationData data;
+                    int sampleSize;
+
+                    sampleSize = 50;
+                    data = calibrationData[i];
+
+                    std::vector<ecv::CalibrateFrameCollector::FrameRef> sample;
+                    std::vector<ecv::CalibrateFrameCollector::FrameRef> sampleValidate;
+
+                    auto sampleRaw = frameCollectors[i].getFramesSample(sampleSize);
+
+                    for (const auto &item : sampleRaw) {
+                        if (item.second->validate) {
+                            sampleValidate.emplace_back(item.second);
+                        } else {
+                            sample.emplace_back(item.second);
+                        }
+                    }
+
+                    auto trainCost = calibrator[i].calibrateSingleCamera(
                             frames[i].size(),
-                            frameCollectors[i].getCollectedObjectGrids(),
-                            frameCollectors[i].getCollectedObjectGrids(),
+                            frameCollectors[i].getCollectedObjectGridsSample(sample),
+                            frameCollectors[i].getCollectedImageGridsSample(sample),
                             objectGrid,
                             imageGrid,
-                            calibrationData[i]
+                            data,
+                            cv::TermCriteria(100, 1e-7)
+                    );
+
+                    ecv::Calibrator::CalibrationData updatedData = data;
+
+                    auto cost = calibrator[i].calibrateSingleCamera(
+                            frames[i].size(),
+                            frameCollectors[i].getCollectedObjectGridsSample(sampleValidate),
+                            frameCollectors[i].getCollectedImageGridsSample(sampleValidate),
+                            data,
+                            cv::TermCriteria(1, 1e-7)
                     );
 
                     double progress = frameCollectors[i].getProgress();
 
-                    std::cout << "Calib" << i << ": " << progress * 100 << "%" << std::endl;
+                    auto frameRef = frameCollectors[i].createFrame(imageGrid, objectGrid, w, h, 1.0 / frameBlur[i]);
 
-                    auto frameRef = frameCollectors[i].createFrame(imageGrid, objectGrid, w, h, cost);
+                    frameCollectors[i].addFrame(frameRef);
 
                     if (cost < bestQ[i]) {
                         bestQ[i] = cost;
-                        frameCollectors[i].addFrame(frameRef);
+                        calibrationData[i] = updatedData;
+                        bestPairQ[i] = 1. / 0.;
+                        bestRoiQ[i] = 0.;
+                        std::cout << "Calib" << i << ": " << progress * 100 << "%" << " train" << trainCost << " validate " << cost << "%" << std::endl;
                     } else {
                         bestQ[i] *= 1.02;
                     }
 
                     double costOfPair = 0.0;
 
-                    if (i != 0 && baseFrameRef != nullptr && baseFrameRef->w == frameRef->w && baseFrameRef->h == frameRef->h) {
-                        const auto &pairs = frameCollectors[i].getValidFramePairs();
-                        if (!pairs.empty() || !baseFrameRef->imageGrid.empty()) {
-                            costOfPair = calibrator[i].calibrateCameraPair(frames[i].size(),
-                                                                           pairs,
+                    ecv::Calibrator::CalibrationData data0 = calibrationData[0];
+                    ecv::Calibrator::CalibrationData dataI = calibrationData[i];
+
+                    ecv::Calibrator::CalibrationData updatedData0 = data0;
+                    ecv::Calibrator::CalibrationData updatedDataI = dataI;
+
+                    if (i != 0 && baseFrameRef != nullptr
+                        && baseFrameRef->w == frameRef->w && baseFrameRef->h == frameRef->h
+                    ) {
+                        const auto &pairsSampleRaw = frameCollectors[i].getFramesPairsSample(50);
+                        std::vector<ecv::CalibrateFrameCollector::FramePairRef> pairsSample;
+                        std::vector<ecv::CalibrateFrameCollector::FramePairRef> pairsSampleValidate;
+
+                        for (const auto &item : pairsSampleRaw) {
+                            if (item.second->isValidate()) {
+                                pairsSampleValidate.emplace_back(item.second);
+                            } else {
+                                pairsSample.emplace_back(item.second);
+                            }
+                        }
+
+
+                        if ((!pairsSample.empty() || !baseFrameRef->imageGrid.empty()) && !pairsSampleValidate.empty()) {
+
+                            calibrator[i].calibrateCameraPair(frames[i].size(),
+                                                                           pairsSample,
                                                                            baseFrameRef->objectGrid,
                                                                            baseFrameRef->imageGrid,
                                                                            frameRef->objectGrid,
                                                                            frameRef->imageGrid,
-                                                                           calibrationData[0],
-                                                                           calibrationData[i]);
+                                                                           data0,
+                                                                           dataI);
+                            updatedData0 = data0;
+                            updatedDataI = dataI;
+
+                            costOfPair = calibrator[i].calibrateCameraPair(frames[i].size(),
+                                                                           pairsSampleValidate,
+                                                                           data0,
+                                                                           dataI);
                         }
                     }
 
                     if (i == 0) {
                         baseFrameRef = frameRef;
 //                    maps[i] = calibrator[i].getUndistortMap(frames[i].size(), calibrationData[i]);
-                    } else if (costOfPair > 0 && costOfPair < bestPairQ[i]
-                               && !baseFrameRef->imageGrid.empty()
+                    } else if (baseFrameRef != nullptr && !baseFrameRef->imageGrid.empty()
                                && baseFrameRef->w == w && baseFrameRef->h == h
                                && baseFrameRef->imageGrid.size() == imageGrid.size()
                                && baseFrameRef->objectGrid.size() == objectGrid.size()
                             ) {
-                        frameCollectors[i].addMulticamFrame(baseFrameRef, frameRef, costOfPair);
-                        bestPairQ[i] = costOfPair;
+                        frameCollectors[i].addMulticamFrame(baseFrameRef, frameRef, frameBlur[i]);
 
-                        std::tie(maps[0], maps[i]) = calibrator[i].getUndistortMap(frames[i].size(), calibrationData[0], calibrationData[i]);
+                        if (costOfPair > 0 && costOfPair <= bestPairQ[i] * 1.1) {
+                            double roiSize = 0;
+                            cv::Mat map0, map1;
+                            std::tie(map0, map1, roiSize) = calibrator[i].getStereoUndistortMap(frames[i].size(), data0,
+                                                                                                dataI);
+                            if (roiSize >= bestRoiQ[i] / 1.1) {
+                                bestPairQ[i] = std::min(costOfPair, bestPairQ[i]);
+                                bestRoiQ[i] = std::max(roiSize, bestRoiQ[i]);
+                                calibrationData[0] = updatedData0;
+                                calibrationData[i] = updatedDataI;
+                                maps[0] = map0;
+                                maps[i] = map1;
+                            }
+                        }
+
                     }
 
                     if (cost < 1. / 0. && !maps[i].empty()) {

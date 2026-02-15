@@ -52,8 +52,6 @@ namespace ecv {
             return 1. / 0.;
         }
 
-        std::cout << "Sq size " << (distance2(square.topLeft, square.bottomLeft) + distance2(square.topRight, square.bottomRight)) / 2 << std::endl;
-
         bool updatePattern = false;
 
         if (squareRmse < prevSquareRmse * 1.01) {
@@ -76,7 +74,7 @@ namespace ecv {
             drawGrid(debugFrame, imageGrid, *w, *h, cv::Scalar(255, 0, 0));
         }
 
-        if (updatePattern && *w > 4 && *h > 4) {
+        if (updatePattern || *w < 4 && *h < 4) {
             setPattern(suggestPatternSize(imageGrid, square, *w, *h), suggestSkew(square));
         }
 
@@ -96,8 +94,6 @@ namespace ecv {
 
         cv::Mat mat;
         matches.copyTo(mat);
-
-        cv::imshow("m", mat);
 
         findPeaks(mat, peaks, size, patternSize, 2);
     }
@@ -149,6 +145,7 @@ namespace ecv {
         size_t nextSize, currentSize;
         currentSize = peaks.size();
 
+        // выберем 15-20 точек вокруг центра масс всех точек для поиска опорного квадрата
         do {
             auto roi = Rect{center.x - roiSize, center.y - roiSize, center.x + roiSize, center.y + roiSize};
             nextSize = 0;
@@ -212,9 +209,9 @@ namespace ecv {
             }
         }
 
-        auto pSize = (size_t)(m * 0.8f);
+        auto pSize = (size_t)(m * 0.9f);
         pSize -= pSize % 2;
-        pSize = std::clamp(pSize, (size_t)24, (size_t)256);
+        pSize = std::clamp(pSize, (size_t)16, (size_t)256);
 
         return pSize;
     }
@@ -441,7 +438,9 @@ namespace ecv {
 
         const cv::Mat mask = cv::Mat::zeros(mat.size(), CV_8SC1);
 
-        const int kernelRadius = (kernel - 1) / 5;
+        const int kernelRadius = kernel / 2;
+        const int granule = kernel / 2;
+        const int granule2 = granule / 2;
         const int w = mat.cols;
         const auto step = 1;
 
@@ -451,11 +450,11 @@ namespace ecv {
 #pragma omp parallel for default(shared)
         for (int i = kernelRadius; i < mat.rows - kernel; i += step) {
             for (int j = kernelRadius; j < w - kernel; j += step) {
-                if (mask.at<char>(i, j) == 1) {
+                if (mask.at<char>(i, j) != 0) {
                     continue;
                 }
                 auto found = true;
-                for (int k = 1; k <= kernelRadius; ++k) {
+                for (int k = 1; k <= granule2; ++k) {
                     auto diagonals = (data[(i + (k - 1)) * w + (j + (k - 1))] < data[(i + k) * w + (j + k)])
                                      + (data[(i + (k - 1)) * w + (j - (k - 1))] < data[(i + k) * w + (j - k)])
                                      + (data[(i - (k - 1)) * w + (j + (k - 1))] < data[(i - k) * w + (j + k)])
@@ -492,11 +491,11 @@ namespace ecv {
                 }
 
                 if (found) {
-                    const cv::Rect2i &roi = cv::Rect(j - kernelRadius, i - kernelRadius, kernel, kernel);
+                    const cv::Rect2i &roi = cv::Rect(j - granule2, i - granule2, granule, granule);
                     auto processed = cv::Mat(mask, roi);
-                    processed.setTo(1);
-                    auto point = findMassCenter(mat, j, i, kernelRadius);
-                    j+=kernel;
+                    processed.setTo(127);
+                    auto point = findMassCenter(mat, j, i, kernelRadius / 2);
+                    j += granule;
 
                     pointsSetLock.lock();
                     pointsSet.insert(point);
@@ -523,7 +522,7 @@ namespace ecv {
             points[i].y = p.y + (TP)kernel / 2;
             const auto &z = (p.z - zMin) / range;
             points[i].z = z;
-            if (z > 0.01) {
+            if (z > 0.2) {
                 i++;
             }
 
@@ -756,7 +755,7 @@ namespace ecv {
         int h4 = (int)*h / 4;
 
         auto wScore = 0.0f, hScore = 0.0f;
-        auto threshold = 0.5f; // чем меньше - тем больше площадь сетки, но тем больше шанс захвата невалидных точек
+        auto threshold = 0.33f; // чем меньше - тем больше площадь сетки, но тем больше шанс захвата невалидных точек
 
         for (int x = w4; x < *w - w4; ++x) {
             wScore += std::max((TP)0., grid[cH * *w + x].z);
@@ -781,7 +780,7 @@ namespace ecv {
             }
         }
 
-        for (int y = (int)*h - 1; y > cH; --y) {
+        for (int y = (int)*h - 1; y >= cH; --y) {
             bottom = y + 1;
             auto rowScore = 0.0f;
             for (int x = w4; x < *w - w4; ++x) {
@@ -805,7 +804,7 @@ namespace ecv {
             }
         }
 
-        for (int x = (int)*w - 1; x > cW; --x) {
+        for (int x = (int)*w - 1; x >= cW; --x) {
             right = x + 1;
             auto rowScore = 0.0f;
             for (int y = h4; y < *h - h4; ++y) {

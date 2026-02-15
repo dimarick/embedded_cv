@@ -1,65 +1,15 @@
 #include <3d.hpp>
 #include "CalibrateFrameCollector.h"
 #include <ranges>
+#include <random>
+#include <highgui.hpp>
+#include <imgproc.hpp>
 
 using namespace ecv;
-
-template <typename T> void appendIf(std::vector<T> &vector, T value, bool condition) {
-    if (condition) {
-        vector.push_back(value);
-    }
-}
 
 double distance(cv::Point2d p1, cv::Point2d p2) {
     return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
 }
-
-// Быстрая проверка с использованием Bounding Box
-bool isInsideQuadSimple(const cv::Point2d& p, const std::vector<cv::Point2d>& quad) {
-    // Считаем сумму углов - если 360°, то точка внутри
-    double angleSum = 0;
-
-    for (int i = 0; i < 4; i++) {
-        int j = (i + 1) % 4;
-
-        // Векторы от точки к вершинам
-        double dx1 = quad[i].x - p.x;
-        double dy1 = quad[i].y - p.y;
-        double dx2 = quad[j].x - p.x;
-        double dy2 = quad[j].y - p.y;
-
-        // Угол между векторами через скалярное произведение
-        double dot = dx1 * dx2 + dy1 * dy2;
-        double cross = dx1 * dy2 - dy1 * dx2;
-        angleSum += fabs(atan2(cross, dot));
-    }
-
-    // Если сумма углов ~±2π, точка внутри
-    return fabs(angleSum - 2 * 3.14) < 0.1;
-}
-
-double getIntersectionAreaSize(const std::vector<cv::Point2d> &quad, const cv::Rect2d &rect) {
-    // Используем равномерную сетку 20x20 = 400 точек
-    const int grid = 20;  // Всего 400 точек, точность ~5%
-    const double cellW = (double)rect.width / grid;
-    const double cellH = (double)rect.height / grid;
-    const auto total = grid * grid;
-    auto hits = 0;
-
-    for (int i = 0; i < grid; i++) {
-        for (int j = 0; j < grid; j++) {
-            cv::Point2d p;
-            p.x = rect.x + (i + 0.5) * cellW;  // Центр ячейки
-            p.y = rect.y + (j + 0.5) * cellH;
-
-            if (isInsideQuadSimple(p, quad)) {
-                hits++;
-            }
-        }
-    }
-
-    return (double)hits / total;
-};
 
 /**
  * Определяет список классов, которым принадлежит кадр: центр, левый верхний угол, сильный крен и т.п. CalibrateFrameCollector::FrameClass::*
@@ -67,30 +17,17 @@ double getIntersectionAreaSize(const std::vector<cv::Point2d> &quad, const cv::R
  * @param frame
  * @return
  */
-std::vector<CalibrateFrameCollector::FrameClass> CalibrateFrameCollector::getClasses(const CalibrateFrameCollector::Frame &frame) const {
+int CalibrateFrameCollector::getClass(const CalibrateFrameCollector::Frame &frame) {
     int w = frameSize.width;
     int h = frameSize.height;
     int w2 = w / 2;
     int h2 = h / 2;
-    int w4 = w / 4;
-    int h4 = h / 4;
-    int w8 = w / 8;
-    int h8 = h / 8;
-    int w2_8 = w2 - w8;
-    int h2_8 = h2 - h8;
-    int w_4 = w - w4;
-    int h_4 = h - h4;
-    auto rTopLeft =     cv::Rect(w8, w8, w2_8, w2_8);
-    auto rTopRight =    cv::Rect(w2,  w8, w2_8, h2_8);
-    auto rBottomLeft =  cv::Rect(w8, h2,  w2_8, h2_8);
-    auto rBottomRight = cv::Rect(w2,  h2,  w2_8, h2_8);
-
-    auto rCenter = cv::Rect(w4, h4, w2, h2);
-    auto rAll =    cv::Rect(w8, h8, w_4, h_4);
 
     const auto &g = frame.imageGrid;
     const auto gw = frame.w;
     const auto gh = frame.h;
+    const auto gw2 = gw / 2;
+    const auto gh2 = gh / 2;
 
     cv::Point2d topLeft = {g[0].x, g[0].y};
     cv::Point2d topRight = {g[gw - 1].x, g[gw - 1].y};
@@ -103,12 +40,6 @@ std::vector<CalibrateFrameCollector::FrameClass> CalibrateFrameCollector::getCla
         bottomRight,
         bottomLeft,
     };
-
-    std::vector<CalibrateFrameCollector::FrameClass> result = {};
-
-    auto allMatch = getIntersectionAreaSize(gridQuad, rAll);
-
-    double yaw = 0, roll = 0, pitch = 0;
 
     cv::Mat cameraMatrix = (cv::Mat_<double>(3,3) <<
             100000, 0, w2, // fx fy заведомо запредельные,
@@ -131,85 +62,80 @@ std::vector<CalibrateFrameCollector::FrameClass> CalibrateFrameCollector::getCla
             {g[(gh - 1) * gw + gw - 1].x, g[(gh - 1) * gw + gw - 1].y},
     };
 
+    cv::Point2d center = {g[gh2 * gw + gw2].x, g[gh2 * gw + gw2].y};
+
+    std::vector<cv::Point2d> sides = {
+            {g[gh2 * gw + gw2 - 1].x, g[gh2 * gw + gw2 - 1].y},
+            {g[gh2 * gw + gw2 + 1].x, g[gh2 * gw + gw2 + 1].y},
+            {g[gh2 * gw - gw + gw2].x, g[gh2 * gw - gw + gw2].y},
+            {g[gh2 * gw + gw + gw2].x, g[gh2 * gw + gw + gw2].y},
+    };
+
+    auto avgCellSize = 0.;
+    for (const auto &side : sides) {
+        avgCellSize += std::sqrt(std::pow(side.x - center.x, 2) + std::pow(side.y - center.y, 2)) / (double)sides.size();
+    }
+
+    auto maxPossibleCellSize = (double)std::min(w, h) / 6;
+
     cv::solvePnP(objectPoints, imagePoints, cameraMatrix, distCoeffs, rvec, tvec);
 
     cv::Mat rotationMatrix;
     cv::Rodrigues(rvec, rotationMatrix);  // Формула Родригеса
+    cv::Vec3d n = rotationMatrix.col(2); // нормаль доски в системе камеры
+    auto dist = avgCellSize / maxPossibleCellSize;
 
-    // 5. Извлекаем углы Эйлера из матрицы вращения
-    // Порядок вращений: Z (yaw), Y (pitch), X (roll)
-    double sy = sqrt(rotationMatrix.at<double>(0,0) * rotationMatrix.at<double>(0,0) +
-                     rotationMatrix.at<double>(1,0) * rotationMatrix.at<double>(1,0));
+    auto sz = CLASSES_CUBE_SIZE;
+    auto sz2 = ((double)sz - 1) / 2.;
 
-    bool singular = sy < 1e-6;
 
-    yaw = atan2(-rotationMatrix.at<double>(2,0), sy);
-    if (!singular) {
-        pitch = atan2(rotationMatrix.at<double>(2,1),
-                            rotationMatrix.at<double>(2,2));
-        roll = atan2(rotationMatrix.at<double>(1,0),
-                           rotationMatrix.at<double>(0,0));
-    } else {
-        pitch = atan2(-rotationMatrix.at<double>(1,2),
-                            rotationMatrix.at<double>(1,1));
-        roll = 0;
-    }
+    auto x = (int)(std::round((n[0] + 1) * sz2));
+    auto y = (int)(std::round((n[1] + 1) * sz2));
+    auto z = (int)(std::round(dist * sz));
 
-    roll = roll * 180.0 / CV_PI;
-    pitch = pitch * 180.0 / CV_PI;
-    yaw = yaw * 180.0 / CV_PI;
+    int offset = x * sz * sz + y * sz + z;
 
-    std::cerr << std::format("{},{},{}", roll, pitch, yaw) << std::endl;
+    std::cout << "getClass x " << n[0] << " y " << n[1] << " z " << n[2] << " d " << dist << " sin(d) " << dist << "(x,y,z)" << x << "," << y << "," << z << std::endl;
 
-    appendIf(result, FrameClass::topLeft, getIntersectionAreaSize(gridQuad, rTopLeft) > RECT_MATCH_THRESHOLD);
-    appendIf(result, FrameClass::topRight, getIntersectionAreaSize(gridQuad, rTopRight) > RECT_MATCH_THRESHOLD);
-    appendIf(result, FrameClass::bottomLeft, getIntersectionAreaSize(gridQuad, rBottomLeft) > RECT_MATCH_THRESHOLD);
-    appendIf(result, FrameClass::bottomRight, getIntersectionAreaSize(gridQuad, rBottomRight) > RECT_MATCH_THRESHOLD);
-    appendIf(result, FrameClass::center, getIntersectionAreaSize(gridQuad, rCenter) > RECT_MATCH_THRESHOLD);
+    maxRotValue[0] = std::max(maxRotValue[0], std::abs(n[0]));
+    maxRotValue[1] = std::max(maxRotValue[1], std::abs(n[1]));
+    maxDistValue = std::max(maxDistValue, dist);
+    minDistValue = std::min(minDistValue, dist);
 
-    appendIf(result, FrameClass::near, allMatch > NEAR_THRESHOLD);
-    appendIf(result, FrameClass::mid, allMatch <= NEAR_THRESHOLD && allMatch > FAR_THRESHOLD);
-    appendIf(result, FrameClass::far, allMatch <= FAR_THRESHOLD);
-
-    appendIf(result, FrameClass::rollSmall, roll > 0 && roll < SMALL_ANGLE * 0.5);
-    appendIf(result, FrameClass::rollMedium, roll >= SMALL_ANGLE * 0.5 && roll < LARGE_ANGLE * 0.5);
-    appendIf(result, FrameClass::rollLarge, roll >= LARGE_ANGLE * 0.5);
-
-    appendIf(result, FrameClass::pitchSmall, pitch > 0 && pitch < SMALL_ANGLE);
-    appendIf(result, FrameClass::pitchMedium, pitch >= SMALL_ANGLE && pitch < LARGE_ANGLE);
-    appendIf(result, FrameClass::pitchLarge, pitch >= LARGE_ANGLE);
-
-    appendIf(result, FrameClass::yawSmall, yaw > 0 && yaw < SMALL_ANGLE);
-    appendIf(result, FrameClass::yawMedium, yaw >= SMALL_ANGLE && yaw < LARGE_ANGLE);
-    appendIf(result, FrameClass::yawLarge, yaw >= LARGE_ANGLE);
-
-    appendIf(result, FrameClass::rollSmallN, -roll > 0 && -roll < SMALL_ANGLE * 0.5);
-    appendIf(result, FrameClass::rollMediumN, -roll >= SMALL_ANGLE * 0.5 && -roll < LARGE_ANGLE * 0.5);
-    appendIf(result, FrameClass::rollLargeN, -roll >= LARGE_ANGLE * 0.5);
-
-    appendIf(result, FrameClass::pitchSmallN, -pitch > 0 && -pitch < SMALL_ANGLE);
-    appendIf(result, FrameClass::pitchMediumN, -pitch >= SMALL_ANGLE && -pitch < LARGE_ANGLE);
-    appendIf(result, FrameClass::pitchLargeN, -pitch >= LARGE_ANGLE);
-
-    appendIf(result, FrameClass::yawSmallN, -yaw > 0 && -yaw < SMALL_ANGLE);
-    appendIf(result, FrameClass::yawMediumN, -yaw >= SMALL_ANGLE && -yaw < LARGE_ANGLE);
-    appendIf(result, FrameClass::yawLargeN, -yaw >= LARGE_ANGLE);
-
-    return result;
+    return offset;
 }
 
 std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::createFrame(const std::vector<cv::Point3d> &imageGrid,
                                                                                      const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost) {
 
-    auto frameRef = std::shared_ptr<Frame>(new Frame({{}, imageGrid, objectGrid, w, h, cost}));
-    auto result = frames.insert({frameRef, 0});
-    auto frame = result.first->first.get();
-
-    const auto &frameClasses = getClasses(*frame);
-
-    frameRef->classes = frameClasses;
+    auto frameRef = std::shared_ptr<Frame>(new Frame({0, imageGrid, objectGrid, w, h, cost, std::rand() % 2 == 0}));
+    frameRef->cls = getClass(*frameRef);
 
     return frameRef;
+}
+
+
+void CalibrateFrameCollector::addFrameTo(std::unordered_map<int, FrameRef> *m, const CalibrateFrameCollector::FrameRef &frameRef) {
+    int cls = frameRef->cls;
+    const auto &it = m->find(cls);
+
+    if (it == m->end()) {
+        m->insert({cls, frameRef});
+    } else if (frameRef->cost < it->second->cost) {
+        m->emplace(cls, frameRef);
+    }
+}
+
+void CalibrateFrameCollector::addMulticamFrameTo(std::unordered_map<int, FramePairRef> *m,
+                                                 const CalibrateFrameCollector::FramePairRef &framePairRef) {
+    int cls = framePairRef->getClass();
+    const auto &it = m->find(cls);
+
+    if (it == m->end()) {
+        m->insert({cls, framePairRef});
+    } else if (framePairRef->cost < it->second->cost) {
+        m->emplace(cls, framePairRef);
+    }
 }
 
 /**
@@ -225,145 +151,77 @@ std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::createF
  * @param cost
  */
 void CalibrateFrameCollector::addFrame(const std::shared_ptr<Frame> &frameRef) {
-    auto result = frames.insert({frameRef, 0});
-    auto frame = result.first->first.get();
-
-    const auto &frameClasses = frameRef->classes;
-
-    for (auto cls : frameClasses) {
-        const auto &item = map.find(cls);
-        if (item == map.end()) {
-            map.insert({cls, std::multiset<std::shared_ptr<Frame>, FrameCompare>({frameRef})});
-            result.first->second++;
-        } else {
-            auto &set = item->second;
-            set.insert({frameRef});
-            result.first->second++;
-        }
-    }
-
-    for (auto cls : frameClasses) {
-        const auto &item = map.find(cls);
-        if (item != map.end()) {
-            auto &set = item->second;
-            while (set.size() > FRAMES_PER_CLASS) {
-                const auto &it = set.begin();
-                const auto &refToDelete = *it;
-                set.erase(it);
-                const auto &frameIt = frames.find(refToDelete);
-                if (frameIt != frames.end()) {
-                    frameIt->second--;
-                    if (frameIt->second <= 0) {
-                        frames.erase(frameIt);
-                    }
-                }
-            }
-        }
-    }
+    addFrameTo(&map, frameRef);
 }
 
 void CalibrateFrameCollector::addMulticamFrame(const std::shared_ptr<Frame> &baseFrameRef,
                                                const std::shared_ptr<Frame> &frameRef, double cost) {
-    auto pair = std::shared_ptr<FramePair>(new FramePair{cost, baseFrameRef, frameRef});
+    auto pair = FramePairRef(new FramePair{cost, baseFrameRef, frameRef});
 
-    const auto &frameClasses = frameRef->classes;
-
-    for (auto cls : frameClasses) {
-        const auto &item = pairs.find(cls);
-        if (item == pairs.end()) {
-            pairs.insert({cls, std::multiset<std::shared_ptr<FramePair>, FramePairCompare>({pair})});
-        } else {
-            auto &set = item->second;
-            set.insert(pair);
-        }
-    }
-
-    for (auto cls : frameClasses) {
-        const auto &item = pairs.find(cls);
-        if (item != pairs.end()) {
-            auto &set = item->second;
-            while (set.size() > FRAMES_PER_CLASS) {
-                const auto &it = set.begin();
-                set.erase(it);
-            }
-        }
-    }
+    addMulticamFrameTo(&pairs, pair);
 }
 
+std::vector<std::pair<int, CalibrateFrameCollector::FrameRef>> CalibrateFrameCollector::getFramesSample(int n) const {
+    std::vector<std::pair<int, FrameRef>> f;
 
-std::set<std::shared_ptr<CalibrateFrameCollector::FramePair>> CalibrateFrameCollector::getValidFramePairs() {
-    std::set<std::shared_ptr<CalibrateFrameCollector::FramePair>> result;
+    std::mt19937 r {std::random_device{}()};
 
-    for (const auto &item : pairs) {
-        for (const auto &pair : item.second | std::views::reverse | std::views::take(FRAMES_PER_CLASS)) {
-            result.insert(pair);
-        }
-    }
+    std::sample(map.begin(), map.end(), std::back_inserter(f), n, r);
 
-    return result;
+    return f;
+}
+
+std::vector<std::pair<int, CalibrateFrameCollector::FramePairRef>> CalibrateFrameCollector::getFramesPairsSample(int n) const {
+    std::vector<std::pair<int, FramePairRef>> f;
+
+    std::mt19937 r {std::random_device{}()};
+
+    std::sample(pairs.begin(), pairs.end(), std::back_inserter(f), n, r);
+
+    return f;
 }
 
 double CalibrateFrameCollector::getProgress() const {
-    size_t maxTotal = (COUNT - 1) * FRAMES_PER_CLASS;
-    size_t total = 0;
+    auto sz = CLASSES_CUBE_SIZE;
+    auto sz2 = sz / 2;
+    auto dim1 = std::ceil(maxRotValue[0] * 2 * sz);
+    auto dim2 = std::ceil(maxRotValue[1] * 2 * sz);
+    auto dim3 = std::ceil((maxDistValue - minDistValue) * sz);
 
-    for (const auto &kv : map) {
-        total += kv.second.size();
+    cv::Mat progressView = cv::Mat::zeros((int)dim2, (int)dim1, CV_8U);
+
+    unsigned char zStep = 255 / dim3;
+
+    for (const auto &item : map) {
+        auto i = item.first;
+        auto xy = i / sz;
+        auto x = xy / sz - sz2;
+        auto y = xy % sz - sz2;
+        progressView.at<unsigned char>(y + maxRotValue[1] * sz, x + maxRotValue[0] * sz) += zStep;
     }
 
-    std::vector<const char *> missing;
 
-    appendIf(missing, "topLeft", map.find(topLeft) == map.end() || map.find(topLeft)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "topRight", map.find(topRight) == map.end() || map.find(topRight)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "bottomLeft", map.find(bottomLeft) == map.end() || map.find(bottomLeft)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "bottomRight", map.find(bottomRight) == map.end() || map.find(bottomRight)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "center", map.find(center) == map.end() || map.find(center)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "near", map.find(near) == map.end() || map.find(near)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "mid", map.find(mid) == map.end() || map.find(mid)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "far", map.find(far) == map.end() || map.find(far)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "rollSmall", map.find(rollSmall) == map.end() || map.find(rollSmall)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "yawSmall", map.find(yawSmall) == map.end() || map.find(yawSmall)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "pitchSmall", map.find(pitchSmall) == map.end() || map.find(pitchSmall)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "rollMedium", map.find(rollMedium) == map.end() || map.find(rollMedium)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "yawMedium", map.find(yawMedium) == map.end() || map.find(yawMedium)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "pitchMedium", map.find(pitchMedium) == map.end() || map.find(pitchMedium)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "rollLarge", map.find(rollLarge) == map.end() || map.find(rollLarge)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "yawLarge", map.find(yawLarge) == map.end() || map.find(yawLarge)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "pitchLarge", map.find(pitchLarge) == map.end() || map.find(pitchLarge)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "rollSmallN", map.find(rollSmallN) == map.end() || map.find(rollSmallN)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "yawSmallN", map.find(yawSmallN) == map.end() || map.find(yawSmallN)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "pitchSmallN", map.find(pitchSmallN) == map.end() || map.find(pitchSmallN)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "rollMediumN", map.find(rollMediumN) == map.end() || map.find(rollMediumN)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "yawMediumN", map.find(yawMediumN) == map.end() || map.find(yawMediumN)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "pitchMediumN", map.find(pitchMediumN) == map.end() || map.find(pitchMediumN)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "rollLargeN", map.find(rollLargeN) == map.end() || map.find(rollLargeN)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "yawLargeN", map.find(yawLargeN) == map.end() || map.find(yawLargeN)->second.size() < FRAMES_PER_CLASS);
-    appendIf(missing, "pitchLargeN", map.find(pitchLargeN) == map.end() || map.find(pitchLargeN)->second.size() < FRAMES_PER_CLASS);
+    cv::resize(progressView, progressView, cv::Size(640, 640 * dim1 / dim2), cv::INTER_NEAREST);
+    cv::imshow("progress", progressView);
 
-//    std::cout << std:: format("Missing: {}\n", missing) << std::endl;
-
-    return (double)total / (double)maxTotal;
+    return (double)map.size() / (double)(dim1 * dim2 * dim3);
 }
 
-std::vector<std::vector<cv::Point3d>> CalibrateFrameCollector::getCollectedImageGrids() const {
+std::vector<std::vector<cv::Point3d>> CalibrateFrameCollector::getCollectedImageGridsSample(const std::vector<CalibrateFrameCollector::FrameRef> &sample) const {
     std::vector<std::vector<cv::Point3d>> result;
 
-    for (const auto &kv : map) {
-        for (const auto &frame : kv.second) {
-            result.push_back(frame->imageGrid);
-        }
+    for (const auto &frame : sample) {
+        result.push_back(frame->imageGrid);
     }
 
     return result;
 }
 
-std::vector<std::vector<cv::Point3d>> CalibrateFrameCollector::getCollectedObjectGrids() const {
+std::vector<std::vector<cv::Point3d>> CalibrateFrameCollector::getCollectedObjectGridsSample(const std::vector<CalibrateFrameCollector::FrameRef> &sample) const {
     std::vector<std::vector<cv::Point3d>> result;
 
-    for (const auto &kv : map) {
-        for (const auto &frame : kv.second) {
-            result.push_back(frame->objectGrid);
-        }
+    for (const auto &frame : sample) {
+        result.push_back(frame->objectGrid);
     }
 
     return result;
@@ -417,11 +275,15 @@ std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::loadFra
         return nullptr;
     }
 
-    return createFrame(imagePoints, objectPoints, (int)frame["w"], (int)frame["h"], (double)frame["cost"]);
+    const FrameRef &frameRef = createFrame(imagePoints, objectPoints, (int) frame["w"], (int) frame["h"],
+                                           (double) frame["cost"]);
+    frameRef->validate = (bool)((int)frame["validate"]);
+
+    return frameRef;
 }
 
 cv::FileStorage& operator << (cv::FileStorage& fs, const std::shared_ptr<CalibrateFrameCollector::Frame> &frame) {
-    fs << "{" << "w" << (int) frame->w << "h" << (int) frame->h << "cost" << frame->cost;
+    fs << "{" << "w" << (int) frame->w << "h" << (int) frame->h << "cost" << frame->cost << "validate" << frame->validate;
     fs << "imagePoints" << "[";
     for (const auto &point: frame->imageGrid) {
         fs << "{" << "x" << point.x << "y" << point.y << "}";
@@ -438,18 +300,16 @@ cv::FileStorage& operator << (cv::FileStorage& fs, const std::shared_ptr<Calibra
 
 void CalibrateFrameCollector::store(cv::FileStorage &fs) const {
     fs << "frames" << "[";
-    for (const auto &item: getFrames()) {
-        fs << item.first;
+    for (const auto &item: map) {
+        fs << item.second;
     }
 
     fs << "]";
     fs << "multicam" << "[";
-    for (const auto &item: pairs) {
-        for (const auto &framePair : item.second) {
-            fs << "a" << framePair->base;
-            fs << "b" << framePair->current;
-            fs << "cost" << framePair->cost;
-        }
+    for (const auto &framePair: pairs) {
+        fs << "a" << framePair.second->base;
+        fs << "b" << framePair.second->current;
+        fs << "cost" << framePair.second->cost;
     }
 
     fs << "]";

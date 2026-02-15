@@ -2,7 +2,7 @@
 #define EMBEDDED_CV_CALIBRATEFRAMECOLLECTOR_H
 
 #include <vector>
-#include <core/types.hpp>
+#include "opencv2/core.hpp"
 #include <unordered_map>
 #include <set>
 #include <mutex>
@@ -10,106 +10,63 @@
 namespace ecv {
     class CalibrateFrameCollector {
     public:
-        enum FrameClass {
-            topLeft = 1,
-            topRight,
-            bottomLeft,
-            bottomRight,
-            center,
-            near,
-            mid,
-            far,
-            rollSmall,
-            yawSmall,
-            pitchSmall,
-            rollMedium,
-            yawMedium,
-            pitchMedium,
-            rollLarge,
-            yawLarge,
-            pitchLarge,
-            rollSmallN,
-            yawSmallN,
-            pitchSmallN,
-            rollMediumN,
-            yawMediumN,
-            pitchMediumN,
-            rollLargeN,
-            yawLargeN,
-            pitchLargeN,
-            COUNT,
-        };
-
         struct Frame {
-            std::vector<FrameClass> classes;
+            int cls;
             const std::vector<cv::Point3d> imageGrid;
             const std::vector<cv::Point3d> objectGrid;
             size_t w;
             size_t h;
             double cost;
+            bool validate;
         };
+        typedef std::shared_ptr<Frame> FrameRef;
 
         struct FramePair {
             double cost;
-            std::shared_ptr<Frame> base;
-            std::shared_ptr<Frame> current;
-        };
+            FrameRef base;
+            FrameRef current;
 
-        const double RECT_MATCH_THRESHOLD = 0.7;
-        const double NEAR_THRESHOLD = 0.5;
-        const double FAR_THRESHOLD = 0.25;
-        const double SMALL_ANGLE = 10;
-        const double LARGE_ANGLE = 25;
-        const size_t FRAMES_PER_CLASS = 3;
+            bool isValidate() {
+                return base->validate;
+            }
+
+            int getClass() {
+                return base->cls;
+            }
+        };
+        typedef std::shared_ptr<FramePair> FramePairRef;
     private:
-        struct FrameCompare {
-            bool operator()(const std::shared_ptr<Frame> &a, const std::shared_ptr<Frame> &b) const {
-                if (a->cost == b->cost) return true;
-                return a->cost > b->cost;
-            }
-        };
-
-        struct FramePairCompare {
-            bool operator()(const std::shared_ptr<FramePair> &a, const std::shared_ptr<FramePair> &b) const {
-                if (a->cost == b->cost) return true;
-                return a->cost > b->cost;
-            }
-        };
-
         const cv::Size &frameSize;
 
-        std::unordered_map<FrameClass, std::multiset<std::shared_ptr<Frame>, FrameCompare>> map;
-        std::unordered_map<FrameClass, std::multiset<std::shared_ptr<FramePair>, FramePairCompare>> pairs;
-        std::unordered_map<std::shared_ptr<Frame>, int> frames;
+        const int NUM_CLASSES = 1000;
+        const int CLASSES_CUBE_DIM = 3;
+        const int CLASSES_CUBE_SIZE = (int)std::round(std::pow(NUM_CLASSES, 1. / (double)CLASSES_CUBE_DIM));
 
-        // frame pairs indexed by long frameSetId and int cameraId
-//        std::mutex framePairsMutex;
-        std::unordered_map<long, FramePair> framePairs;
+        std::unordered_map<int, FrameRef> map;
+        std::unordered_map<int, FramePairRef> pairs;
 
-        std::vector<FrameClass> getClasses(const Frame &frame) const;
+        double maxRotValue[2] = {0,0};
+        double maxDistValue = 0;
+        double minDistValue = 1;
+
+        int getClass(const Frame &frame);
+        void addFrameTo(decltype(map) *m, const FrameRef &frameRef);
+        void addMulticamFrameTo(decltype(pairs) *m, const CalibrateFrameCollector::FramePairRef &framePairRef);
     public:
+        FrameRef createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost);
         explicit CalibrateFrameCollector(const cv::Size &frameSize) : frameSize(frameSize) {};
-
-        void addFrame(const std::shared_ptr<Frame> &frameRef);
-        std::shared_ptr<Frame> createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost);
-
-        void addMulticamFrame(const std::shared_ptr<Frame> &baseFrameRef, const std::shared_ptr<Frame> &frameRef, double cost);
+        void addFrame(const FrameRef &frameRef);
+        void addMulticamFrame(const FrameRef &baseFrameRef, const FrameRef &frameRef, double cost);
 
         double getProgress() const;
+        std::vector<std::pair<int, FrameRef>> getFramesSample(int n) const;
+        std::vector<std::pair<int, CalibrateFrameCollector::FramePairRef>> getFramesPairsSample(int n) const;
+        std::vector<std::vector<cv::Point3d>> getCollectedImageGridsSample(const std::vector<CalibrateFrameCollector::FrameRef> &sample) const;
+        std::vector<std::vector<cv::Point3d>> getCollectedObjectGridsSample(const std::vector<CalibrateFrameCollector::FrameRef> &sample) const;
 
-        std::set<std::shared_ptr<FramePair>> getValidFramePairs();
-
-        std::vector<std::vector<cv::Point3d>> getCollectedImageGrids() const;
-
-        std::vector<std::vector<cv::Point3d>> getCollectedObjectGrids() const;
-
-        std::shared_ptr<Frame> loadFrame(const cv::FileNode &frame);
+        FrameRef loadFrame(const cv::FileNode &frame);
         void load(const cv::FileStorage &fs);
         void store(cv::FileStorage &fs) const;
-
-        auto getFrames() const {
-            return frames;
-        }
 
     };
 };

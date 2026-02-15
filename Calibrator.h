@@ -37,13 +37,39 @@ namespace ecv {
                 tvecs = cv::Mat::zeros(3, 3, CV_64F);
                 distCoeff = std::vector<double>(12);
             }
+
+            CalibrationData(const CalibrationData& other) {
+                cameraMatrix = other.cameraMatrix.clone();
+                distCoeff = other.distCoeff;
+                rvecs = other.rvecs.clone();
+                tvecs = other.tvecs.clone();
+                R = other.R.clone();
+                T = other.T.clone();
+                E = other.E.clone();
+                F = other.F.clone();
+            }
+
+            CalibrationData& operator=(const CalibrationData& other) {
+                if (this != &other) {
+                    cameraMatrix = other.cameraMatrix.clone();
+                    distCoeff = other.distCoeff;               // std::vector копируется глубоко
+                    rvecs = other.rvecs.clone();
+                    tvecs = other.tvecs.clone();
+                    R = other.R.clone();
+                    T = other.T.clone();
+                    E = other.E.clone();
+                    F = other.F.clone();
+                }
+                return *this;
+            }
         };
 
         double calibrateSingleCamera(
                 cv::Size frameSize,
                 const std::vector<std::vector<cv::Point3d>> &objectPoints,
                 const std::vector<std::vector<cv::Point3d>> &imagePoints,
-                CalibrationData &data
+                CalibrationData &data,
+                cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
 
         double calibrateSingleCamera(
@@ -52,19 +78,22 @@ namespace ecv {
                 const std::vector<std::vector<cv::Point3d>> &collectedImagePoints,
                 const std::vector<cv::Point3d> &newObjectPoints,
                 const std::vector<cv::Point3d> &newImagePoints,
-                CalibrationData &data
+                CalibrationData &data,
+                cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
         double calibrateSingleCamera(
                 cv::Size frameSize,
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
                 const std::vector<std::vector<cv::Point3f>> &imagePoints,
-                CalibrationData &data
+                CalibrationData &data,
+                cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
         double calibrateSingleCamera(
                 cv::Size frameSize,
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
                 const std::vector<std::vector<cv::Point2f>> &imagePoints,
-                CalibrationData &data
+                CalibrationData &data,
+                cv::TermCriteria term = cv::TermCriteria(5, 1e-7)
         );
 
         double calibrateCameraPair(
@@ -88,7 +117,7 @@ namespace ecv {
         );
         double calibrateCameraPair(
                 cv::Size frameSize,
-                const std::set<std::shared_ptr<CalibrateFrameCollector::FramePair>> &pairs,
+                const std::vector<CalibrateFrameCollector::FramePairRef> &pairs,
                 const std::vector<cv::Point3d> &objectPointsCam1,
                 const std::vector<cv::Point3d> &imagePointsCam1,
                 const std::vector<cv::Point3d> &objectPoints,
@@ -96,8 +125,14 @@ namespace ecv {
                 CalibrationData &dataCam1,
                 CalibrationData &data);
 
+        double calibrateCameraPair(
+                cv::Size frameSize,
+                const std::vector<CalibrateFrameCollector::FramePairRef> &pairs,
+                CalibrationData &dataCam1,
+                CalibrationData &data);
+
         cv::Mat getUndistortMap(cv::Size frameSize, const CalibrationData &data);
-        std::pair<cv::Mat, cv::Mat> getUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current);
+        std::tuple<cv::Mat, cv::Mat, double> getStereoUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current);
 
         double getFx() const {
             return fx;
