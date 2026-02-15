@@ -6,6 +6,7 @@ namespace ecv {
     double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
                                              const std::vector<std::vector<cv::Point2f>> &imagePoints,
                                              CalibrationData &data,
+                                             int flags,
                                              cv::TermCriteria term) {
         size_t objectSize = 0;
         for (const auto & objectPoint : objectPoints) {
@@ -58,9 +59,14 @@ namespace ecv {
 
         double result = 0;
 
+        std::vector<double> distCoeff;
+        for (int i = 0; i < distCoeff.size(); ++i) {
+            distCoeff[i] = data.distCoeff[i];
+        }
+
         try {
             result = cv::calibrateCamera(objectPointsSlice, imagePointsSlice, frameSize, data.cameraMatrix,
-                                data.distCoeff, data.rvecs, data.tvecs, baseFlags, term);
+                                data.distCoeff, data.rvecs, data.tvecs, baseFlags | flags, term);
         } catch (const std::exception &e) {
             std::cerr << "cv::calibrateCamera failed" << std::endl;
 
@@ -70,21 +76,17 @@ namespace ecv {
 //        std::cout << std::format("result = {}, camera.fx = {}, camera.fy = {}, camera.cx = {}, camera.cy = {}, distCoeff = {}\n",
 //                                 result, cameraData[0], cameraData[4], cameraData[2], cameraData[5], data.distCoeff);
 
-        fx = cameraData[0];
-        fy = cameraData[4];
-        cx = cameraData[2];
-        cy = cameraData[5];
+        double ema = 2. / (21. + 1.);
+        fx = ema * cameraData[0] + (1 - ema) * fx;
+        fy = ema * cameraData[4] + (1 - ema) * fy;
+        cx = ema * cameraData[2] + (1 - ema) * cx;
+        cy = ema * cameraData[5] + (1 - ema) * cy;
+
+        for (int i = 0; i < distCoeff.size(); ++i) {
+            data.distCoeff[i] = ema * data.distCoeff[i] + (1 - ema) * distCoeff[i];
+        }
 
         return result;
-    }
-
-    cv::Mat Calibrator::getUndistortMap(cv::Size frameSize, const CalibrationData &base) {
-        cv::Rect roi1, roi2;
-        cv::Mat  map, tmp, R1, P1, R2, P2, Q;
-
-        cv::initUndistortRectifyMap(base.cameraMatrix, base.distCoeff, R1, P1, frameSize, CV_32FC2, map, tmp);
-
-        return map;
     }
 
     std::tuple<cv::Mat, cv::Mat, double> Calibrator::getStereoUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current) {
@@ -156,6 +158,7 @@ namespace ecv {
                                              const std::vector<cv::Point3d> &newObjectPoints,
                                              const std::vector<cv::Point3d> &newImagePoints,
                                              CalibrationData &data,
+                                             int flags,
                                              cv::TermCriteria term) {
 
         cv::Mat mat;
@@ -166,12 +169,13 @@ namespace ecv {
         objectGrids.emplace_back(newObjectPoints);
         imageGrids.emplace_back(newImagePoints);
 
-        return calibrateSingleCamera(frameSize, objectGrids, imageGrids, data, term);
+        return calibrateSingleCamera(frameSize, objectGrids, imageGrids, data, flags, term);
     }
 
     double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3d>> &objectPoints,
                                              const std::vector<std::vector<cv::Point3d>> &imagePoints,
                                              CalibrationData &data,
+                                             int flags,
                                              cv::TermCriteria term) {
         std::vector<std::vector<cv::Point3f>> objectPoints2(objectPoints.size());
         std::vector<std::vector<cv::Point2f>> imagePoints2(imagePoints.size());
@@ -186,20 +190,7 @@ namespace ecv {
             convertToPlain3dPoints(objectPoints[i], objectPoints2[i]);
         }
 
-        return calibrateSingleCamera(frameSize, objectPoints2, imagePoints2, data, term);
-    }
-
-    double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
-                                             const std::vector<std::vector<cv::Point3f>> &imagePoints,
-                                             CalibrationData &data,
-                                             cv::TermCriteria term) {
-        std::vector<std::vector<cv::Point2f>> imagePoints2;
-        for (int i = 0; i < imagePoints.size(); ++i) {
-            imagePoints2[i].resize(imagePoints[i].size());
-            convertTo2dPoints(imagePoints[i], imagePoints2[i]);
-        }
-
-        return calibrateSingleCamera(frameSize, objectPoints, imagePoints2, data, term);
+        return calibrateSingleCamera(frameSize, objectPoints2, imagePoints2, data, flags, term);
     }
 
     double Calibrator::calibrateCameraPair(
@@ -209,7 +200,8 @@ namespace ecv {
             const std::vector<std::vector<cv::Point3d>> &objectPoints,
             const std::vector<std::vector<cv::Point3d>> &imagePoints,
             CalibrationData &dataCam1,
-            CalibrationData &data) {
+            CalibrationData &data,
+            cv::TermCriteria term) {
 
         std::vector<std::vector<cv::Point3f>> _objectPointsCam1(objectPointsCam1.size());
         std::vector<std::vector<cv::Point2f>> _imagePointsCam1(imagePointsCam1.size());
@@ -237,7 +229,7 @@ namespace ecv {
         }
 
         return calibrateCameraPair(frameSize, _objectPointsCam1, _imagePointsCam1, _objectPoints, _imagePoints,
-                                   dataCam1, data);
+                                   dataCam1, data, term);
     }
 
     double Calibrator::calibrateCameraPair(
@@ -248,7 +240,8 @@ namespace ecv {
             const std::vector<cv::Point3d> &objectPoints,
             const std::vector<cv::Point3d> &imagePoints,
             CalibrationData &dataCam1,
-            CalibrationData &data) {
+            CalibrationData &data,
+            cv::TermCriteria term) {
 
         std::vector<std::vector<cv::Point3d>> imageGrids0, imageGrids1;
         std::vector<std::vector<cv::Point3d>> objectGrids0, objectGrids1;
@@ -271,14 +264,15 @@ namespace ecv {
         objectGrids1.emplace_back(objectPoints);
 
         return calibrateCameraPair(frameSize, objectGrids0, imageGrids0, objectGrids1, imageGrids1,
-                                   dataCam1, data);
+                                   dataCam1, data, term);
     }
 
     double Calibrator::calibrateCameraPair(
             cv::Size frameSize,
             const std::vector<CalibrateFrameCollector::FramePairRef> &pairs,
             CalibrationData &dataCam1,
-            CalibrationData &data) {
+            CalibrationData &data,
+            cv::TermCriteria term) {
 
         std::vector<std::vector<cv::Point3d>> imageGrids0, imageGrids1;
         std::vector<std::vector<cv::Point3d>> objectGrids0, objectGrids1;
@@ -295,7 +289,7 @@ namespace ecv {
         }
 
         return calibrateCameraPair(frameSize, objectGrids0, imageGrids0, objectGrids1, imageGrids1,
-                                   dataCam1, data);
+                                   dataCam1, data, term);
     }
 
     double Calibrator::calibrateCameraPair(
@@ -305,14 +299,15 @@ namespace ecv {
             const std::vector<std::vector<cv::Point3f>> &objectPoints,
             const std::vector<std::vector<cv::Point2f>> &imagePoints,
             CalibrationData &dataCam1,
-            CalibrationData &data) {
+            CalibrationData &data,
+            cv::TermCriteria term) {
 
         cv::Mat perViewErrors;
 
         auto cost = cv::registerCameras(objectPoints, objectPointsCam1, imagePoints, imagePointsCam1,
             data.cameraMatrix, data.distCoeff, cv::CameraModel::CALIB_MODEL_PINHOLE,
             dataCam1.cameraMatrix, dataCam1.distCoeff, cv::CameraModel::CALIB_MODEL_PINHOLE,
-            data.R, data.T, data.E, data.F, perViewErrors, cv::CALIB_FIX_INTRINSIC, cv::TermCriteria(5, 1e-7));
+            data.R, data.T, data.E, data.F, perViewErrors, cv::CALIB_FIX_INTRINSIC, term);
 
         return cost;
     }

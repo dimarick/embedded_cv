@@ -301,7 +301,7 @@ int main(int argc, const char **argv) {
                     ecv::Calibrator::CalibrationData data;
                     int sampleSize;
 
-                    sampleSize = 50;
+                    sampleSize = 100;
                     data = calibrationData[i];
 
                     std::vector<ecv::CalibrateFrameCollector::FrameRef> sample;
@@ -324,16 +324,25 @@ int main(int argc, const char **argv) {
                             objectGrid,
                             imageGrid,
                             data,
+                            0,
                             cv::TermCriteria(100, 1e-7)
                     );
 
                     ecv::Calibrator::CalibrationData updatedData = data;
+
+                    int flags = cv::CALIB_RATIONAL_MODEL | cv::CALIB_THIN_PRISM_MODEL | cv::CALIB_TILTED_MODEL |
+                                cv::CALIB_FIX_ASPECT_RATIO | cv::CALIB_FIX_PRINCIPAL_POINT |
+                                cv::CALIB_FIX_FOCAL_LENGTH | cv::CALIB_FIX_K1 | cv::CALIB_FIX_K2 | cv::CALIB_FIX_K3 |
+                                cv::CALIB_FIX_K4 | cv::CALIB_FIX_K5 | cv::CALIB_FIX_K6 | cv::CALIB_FIX_S1_S2_S3_S4 |
+                                cv::CALIB_FIX_TAUX_TAUY | cv::CALIB_FIX_TANGENT_DIST | cv::CALIB_FIX_INTRINSIC |
+                                cv::CALIB_FIX_SKEW;
 
                     auto cost = calibrator[i].calibrateSingleCamera(
                             frames[i].size(),
                             frameCollectors[i].getCollectedObjectGridsSample(sampleValidate),
                             frameCollectors[i].getCollectedImageGridsSample(sampleValidate),
                             data,
+                            flags,
                             cv::TermCriteria(1, 1e-7)
                     );
 
@@ -346,8 +355,8 @@ int main(int argc, const char **argv) {
                     if (cost < bestQ[i]) {
                         bestQ[i] = cost;
                         calibrationData[i] = updatedData;
-                        bestPairQ[i] = 1. / 0.;
-                        bestRoiQ[i] = 0.;
+//                        bestPairQ[i] = 1. / 0.;
+//                        bestRoiQ[i] = 0.;
                         std::cout << "Calib" << i << ": " << progress * 100 << "%" << " train" << trainCost << " validate " << cost << "%" << std::endl;
                     } else {
                         bestQ[i] *= 1.02;
@@ -364,7 +373,7 @@ int main(int argc, const char **argv) {
                     if (i != 0 && baseFrameRef != nullptr
                         && baseFrameRef->w == frameRef->w && baseFrameRef->h == frameRef->h
                     ) {
-                        const auto &pairsSampleRaw = frameCollectors[i].getFramesPairsSample(50);
+                        const auto &pairsSampleRaw = frameCollectors[i].getFramesPairsSample(100);
                         std::vector<ecv::CalibrateFrameCollector::FramePairRef> pairsSample;
                         std::vector<ecv::CalibrateFrameCollector::FramePairRef> pairsSampleValidate;
 
@@ -386,14 +395,16 @@ int main(int argc, const char **argv) {
                                                                            frameRef->objectGrid,
                                                                            frameRef->imageGrid,
                                                                            data0,
-                                                                           dataI);
+                                                                           dataI,
+                                                                           cv::TermCriteria(100, 1e-7));
                             updatedData0 = data0;
                             updatedDataI = dataI;
 
                             costOfPair = calibrator[i].calibrateCameraPair(frames[i].size(),
                                                                            pairsSampleValidate,
                                                                            data0,
-                                                                           dataI);
+                                                                           dataI,
+                                                                           cv::TermCriteria(1, 1e-7));
                         }
                     }
 
@@ -407,12 +418,12 @@ int main(int argc, const char **argv) {
                             ) {
                         frameCollectors[i].addMulticamFrame(baseFrameRef, frameRef, frameBlur[i]);
 
-                        if (costOfPair > 0 && costOfPair <= bestPairQ[i] * 1.1) {
+                        if (costOfPair > 0 && costOfPair <= bestPairQ[i] * 1.3) {
                             double roiSize = 0;
                             cv::Mat map0, map1;
                             std::tie(map0, map1, roiSize) = calibrator[i].getStereoUndistortMap(frames[i].size(), data0,
                                                                                                 dataI);
-                            if (roiSize >= bestRoiQ[i] / 1.1) {
+                            if (roiSize >= bestRoiQ[i] / 1.3) {
                                 bestPairQ[i] = std::min(costOfPair, bestPairQ[i]);
                                 bestRoiQ[i] = std::max(roiSize, bestRoiQ[i]);
                                 calibrationData[0] = updatedData0;

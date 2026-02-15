@@ -184,9 +184,9 @@ std::vector<std::pair<int, CalibrateFrameCollector::FramePairRef>> CalibrateFram
 double CalibrateFrameCollector::getProgress() const {
     auto sz = CLASSES_CUBE_SIZE;
     auto sz2 = sz / 2;
-    auto dim1 = std::ceil(maxRotValue[0] * 2 * sz);
-    auto dim2 = std::ceil(maxRotValue[1] * 2 * sz);
-    auto dim3 = std::ceil((maxDistValue - minDistValue) * sz);
+    auto dim1 = std::floor(maxRotValue[0] * 2 * sz);
+    auto dim2 = std::floor(maxRotValue[1] * 2 * sz);
+    auto dim3 = std::floor((maxDistValue - minDistValue) * sz);
 
     cv::Mat progressView = cv::Mat::zeros((int)dim2, (int)dim1, CV_8U);
 
@@ -204,7 +204,7 @@ double CalibrateFrameCollector::getProgress() const {
     cv::resize(progressView, progressView, cv::Size(640, 640 * dim1 / dim2), cv::INTER_NEAREST);
     cv::imshow("progress", progressView);
 
-    return (double)map.size() / (double)(dim1 * dim2 * dim3);
+    return (double)map.size() / (double)(3.14 / 4 * dim1 * dim2 * dim3);
 }
 
 std::vector<std::vector<cv::Point3d>> CalibrateFrameCollector::getCollectedImageGridsSample(const std::vector<CalibrateFrameCollector::FrameRef> &sample) const {
@@ -307,9 +307,9 @@ void CalibrateFrameCollector::store(cv::FileStorage &fs) const {
     fs << "]";
     fs << "multicam" << "[";
     for (const auto &framePair: pairs) {
-        fs << "a" << framePair.second->base;
+        fs << "{" << "a" << framePair.second->base;
         fs << "b" << framePair.second->current;
-        fs << "cost" << framePair.second->cost;
+        fs << "cost" << framePair.second->cost << "}";
     }
 
     fs << "]";

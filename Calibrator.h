@@ -69,6 +69,7 @@ namespace ecv {
                 const std::vector<std::vector<cv::Point3d>> &objectPoints,
                 const std::vector<std::vector<cv::Point3d>> &imagePoints,
                 CalibrationData &data,
+                int flags,
                 cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
 
@@ -79,13 +80,7 @@ namespace ecv {
                 const std::vector<cv::Point3d> &newObjectPoints,
                 const std::vector<cv::Point3d> &newImagePoints,
                 CalibrationData &data,
-                cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
-        );
-        double calibrateSingleCamera(
-                cv::Size frameSize,
-                const std::vector<std::vector<cv::Point3f>> &objectPoints,
-                const std::vector<std::vector<cv::Point3f>> &imagePoints,
-                CalibrationData &data,
+                int flags,
                 cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
         double calibrateSingleCamera(
@@ -93,7 +88,8 @@ namespace ecv {
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
                 const std::vector<std::vector<cv::Point2f>> &imagePoints,
                 CalibrationData &data,
-                cv::TermCriteria term = cv::TermCriteria(5, 1e-7)
+                int flags,
+                cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
 
         double calibrateCameraPair(
@@ -103,7 +99,8 @@ namespace ecv {
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
                 const std::vector<std::vector<cv::Point2f>> &imagePoints,
                 CalibrationData &dataCam1,
-                CalibrationData &data
+                CalibrationData &data,
+                cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
 
         double calibrateCameraPair(
@@ -113,7 +110,8 @@ namespace ecv {
                 const std::vector<std::vector<cv::Point3d>> &objectPoints,
                 const std::vector<std::vector<cv::Point3d>> &imagePoints,
                 CalibrationData &dataCam1,
-                CalibrationData &data
+                CalibrationData &data,
+                cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
         double calibrateCameraPair(
                 cv::Size frameSize,
@@ -123,15 +121,18 @@ namespace ecv {
                 const std::vector<cv::Point3d> &objectPoints,
                 const std::vector<cv::Point3d> &imagePoints,
                 CalibrationData &dataCam1,
-                CalibrationData &data);
+                CalibrationData &data,
+                cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
+        );
 
         double calibrateCameraPair(
                 cv::Size frameSize,
                 const std::vector<CalibrateFrameCollector::FramePairRef> &pairs,
                 CalibrationData &dataCam1,
-                CalibrationData &data);
+                CalibrationData &data,
+                cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
+        );
 
-        cv::Mat getUndistortMap(cv::Size frameSize, const CalibrationData &data);
         std::tuple<cv::Mat, cv::Mat, double> getStereoUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current);
 
         double getFx() const {
