@@ -17,6 +17,7 @@ namespace ecv {
             size_t w;
             size_t h;
             double cost;
+            double ts;
             bool validate;
         };
         typedef std::shared_ptr<Frame> FrameRef;
@@ -53,7 +54,7 @@ namespace ecv {
         void addFrameTo(decltype(map) *m, const FrameRef &frameRef);
         void addMulticamFrameTo(decltype(pairs) *m, const CalibrateFrameCollector::FramePairRef &framePairRef);
     public:
-        FrameRef createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost);
+        FrameRef createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts);
         explicit CalibrateFrameCollector(const cv::Size &frameSize) : frameSize(frameSize) {};
         void addFrame(const FrameRef &frameRef);
         void addMulticamFrame(const FrameRef &baseFrameRef, const FrameRef &frameRef, double cost);

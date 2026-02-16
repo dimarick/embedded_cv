@@ -84,6 +84,8 @@ add_executable(calib
         src/calibrator/BlurFrameFilter.cpp
         MatStorage.cpp
         MatStorage.h
+        src/calibrator/CalibrationStrategy.cpp
+        src/calibrator/CalibrationStrategy.h
 )
 
 target_link_libraries(calib PUBLIC OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})

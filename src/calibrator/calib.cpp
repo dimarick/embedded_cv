@@ -130,8 +130,8 @@ int main(int argc, const char **argv) {
     std::vector<std::mutex> framesMutex(frames.size());
     std::vector<cv::Mat> readingFrames(frames.size());
     std::vector<cv::Mat> readFrames(frames.size());
-    std::vector<long> frameIds(frames.size());
-    std::vector<long> getFrameIds(frames.size());
+    std::vector<double> frameTs(frames.size());
+    std::vector<double> getFrameTs(frames.size());
     std::vector<std::thread> readerThreads(frames.size());
     volatile bool threadRunning[frames.size()];
 
@@ -143,20 +143,19 @@ int main(int argc, const char **argv) {
 //    disparityEvaluator.evaluateDisparity(left, right);
 
 
-    auto captureThreadCallback = [&captures, &framesMutex, &readingFrames, &frameIds, &readFrames, &threadRunning](int i) {
+    auto captureThreadCallback = [&captures, &framesMutex, &readingFrames, &frameTs, &readFrames, &threadRunning](int i) {
         while (threadRunning[i]) {
             captures[i].read(readingFrames[i]);
             framesMutex[i].lock();
             readingFrames[i].copyTo(readFrames[i]);
-            frameIds[i]++;
+            frameTs[i] = std::chrono::duration<double>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
             framesMutex[i].unlock();
         }
     };
 
     for (int i = 0; i < readerThreads.size(); ++i) {
         threadRunning[i] = true;
-        frameIds[i] = 0;
-        getFrameIds[i] = 0;
+        getFrameTs[i] = 0;
         readerThreads[i] = std::thread(captureThreadCallback, i);
     }
 
@@ -189,7 +188,6 @@ int main(int argc, const char **argv) {
     std::vector<double> bestRoiQ(frames.size(), 0.);
     std::vector<size_t> bestW(frames.size(), 0);
     std::vector<size_t> bestH(frames.size(), 0);
-    std::vector<std::vector<std::vector<ecv::CalibrateMapper::Point3>>> bestImagePoints(frames.size()), bestObjectPoints(frames.size());
     std::unordered_map<int, std::vector<ecv::CalibrateMapper::Point3>> framesMap;
     std::vector<ecv::CalibrateFrameCollector> frameCollectors(frames.size(), ecv::CalibrateFrameCollector(frames[0].size()));
 
@@ -298,10 +296,10 @@ int main(int argc, const char **argv) {
     while (true) {
         bool hasNewFrames = false;
         for (int i = 0; i < frames.size(); ++i) {
-            if (frameIds[i] > getFrameIds[i]) {
+            if (frameTs[i] > getFrameTs[i]) {
                 framesMutex[i].lock();
                 readFrames[i].copyTo(frames[i]);
-                getFrameIds[i] = frameIds[i];
+                getFrameTs[i] = frameTs[i];
                 framesMutex[i].unlock();
                 hasNewFrames = true;
                 if (i == 1) {
@@ -432,7 +430,7 @@ int main(int argc, const char **argv) {
 
                     double progress = frameCollectors[i].getProgress();
 
-                    auto frameRef = frameCollectors[i].createFrame(imageGrid, objectGrid, w, h, 1.0 / frameBlur[i]);
+                    auto frameRef = frameCollectors[i].createFrame(imageGrid, objectGrid, w, h, 1.0 / frameBlur[i], frameTs[i]);
 
                     frameCollectors[i].addFrame(frameRef);
 

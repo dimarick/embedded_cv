@@ -106,9 +106,8 @@ int CalibrateFrameCollector::getClass(const CalibrateFrameCollector::Frame &fram
 }
 
 std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::createFrame(const std::vector<cv::Point3d> &imageGrid,
-                                                                                     const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost) {
-
-    auto frameRef = std::shared_ptr<Frame>(new Frame({0, imageGrid, objectGrid, w, h, cost, std::rand() % 2 == 0}));
+                                                                                     const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts) {
+    auto frameRef = std::shared_ptr<Frame>(new Frame({0, imageGrid, objectGrid, w, h, cost, ts, std::rand() % 2 == 0}));
     frameRef->cls = getClass(*frameRef);
 
     return frameRef;
