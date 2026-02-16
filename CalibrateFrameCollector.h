@@ -63,6 +63,24 @@ namespace ecv {
         std::vector<std::pair<int, CalibrateFrameCollector::FramePairRef>> getFramesPairsSample(int n) const;
         std::vector<std::vector<cv::Point3d>> getCollectedImageGridsSample(const std::vector<CalibrateFrameCollector::FrameRef> &sample) const;
         std::vector<std::vector<cv::Point3d>> getCollectedObjectGridsSample(const std::vector<CalibrateFrameCollector::FrameRef> &sample) const;
+        template <typename Iterator> std::vector<std::vector<cv::Point3d>> getCollectedImageGridsSample(Iterator first, Iterator last) const {
+            std::vector<std::vector<cv::Point3d>> result;
+
+            for (auto &it = first; it != last; ++it) {
+                result.emplace_back((*it)->imageGrid);
+            }
+
+            return result;
+        }
+        template <typename Iterator> std::vector<std::vector<cv::Point3d>> getCollectedObjectGridsSample(Iterator first, Iterator last) const {
+            std::vector<std::vector<cv::Point3d>> result;
+
+            for (auto &it = first; it != last; ++it) {
+                result.emplace_back((*it)->objectGrid);
+            }
+
+            return result;
+        }
 
         FrameRef loadFrame(const cv::FileNode &frame);
         void load(const cv::FileStorage &fs);

@@ -207,6 +207,90 @@ int main(int argc, const char **argv) {
         frameDataStorage[i].release();
     }
 
+    for (int i = 0; i < frames.size(); ++i) {
+        std::vector<ecv::CalibrateFrameCollector::FrameRef> sample;
+        std::vector<ecv::CalibrateFrameCollector::FrameRef> sampleValidate;
+
+        auto sampleRaw = frameCollectors[i].getFramesSample(100000);
+
+        for (const auto &item: sampleRaw) {
+            if (item.second->validate) {
+                sampleValidate.emplace_back(item.second);
+            } else {
+                sample.emplace_back(item.second);
+            }
+        }
+
+
+        for (int j = 0; j < sample.size(); j += 30) {
+            auto b = sample.begin() + j;
+            auto e = sample.begin() + std::min(j + 30, (int)sample.size());
+            ecv::Calibrator::CalibrationData data = calibrationData[i];
+            auto q = calibrator[i].calibrateSingleCamera(
+                    frames[i].size(),
+                    frameCollectors[i].getCollectedObjectGridsSample(b, e),
+                    frameCollectors[i].getCollectedImageGridsSample(b, e),
+                    data,
+                    0,
+                    cv::TermCriteria(3, 1e-7)
+            );
+
+            if (q < 5) {
+                calibrationData[i] = data;
+            }
+        }
+
+
+        bestQ[i] = calibrator[i].calibrateSingleCamera(
+                frames[i].size(),
+                frameCollectors[i].getCollectedObjectGridsSample(sampleValidate),
+                frameCollectors[i].getCollectedImageGridsSample(sampleValidate),
+                calibrationData[i],
+                0,
+                cv::TermCriteria(1, 1e-7)
+        );
+    }
+
+    for (int i = 1; i < frames.size(); ++i) {
+        const auto &pairsSampleRaw = frameCollectors[i].getFramesPairsSample(100000);
+        std::vector<ecv::CalibrateFrameCollector::FramePairRef> pairsSample;
+        std::vector<ecv::CalibrateFrameCollector::FramePairRef> pairsSampleValidate;
+
+        for (const auto &item : pairsSampleRaw) {
+            if (item.second->isValidate()) {
+                pairsSampleValidate.emplace_back(item.second);
+            } else {
+                pairsSample.emplace_back(item.second);
+            }
+        }
+
+        for (int j = 0; j < pairsSample.size(); j += 30) {
+            std::vector<ecv::CalibrateFrameCollector::FramePairRef> s;
+            auto b = pairsSample.begin() + j;
+            auto e = pairsSample.begin() + std::min(j + 30, (int)pairsSample.size());
+
+            s.clear();
+            for (auto &it = b; it != e; ++it) {
+                s.emplace_back(*it);
+            }
+
+            calibrator[i].calibrateCameraPair(frames[i].size(),
+                                              s,
+                                              calibrationData[0],
+                                              calibrationData[i],
+                                              cv::TermCriteria(100, 1e-7));
+        }
+
+        std::tie(maps[0], maps[i], bestRoiQ[i]) = calibrator[i].getStereoUndistortMap(frames[i].size(),
+                                                                                      calibrationData[0],
+                                                                                      calibrationData[i], 0.5);
+        bestPairQ[i] = calibrator[i].calibrateCameraPair(frames[i].size(),
+                                                         pairsSampleValidate,
+                                                         calibrationData[0],
+                                                         calibrationData[i],
+                                                         cv::TermCriteria(1, 1e-7));
+    }
+
     long lastShow = 0;
 
     std::shared_ptr<ecv::CalibrateFrameCollector::Frame> baseFrameRef;
