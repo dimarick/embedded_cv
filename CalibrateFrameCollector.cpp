@@ -184,25 +184,28 @@ std::vector<std::pair<int, CalibrateFrameCollector::FramePairRef>> CalibrateFram
 double CalibrateFrameCollector::getProgress() const {
     auto sz = CLASSES_CUBE_SIZE;
     auto sz2 = sz / 2;
-    auto dim1 = std::floor(maxRotValue[0] * 2 * sz);
-    auto dim2 = std::floor(maxRotValue[1] * 2 * sz);
-    auto dim3 = std::floor((maxDistValue - minDistValue) * sz);
+    auto dim1 = (int)std::ceil(maxRotValue[0] * 2 * sz2);
+    auto dim2 = (int)std::ceil(maxRotValue[1] * 2 * sz2);
+    auto dim3 = (int)std::ceil((maxDistValue - minDistValue) * sz);
 
-    cv::Mat progressView = cv::Mat::zeros((int)dim2, (int)dim1, CV_8U);
+    cv::Mat progressView = cv::Mat::zeros(dim2 + 1, dim1 + 1, CV_8U);
 
-    unsigned char zStep = 255 / dim3;
+    auto zStep = (unsigned char)(255 / dim3);
 
-    for (const auto &item : map) {
-        auto i = item.first;
-        auto xy = i / sz;
-        auto x = xy / sz - sz2;
-        auto y = xy % sz - sz2;
-        progressView.at<unsigned char>(y + maxRotValue[1] * sz, x + maxRotValue[0] * sz) += zStep;
-    }
-
-
-    cv::resize(progressView, progressView, cv::Size(640, 640 * dim1 / dim2), cv::INTER_NEAREST);
-    cv::imshow("progress", progressView);
+//    for (const auto &item : map) {
+//        auto i = item.first;
+//        auto xy = i / sz;
+//        auto x = xy / sz - sz2 + (int)std::round((double)dim1 / 2);
+//        auto y = xy % sz - sz2 + (int)std::round((double)dim2 / 2);
+//
+//        CV_Assert(x >= 0 && x < dim1 + 1);
+//        CV_Assert(y >= 0 && y < dim2 + 1);
+//
+//        progressView.at<unsigned char>(y, x) += zStep;
+//    }
+//
+//    cv::resize(progressView, progressView, cv::Size(640, (int)(640 * dim1 / dim2)), cv::INTER_NEAREST);
+//    cv::imshow("progress", progressView);
 
     return (double)map.size() / (double)(3.14 / 4 * dim1 * dim2 * dim3);
 }

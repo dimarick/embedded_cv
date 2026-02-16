@@ -160,7 +160,7 @@ int main(int argc, const char **argv) {
         readerThreads[i] = std::thread(captureThreadCallback, i);
     }
 
-    std::vector<ecv::CalibrateMapper<double>> calibrateMapper(frames.size()), testCalibrateMapper(frames.size());
+    std::vector<ecv::CalibrateMapper> calibrateMapper(frames.size()), testCalibrateMapper(frames.size());
     std::vector<ecv::BlurFrameFilter> blurFrameFilter(frames.size(), ecv::BlurFrameFilter(0.2));
     std::vector<ecv::Calibrator> calibrator(frames.size());
     std::vector<ecv::Calibrator::CalibrationData> calibrationData(frames.size());
@@ -189,8 +189,8 @@ int main(int argc, const char **argv) {
     std::vector<double> bestRoiQ(frames.size(), 0.);
     std::vector<size_t> bestW(frames.size(), 0);
     std::vector<size_t> bestH(frames.size(), 0);
-    std::vector<std::vector<std::vector<ecv::CalibrateMapper<double>::Point3>>> bestImagePoints(frames.size()), bestObjectPoints(frames.size());
-    std::unordered_map<int, std::vector<ecv::CalibrateMapper<double>::Point3>> framesMap;
+    std::vector<std::vector<std::vector<ecv::CalibrateMapper::Point3>>> bestImagePoints(frames.size()), bestObjectPoints(frames.size());
+    std::unordered_map<int, std::vector<ecv::CalibrateMapper::Point3>> framesMap;
     std::vector<ecv::CalibrateFrameCollector> frameCollectors(frames.size(), ecv::CalibrateFrameCollector(frames[0].size()));
 
     std::vector<cv::FileStorage> frameDataStorage(frames.size());
@@ -249,7 +249,7 @@ int main(int argc, const char **argv) {
             abortCalibration[i] = false;
         }
 
-        std::vector<std::vector<ecv::CalibrateMapper<double>::Point3>> peaks(frames.size(), std::vector<ecv::CalibrateMapper<double>::Point3>(500));
+        std::vector<std::vector<ecv::CalibrateMapper::Point3>> peaks(frames.size(), std::vector<ecv::CalibrateMapper::Point3>(500));
 #pragma omp parallel for default(none) shared(frameBlur, peaks, frames, calibrateMapper, blurFrameFilter, abortCalibration, std::cout)
         for (int i = 0; i < frames.size(); ++i) {
             frameBlur[i] = blurFrameFilter[i].getValue(frames[i]);
@@ -267,7 +267,7 @@ int main(int argc, const char **argv) {
         for (int i = 0; i < frames.size(); ++i) {
             cv::Mat debug;
             frames[i].copyTo(debug);
-            std::vector<ecv::CalibrateMapper<double>::Point3> imageGrid(500), objectGrid(500);
+            std::vector<ecv::CalibrateMapper::Point3> imageGrid(500), objectGrid(500);
             size_t w = 0, h = 0;
 
             auto start = std::chrono::high_resolution_clock::now().time_since_epoch().count();
@@ -283,14 +283,14 @@ int main(int argc, const char **argv) {
                 auto srcGridQ = calibrateMapper[i].detectFrameImagePointsGrid(frames[i], peaks[i], imageGrid, &w, &h, debug);
 
                 if (w > 0 && h > 0) {
-                    calibrateMapper[i].generateFrameObjectPointsGrid(imageGrid, objectGrid, w, h);
+                    calibrateMapper[i].generateFrameObjectPointsGrid(objectGrid, w, h);
                     calibrateMapper[i].drawGrid(debug, objectGrid, w, h, cv::Scalar(255, 0, 255), 2);
                 }
 
                 auto detectGridTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 
                 double calibGridQ = 1. / 0.;
-                std::vector<ecv::CalibrateMapper<double>::Point3> calibImageGrid(500), calibObjectGrid(500);
+                std::vector<ecv::CalibrateMapper::Point3> calibImageGrid(500), calibObjectGrid(500);
                 cv::Mat map;
                 cv::Mat testFrame;
 
@@ -301,7 +301,7 @@ int main(int argc, const char **argv) {
                     ecv::Calibrator::CalibrationData data;
                     int sampleSize;
 
-                    sampleSize = 100;
+                    sampleSize = 60;
                     data = calibrationData[i];
 
                     std::vector<ecv::CalibrateFrameCollector::FrameRef> sample;
@@ -325,7 +325,7 @@ int main(int argc, const char **argv) {
                             imageGrid,
                             data,
                             0,
-                            cv::TermCriteria(100, 1e-7)
+                            cv::TermCriteria(10, 1e-7)
                     );
 
                     ecv::Calibrator::CalibrationData updatedData = data;
@@ -373,7 +373,7 @@ int main(int argc, const char **argv) {
                     if (i != 0 && baseFrameRef != nullptr
                         && baseFrameRef->w == frameRef->w && baseFrameRef->h == frameRef->h
                     ) {
-                        const auto &pairsSampleRaw = frameCollectors[i].getFramesPairsSample(100);
+                        const auto &pairsSampleRaw = frameCollectors[i].getFramesPairsSample(60);
                         std::vector<ecv::CalibrateFrameCollector::FramePairRef> pairsSample;
                         std::vector<ecv::CalibrateFrameCollector::FramePairRef> pairsSampleValidate;
 
@@ -396,7 +396,7 @@ int main(int argc, const char **argv) {
                                                                            frameRef->imageGrid,
                                                                            data0,
                                                                            dataI,
-                                                                           cv::TermCriteria(100, 1e-7));
+                                                                           cv::TermCriteria(10, 1e-7));
                             updatedData0 = data0;
                             updatedDataI = dataI;
 
@@ -422,7 +422,7 @@ int main(int argc, const char **argv) {
                             double roiSize = 0;
                             cv::Mat map0, map1;
                             std::tie(map0, map1, roiSize) = calibrator[i].getStereoUndistortMap(frames[i].size(), data0,
-                                                                                                dataI);
+                                                                                                dataI, 0.5);
                             if (roiSize >= bestRoiQ[i] / 1.3) {
                                 bestPairQ[i] = std::min(costOfPair, bestPairQ[i]);
                                 bestRoiQ[i] = std::max(roiSize, bestRoiQ[i]);
@@ -439,8 +439,6 @@ int main(int argc, const char **argv) {
                         cv::remap(frames[i], testFrame, maps[i], cv::noArray(), cv::InterpolationFlags::INTER_NEAREST,
                                   cv::BorderTypes::BORDER_CONSTANT);
                     }
-
-                    auto calibrateTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
                 }
 
                 auto calibrateTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();

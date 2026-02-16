@@ -133,7 +133,7 @@ namespace ecv {
                 cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
 
-        std::tuple<cv::Mat, cv::Mat, double> getStereoUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current);
+        std::tuple<cv::Mat, cv::Mat, double> getStereoUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current, double alpha);
 
         double getFx() const {
             return fx;

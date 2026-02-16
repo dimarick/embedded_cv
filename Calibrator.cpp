@@ -51,9 +51,9 @@ namespace ecv {
 
         int baseFlags =
                 cv::CALIB_USE_LU|
-                (cv::CALIB_RATIONAL_MODEL && random & 1)|
-                (cv::CALIB_TILTED_MODEL && random & 2)|
-                (cv::CALIB_THIN_PRISM_MODEL && random & 4)|
+                cv::CALIB_RATIONAL_MODEL|
+                cv::CALIB_TILTED_MODEL|
+                cv::CALIB_THIN_PRISM_MODEL|
                 cv::CALIB_FIX_ASPECT_RATIO|
                 cv::CALIB_USE_INTRINSIC_GUESS;
 
@@ -89,11 +89,10 @@ namespace ecv {
         return result;
     }
 
-    std::tuple<cv::Mat, cv::Mat, double> Calibrator::getStereoUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current) {
+    std::tuple<cv::Mat, cv::Mat, double> Calibrator::getStereoUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current, double alpha) {
         cv::Rect roi1, roi2;
         cv::Mat  baseMap, map, tmp, R1, P1, R2, P2, Q;
 
-        double alpha = 1.0;
 //        cv::Mat newBaseCamMat = cv::getOptimalNewCameraMatrix(base.cameraMatrix, base.distCoeff, frameSize, alpha, frameSize, &roi1);
 //        cv::Mat newCamMat = cv::getOptimalNewCameraMatrix(current.cameraMatrix, current.distCoeff, frameSize, alpha, frameSize, &roi2);
 //        cv::Mat avgMat = (newBaseCamMat + newCamMat) / 2;
