@@ -76,14 +76,12 @@ add_subdirectory(./mini_server)
 add_subdirectory(./ws_ctl)
 
 add_executable(calib
-        calib.cpp
-        CalibrateFrameCollector.cpp
-        CalibrateMapper.cpp
-        Calibrator.cpp
-        Calibrator.h
-        DisparityEvaluator.cpp
-        DisparityEvaluator.h
-        BlurFrameFilter.cpp
+        src/calibrator/calib.cpp
+        src/calibrator/CalibrateFrameCollector.cpp
+        src/calibrator/CalibrateMapper.cpp
+        src/calibrator/Calibrator.cpp
+        src/calibrator/Calibrator.h
+        src/calibrator/BlurFrameFilter.cpp
         MatStorage.cpp
         MatStorage.h
 )
@@ -107,10 +105,10 @@ add_executable(benchmark
         benchmark/KitDisparityBenchmark.cpp
         DisparityEvaluator.cpp
         DisparityEvaluator.h
-        CalibrateFrameCollector.cpp
-        CalibrateFrameCollector.h
-        BlurFrameFilter.cpp
-        BlurFrameFilter.h
+        src/calibrator/CalibrateFrameCollector.cpp
+        src/calibrator/CalibrateFrameCollector.h
+        src/calibrator/BlurFrameFilter.cpp
+        src/calibrator/BlurFrameFilter.h
 )
 
 target_link_libraries(benchmark PUBLIC OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS})
