@@ -21,6 +21,13 @@ namespace ecv {
             }
         };
 
+        struct TsCompare {
+            using is_transparent = void;
+            bool operator()(const CalibrateFrameCollector::FrameRef &a, const CalibrateFrameCollector::FrameRef &b) const { return a->ts < b->ts; }
+            bool operator()(const CalibrateFrameCollector::FrameRef& a, double v) const { return a->ts < v; }
+            bool operator()(double v, const CalibrateFrameCollector::FrameRef& b) const { return v < b->ts; }
+        };
+
         int numCameras = 0;
         cv::Size frameSize;
         volatile bool running = false;
@@ -43,6 +50,8 @@ namespace ecv {
 
         void camThreadCallback(const std::vector<CalibrateFrameCollector::FrameRef> &pendingFrames, int cameraId);
         void multicamThreadCallback(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &pendingFramesPerCam);
+        [[nodiscard]] double getFrameTimeInterval(const std::vector<std::set<CalibrateFrameCollector::FrameRef, TsCompare>> &framesPerCam) const;
+        [[nodiscard]] CalibrateFrameCollector::FrameRef findClosestFrameByTs(const std::set<CalibrateFrameCollector::FrameRef, TsCompare> &set, double v) const;
     public:
         explicit CalibrationStrategy(cv::Size frameSize, int numCameras) : frameSize(frameSize), numCameras(numCameras) {
             for (int i = 0; i < numCameras; ++i) {
@@ -109,6 +118,8 @@ namespace ecv {
             return running;
         }
 
+        std::vector<std::vector<CalibrateFrameCollector::FrameRef>>
+        getFramePairs(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &framesPerCam);
     };
 }
 #endif //EMBEDDED_CV_CALIBRATIONSTRATEGY_H

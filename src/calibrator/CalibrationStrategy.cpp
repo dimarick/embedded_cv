@@ -137,6 +137,125 @@ void CalibrationStrategy::camThreadCallback(const std::vector<CalibrateFrameColl
     multicamThreadWait.notify_one();
 }
 
+CalibrateFrameCollector::FrameRef CalibrationStrategy::findClosestFrameByTs(
+        const std::set<CalibrateFrameCollector::FrameRef, TsCompare> &set, double v) const {
+    if (set.empty()) {
+        return nullptr;
+    }
+
+    // бинарный поиск первого элемента с ts >= v
+    auto compare = [](const CalibrateFrameCollector::FrameRef &a, double v) { return a->ts < v; };
+    auto it = set.lower_bound(v);
+
+    if (it == set.end()) {
+        return *std::prev(it);
+    }
+
+    auto found = *it;
+
+    if (found->ts == v || it == set.begin()) {
+        return found;
+    }
+
+    const auto &prev = *std::prev(it);
+    if (std::abs(v - found->ts) < std::abs(v - prev->ts)) {
+        return found;
+    }
+
+    return prev;
+}
+
+/**
+ * Из массива кадров находит пары (для стерео) или кортежи (для многокамерных систем) кадров, такие что:
+ * - кадры близки по времени
+ * - размеры сетки совпадают
+ * - размер сетки не менее чем 4х4
+ *
+ * @param framesPerCam
+ * @return
+ */
+std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrationStrategy::getFramePairs(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &framesPerCam) {
+    std::vector<std::vector<CalibrateFrameCollector::FrameRef>> result;
+
+    std::vector<std::set<CalibrateFrameCollector::FrameRef, TsCompare>> sortedFrames;
+    std::vector<std::vector<CalibrateFrameCollector::FrameRef>> sortedFramesVector;
+
+    for (const auto &camFrames : framesPerCam) {
+        const auto &sorted = sortedFrames.emplace_back(camFrames.begin(), camFrames.end());
+        sortedFramesVector.emplace_back(sorted.begin(), sorted.end());
+    }
+
+    auto interval = getFrameTimeInterval(sortedFrames);
+
+    for (int baseCam = 0; baseCam < sortedFramesVector.size(); baseCam++) {
+        result.emplace_back(framesPerCam.size());
+        for (int f = 0; f < sortedFramesVector[baseCam].size(); ++f) {
+            const auto &frame = sortedFramesVector[baseCam][f];
+            for (int pairCam = 0; pairCam < sortedFramesVector.size(); ++pairCam) {
+                if (baseCam == pairCam) {
+                    continue;
+                }
+
+                if (result[f][pairCam] != nullptr) {
+                    continue;
+                }
+
+                const auto &pair = findClosestFrameByTs(sortedFrames[pairCam], frame->ts);
+                if (std::abs(pair->ts - sortedFramesVector[baseCam][f]->ts) > interval) {
+                    continue;
+                }
+                if (frame->w < 4 || frame->h < 4 || frame->w != pair->w || frame->h != pair->h) {
+                    continue;
+                }
+
+                result[f][baseCam] = frame;
+                result[f][pairCam] = pair;
+            }
+        }
+    }
+
+    int j = 0;
+    for (int i = 0; i < result.size(); i++) {
+        auto valid = true;
+        for (const auto &k : result[i]) {
+            if (k == nullptr) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid && j < i) {
+            result[j] = result[i];
+            j++;
+        }
+    }
+
+    result.resize(j);
+
+    return result;
+}
+
+double CalibrationStrategy::getFrameTimeInterval(const std::vector<std::set<CalibrateFrameCollector::FrameRef, TsCompare>> &framesPerCam) const {
+    double frameMinInterval = 1. / 0.;
+
+    for (const auto &camFrames : framesPerCam) {
+        if (camFrames.size() < 2) {
+            continue;
+        }
+
+        double interval = 1. / 0.;
+        CalibrateFrameCollector::FrameRef prev = *camFrames.begin();
+        for (const auto &frame : camFrames | std::views::drop(1)) {
+            interval = std::min(interval, frame->ts - prev->ts);
+            prev = frame;
+        }
+
+        frameMinInterval = std::min(frameMinInterval, interval);
+    }
+
+    return frameMinInterval;
+}
+
 void CalibrationStrategy::multicamThreadCallback(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &framesPerCam) {
+    const auto &pairs = getFramePairs(framesPerCam);
 
 }

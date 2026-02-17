@@ -278,14 +278,15 @@ std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::loadFra
     }
 
     const FrameRef &frameRef = createFrame(imagePoints, objectPoints, (int) frame["w"], (int) frame["h"],
-                                           (double) frame["cost"]);
+                                           (double) frame["cost"],
+                                           (double) frame["ts"]);
     frameRef->validate = (bool)((int)frame["validate"]);
 
     return frameRef;
 }
 
 cv::FileStorage& operator << (cv::FileStorage& fs, const std::shared_ptr<CalibrateFrameCollector::Frame> &frame) {
-    fs << "{" << "w" << (int) frame->w << "h" << (int) frame->h << "cost" << frame->cost << "validate" << frame->validate;
+    fs << "{" << "w" << (int) frame->w << "h" << (int) frame->h << "cost" << frame->cost << "ts" << frame->ts << "validate" << frame->validate;
     fs << "imagePoints" << "[";
     for (const auto &point: frame->imageGrid) {
         fs << "{" << "x" << point.x << "y" << point.y << "}";
