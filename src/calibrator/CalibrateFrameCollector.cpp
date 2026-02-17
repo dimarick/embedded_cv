@@ -153,6 +153,20 @@ void CalibrateFrameCollector::addFrame(const std::shared_ptr<Frame> &frameRef) {
     addFrameTo(&map, frameRef);
 }
 
+void CalibrateFrameCollector::addMulticamFrames(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &_frameSets) {
+    for (const auto &f : _frameSets) {
+        int cls = f[0]->cls;
+        double cost = f[0]->cost;
+        const auto &it = this->frameSets.find(cls);
+
+        if (it == this->frameSets.end()) {
+            this->frameSets.insert({cls, f});
+        } else if (cost < it->second[0]->cost) {
+            this->frameSets.emplace(cls, f);
+        }
+    }
+}
+
 void CalibrateFrameCollector::addMulticamFrame(const std::shared_ptr<Frame> &baseFrameRef,
                                                const std::shared_ptr<Frame> &frameRef, double cost) {
     auto pair = FramePairRef(new FramePair{cost, baseFrameRef, frameRef});
@@ -166,6 +180,30 @@ std::vector<std::pair<int, CalibrateFrameCollector::FrameRef>> CalibrateFrameCol
     std::mt19937 r {std::random_device{}()};
 
     std::sample(map.begin(), map.end(), std::back_inserter(f), n, r);
+
+    return f;
+}
+
+std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrateFrameCollector::getFramesSample2(int n, bool validate) const {
+    std::vector<std::vector<FrameRef>> f(n);
+
+    std::uniform_int_distribution rng(0, n - 1);
+    std::mt19937 r {std::random_device{}()};
+
+    int i = 0;
+    for (const auto &frame : frameSets) {
+        if (frame.second[0]->validate == validate) {
+            if (i < n) {
+                f[i] = frame.second;
+            } else {
+                f[rng(r) % n] = frame.second;
+            }
+        }
+    }
+
+    if (i < n) {
+        f.resize(i);
+    }
 
     return f;
 }

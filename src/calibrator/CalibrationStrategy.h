@@ -119,7 +119,7 @@ namespace ecv {
         }
 
         std::vector<std::vector<CalibrateFrameCollector::FrameRef>>
-        getFramePairs(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &framesPerCam);
+        getFrameSets(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &framesPerCam);
     };
 }
 #endif //EMBEDDED_CV_CALIBRATIONSTRATEGY_H

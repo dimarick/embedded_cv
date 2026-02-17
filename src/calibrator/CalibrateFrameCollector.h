@@ -45,6 +45,7 @@ namespace ecv {
 
         std::unordered_map<int, FrameRef> map;
         std::unordered_map<int, FramePairRef> pairs;
+        std::unordered_map<int, std::vector<FrameRef>> frameSets;
 
         double maxRotValue[2] = {0,0};
         double maxDistValue = 0;
@@ -58,12 +59,14 @@ namespace ecv {
         explicit CalibrateFrameCollector(const cv::Size &frameSize) : frameSize(frameSize) {};
         void addFrame(const FrameRef &frameRef);
         void addMulticamFrame(const FrameRef &baseFrameRef, const FrameRef &frameRef, double cost);
+        void addMulticamFrames(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>>& _frameSets);
 
         double getProgress() const;
         std::vector<std::pair<int, FrameRef>> getFramesSample(int n) const;
         std::vector<std::pair<int, CalibrateFrameCollector::FramePairRef>> getFramesPairsSample(int n) const;
-        std::vector<std::vector<cv::Point3d>> getCollectedImageGridsSample(const std::vector<CalibrateFrameCollector::FrameRef> &sample) const;
-        std::vector<std::vector<cv::Point3d>> getCollectedObjectGridsSample(const std::vector<CalibrateFrameCollector::FrameRef> &sample) const;
+        std::vector<std::vector<FrameRef>> getFramesSample2(int n, bool validate) const;
+        std::vector<std::vector<cv::Point3d>> getCollectedImageGridsSample(const std::vector<FrameRef> &sample) const;
+        std::vector<std::vector<cv::Point3d>> getCollectedObjectGridsSample(const std::vector<FrameRef> &sample) const;
         template <typename Iterator> std::vector<std::vector<cv::Point3d>> getCollectedImageGridsSample(Iterator first, Iterator last) const {
             std::vector<std::vector<cv::Point3d>> result;
 
