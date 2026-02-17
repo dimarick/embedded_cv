@@ -96,11 +96,11 @@ int main(int argc, const char **argv) {
     }
 
     if (strcmp(argv[1], argv[2]) == 0) {
-        captureLeft.open(argv[1], cv::CAP_V4L2, params);
+        captureLeft.open(std::string(argv[1]), cv::CAP_V4L2, params);
         captureRight = captureLeft;
     } else {
-        captureLeft.open(argv[1], cv::CAP_V4L2, params);
-        captureRight.open(argv[2], cv::CAP_V4L2, params);
+        captureLeft.open(std::string(argv[1]), cv::CAP_V4L2, params);
+        captureRight.open(std::string(argv[2]), cv::CAP_V4L2, params);
     }
 
     broadcastingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_tm", 10));

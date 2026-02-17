@@ -262,6 +262,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::set<Cali
 
     std::vector<std::vector<cv::Point3f>> objectPoints;
     std::vector<std::vector<std::vector<cv::Point2f>>> imagePoints;
+    std::vector<std::vector<cv::Mat>> imagePoints2;
     std::vector<std::vector<unsigned char>> mask;
     std::vector<cv::Size> imageSize;
     std::vector<int> models;
@@ -282,7 +283,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::set<Cali
         for (const auto &p : frameSets[i][0]->objectGrid) {
             objectPoints[i].emplace_back(p.x, p.y, 0);
         }
-        imagePoints.emplace_back(frameSets[i][0]->imageGrid.size());
+        const auto &set = imagePoints.emplace_back(frameSets[i][0]->imageGrid.size());
         for (int j = 0; j < frameSets[i].size(); j++) {
             if (frameSets[i][j] == nullptr) {
                 mask[i][j] = 0;
@@ -293,6 +294,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::set<Cali
                 imagePoints[i][j].emplace_back(p.x, p.y);
             }
         }
+        imagePoints2[i].emplace_back(set);
     }
 
     for (int i = 0; i < numCameras; ++i) {
@@ -305,7 +307,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::set<Cali
 
     cv::calibrateMultiview(
             objectPoints,
-            imagePoints,
+            imagePoints2,
             imageSize,
             mask,
             models,
@@ -352,7 +354,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::set<Cali
 
     double cost = cv::calibrateMultiview(
             objectPoints,
-            imagePoints,
+            imagePoints2,
             imageSize,
             mask,
             models,
