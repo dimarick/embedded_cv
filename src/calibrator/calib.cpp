@@ -165,6 +165,7 @@ int main(int argc, const char **argv) {
     std::vector<ecv::Calibrator> calibrator(frames.size());
     std::vector<ecv::Calibrator::CalibrationData> calibrationData(frames.size());
 
+    std::mutex mapsMutex;
     std::vector<cv::Mat> maps(frames.size());
 
     for (int i = 0; i < frames.size(); ++i) {
@@ -190,71 +191,21 @@ int main(int argc, const char **argv) {
     std::vector<size_t> bestW(frames.size(), 0);
     std::vector<size_t> bestH(frames.size(), 0);
     std::unordered_map<int, std::vector<ecv::CalibrateMapper::Point3>> framesMap;
-    std::vector<ecv::CalibrateFrameCollector> frameCollectors(frames.size(), ecv::CalibrateFrameCollector(frames[0].size()));
 
-    std::vector<cv::FileStorage> frameDataStorage(frames.size());
-
-    for (int i = 0; i < frames.size(); ++i) {
-        frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::READ);
-
-        if (!frameDataStorage[i].isOpened()) {
-            continue;
-        }
-
-        frameCollectors[i].load(frameDataStorage[i]);
-
-        frameDataStorage[i].release();
-    }
-
-    for (int i = 0; i < frames.size(); ++i) {
-        std::vector<ecv::CalibrateFrameCollector::FrameRef> sample;
-        std::vector<ecv::CalibrateFrameCollector::FrameRef> sampleValidate;
-
-        auto sampleRaw = frameCollectors[i].getFramesSample(100000);
-
-        for (const auto &item: sampleRaw) {
-            if (item.second->validate) {
-                sampleValidate.emplace_back(item.second);
-            } else {
-                sample.emplace_back(item.second);
-            }
-        }
-
-
-        for (int j = 0; j < sample.size(); j += 30) {
-            auto b = sample.begin() + j;
-            auto e = sample.begin() + std::min(j + 30, (int)sample.size());
-            ecv::Calibrator::CalibrationData data = calibrationData[i];
-            auto q = calibrator[i].calibrateSingleCamera(
-                    frames[i].size(),
-                    frameCollectors[i].getCollectedObjectGridsSample(b, e),
-                    frameCollectors[i].getCollectedImageGridsSample(b, e),
-                    data,
-                    0,
-                    cv::TermCriteria(3, 1e-7)
-            );
-
-            if (q < 5) {
-                calibrationData[i] = data;
-            }
-        }
-
-
-        bestQ[i] = calibrator[i].calibrateSingleCamera(
-                frames[i].size(),
-                frameCollectors[i].getCollectedObjectGridsSample(sampleValidate),
-                frameCollectors[i].getCollectedImageGridsSample(sampleValidate),
-                calibrationData[i],
-                0,
-                cv::TermCriteria(1, 1e-7)
-        );
-    }
-
-    long lastShow = 0;
+    std::vector<double> progress(frames.size(), 0);
 
     std::shared_ptr<ecv::CalibrateFrameCollector::Frame> baseFrameRef;
 
-    ecv::CalibrationStrategy calibrationStrategy(frames[0].size(), (int)frames.size());
+    const cv::Size &size = frames[0].size();
+    ecv::CalibrationStrategy calibrationStrategy(size, (int)frames.size(), [&maps, &mapsMutex, &progress](int cameraId, const ecv::CalibrationStrategy &that) {
+        {
+            std::unique_lock lock(mapsMutex);
+            maps[cameraId] = that.getMap(cameraId);
+        }
+        progress[cameraId] = that.getProgress(cameraId);
+
+        std::cout << "Calibration updated " << cameraId << ",\t" << that.getProgress(cameraId) << "%\tcost " << that.getCosts(cameraId) << std::endl;
+    });
 
     calibrationStrategy.runCalibration();
 
@@ -284,11 +235,6 @@ int main(int argc, const char **argv) {
             continue;
         }
 
-        double ema = 2. / (10. + 1.);
-        double avgRemapTime = 0., avgDetectGridTime = 0., avgVerifyCalibrateTime = 0., avgCalibrateTime = 0.;
-
-        std::mutex avgTimeMutex;
-
         baseFrameRef.reset();
 
         bool abortCalibration[frames.size()];
@@ -311,30 +257,32 @@ int main(int argc, const char **argv) {
             peaks[i].resize(peaksSize);
         }
 
+        std::vector<ecv::CalibrateFrameCollector::FrameRef> frameSet(frames.size(), nullptr);
+
         for (int i = 0; i < frames.size(); ++i) {
             cv::Mat debug;
             frames[i].copyTo(debug);
             std::vector<ecv::CalibrateMapper::Point3> imageGrid(500), objectGrid(500);
             size_t w = 0, h = 0;
 
-            auto start = std::chrono::high_resolution_clock::now().time_since_epoch().count();
             if (!maps[i].empty()) {
-                cv::remap(frames[i], plainFrames[i], maps[i], cv::noArray(), cv::INTER_NEAREST);
+                cv::Mat map;
+                {
+                    std::unique_lock lock(mapsMutex);
+                    map = maps[i];
+                }
+                cv::remap(frames[i], plainFrames[i], map, cv::noArray(), cv::INTER_NEAREST);
             } else {
                 frames[i].copyTo(plainFrames[i]);
             }
 
             if (!abortCalibration[i]) {
-                auto remapTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-
                 auto srcGridQ = calibrateMapper[i].detectFrameImagePointsGrid(frames[i], peaks[i], imageGrid, &w, &h, debug);
 
                 if (w > 0 && h > 0) {
                     calibrateMapper[i].generateFrameObjectPointsGrid(objectGrid, w, h);
                     calibrateMapper[i].drawGrid(debug, objectGrid, w, h, cv::Scalar(255, 0, 255), 2);
                 }
-
-                auto detectGridTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 
                 double calibGridQ = 1. / 0.;
                 std::vector<ecv::CalibrateMapper::Point3> calibImageGrid(500), calibObjectGrid(500);
@@ -345,24 +293,11 @@ int main(int argc, const char **argv) {
                     imageGrid.resize(w * h);
                     objectGrid.resize(w * h);
 
-                    calibrationStrategy.addFrame(i, imageGrid, objectGrid, (int)w, (int)h, frameBlur[i], getFrameTs[i]);
+                    frameSet[i] = calibrationStrategy.createFrame(i, imageGrid, objectGrid, (int)w, (int)h, frameBlur[i], getFrameTs[i]);
                 }
 
-                auto calibrateTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-
-                auto verifyCalibrateTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-
-//                avgTimeMutex.lock();
-//                avgRemapTime = ema * (double)(remapTime - start) + (1 - ema) * avgRemapTime;
-//                avgDetectGridTime = ema * (double)(detectGridTime - remapTime) + (1 - ema) * avgDetectGridTime;
-//                avgCalibrateTime = ema * (double)(calibrateTime - detectGridTime) + (1 - ema) * avgCalibrateTime;
-//                avgVerifyCalibrateTime = ema * (double)(verifyCalibrateTime - calibrateTime) + (1 - ema) * avgVerifyCalibrateTime;
-//                avgTimeMutex.unlock();
-
-                double progress = frameCollectors[i].getProgress();
-
                 cv::putText(debug, std::format("sz = {}x{}\nsrcGridQ = {}\ngridQ = {}\nbestQ = {}\npatternSize = {}\npatternSkew = {}\nfx/fy = {} / {}\nprogress = {}%",
-                                               w, h, srcGridQ, calibGridQ, i == 0 ? bestQ[i] : bestPairQ[i], calibrateMapper[i].patternSize, calibrateMapper[i].skew, calibrator[i].getFx(), calibrator[i].getFy(), progress * 100), cv::Point2i(30, 30), 1, 2,
+                                               w, h, srcGridQ, calibGridQ, i == 0 ? bestQ[i] : bestPairQ[i], calibrateMapper[i].patternSize, calibrateMapper[i].skew, calibrator[i].getFx(), calibrator[i].getFy(), progress[i] * 100), cv::Point2i(30, 30), 1, 2,
                             cv::Scalar(0,0,255));
             }
 
@@ -387,23 +322,8 @@ int main(int argc, const char **argv) {
 #endif
         }
 
-        auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+        calibrationStrategy.addFrameSet(frameSet);
 
-        if ((now - lastShow) > (long)5e9) {
-            lastShow = now;
-
-            std::cout << std::format("avgRemapTime = {} ms, avgDetectGridTime = {} ms, avgCalibrateTime = {} ms, avgVerifyCalibrateTime = {} ms",
-                                     (double)avgRemapTime / 1e6, (double)avgDetectGridTime / 1e6, (double)avgCalibrateTime / 1e6, (double)avgVerifyCalibrateTime / 1e6) << std::endl;
-
-            for (int i = 0; i < frames.size(); ++i) {
-                frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::WRITE);
-
-                if (frameDataStorage[i].isOpened()) {
-                    frameCollectors[i].store(frameDataStorage[i]);
-                    frameDataStorage[i].release();
-                }
-            }
-        }
 #ifdef HAVE_OPENCV_HIGHGUI
         if (cv::waitKey(1) != -1) {
             break;

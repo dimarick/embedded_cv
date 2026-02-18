@@ -4,16 +4,32 @@
 #include <queue>
 #include <thread>
 #include <condition_variable>
+#include <utility>
+#include <shared_mutex>
 #include "opencv2/core.hpp"
 #include "CalibrateFrameCollector.h"
 #include "Calibrator.h"
 
-static const int MAX_FRAMES_QUEUE = 10;
-static const int SAMPLE_SIZE = 60;
+static const int MAX_FRAMES_QUEUE = 100;
+static const int SAMPLE_SIZE = 20;
+static const int VALIDATE_SAMPLE_SIZE = 200;
 namespace ecv {
 
     class CalibrationStrategy {
     private:
+        struct FrameSetCompare {
+            bool operator()(const std::vector<CalibrateFrameCollector::FrameRef> &a, const std::vector<CalibrateFrameCollector::FrameRef> &b) const {
+                double costA = 0, costB = 0;
+
+                for (int i = 0; i < a.size(); ++i) {
+                    costA += a[i]->cost;
+                    costB += b[i]->cost;
+                }
+
+                if (costA == costB) return true;
+                return costA > costB;
+            }
+        };
         struct FrameCompare {
             bool operator()(const CalibrateFrameCollector::FrameRef &a, const CalibrateFrameCollector::FrameRef &b) const {
                 if (a->cost == b->cost) return true;
@@ -33,29 +49,32 @@ namespace ecv {
         volatile bool running = false;
         std::vector<CalibrateFrameCollector> frameCollectors;
         std::vector<ecv::Calibrator> calibrators;
+        mutable std::shared_mutex dataMutex;
         std::vector<Calibrator::CalibrationData> data;
         std::vector<cv::Mat> map;
         std::vector<double> costs;
         double multicamCosts = 1. / 0.;
         double multicamRoiSize = 0.;
         std::mutex pendingFramesMutex;
-        std::vector<std::set<CalibrateFrameCollector::FrameRef>> pendingFrames;
-        std::vector<std::set<CalibrateFrameCollector::FrameRef>> pendingFrames2;
+        std::vector<std::set<CalibrateFrameCollector::FrameRef, FrameCompare>> pendingFrames;
+        std::set<std::vector<CalibrateFrameCollector::FrameRef>, FrameSetCompare> pendingFrameSets;
         std::vector<cv::FileStorage> frameDataStorage;
-        std::vector<std::condition_variable> camThreadsWait;
+        std::condition_variable camThreadsWait;
         std::vector<std::thread> camThreads;
         std::condition_variable multicamThreadWait;
         std::thread multicamThread;
-        void (*onUpdateCallback)(int cameraId);
+        std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback;
 
         void camThreadCallback(const std::vector<CalibrateFrameCollector::FrameRef> &pendingFrames, int cameraId);
-        void multicamThreadCallback(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &pendingFramesPerCam);
+        void multicamThreadCallback(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &pendingFramesPerCam);
         [[nodiscard]] double getFrameTimeInterval(const std::vector<std::set<CalibrateFrameCollector::FrameRef, TsCompare>> &framesPerCam) const;
         [[nodiscard]] CalibrateFrameCollector::FrameRef findClosestFrameByTs(const std::set<CalibrateFrameCollector::FrameRef, TsCompare> &set, double v) const;
+        [[nodiscard]] std::vector<cv::Mat> getObjectPointsFromFrameSets(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &frameSets) const;
     public:
-        explicit CalibrationStrategy(cv::Size frameSize, int numCameras) : frameSize(frameSize), numCameras(numCameras) {
+        explicit CalibrationStrategy(cv::Size frameSize, int numCameras, std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback) : frameSize(frameSize), numCameras(numCameras), onUpdateCallback(std::move(onUpdateCallback)) {
             for (int i = 0; i < numCameras; ++i) {
                 frameCollectors.emplace_back(frameSize);
+                calibrators.emplace_back();
                 data.emplace_back();
                 map.emplace_back();
                 costs.emplace_back(1. / 0.);
@@ -63,7 +82,6 @@ namespace ecv {
                 camThreads.emplace_back();
             }
             pendingFrames.resize(numCameras);
-
 
             for (int i = 0; i < numCameras; ++i) {
                 frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::READ);
@@ -78,8 +96,19 @@ namespace ecv {
             }
         }
 
-        [[nodiscard]] const Calibrator::CalibrationData &getCalibrationData(int cameraId) const {
-            return data[cameraId];
+        [[nodiscard]] Calibrator::CalibrationData getCalibrationData(int cameraId) const {
+            Calibrator::CalibrationData result;
+            {
+                std::shared_lock lock(dataMutex);
+                result = data[cameraId];
+            }
+
+            return result;
+        }
+
+        void setCalibrationData(int cameraId, const Calibrator::CalibrationData &updatedData) {
+            std::unique_lock lock(dataMutex);
+            data[cameraId] = updatedData;
         }
 
         [[nodiscard]] cv::Mat getMap(int cameraId) const {
@@ -101,25 +130,32 @@ namespace ecv {
             return multicamRoiSize;
         }
 
-        void addFrame(int cameraId,
-                        const std::vector<cv::Point3d>& imagePoints,
-                        const std::vector<cv::Point3d>& objectPoints,
-                        int w, int h, double cost, double ts);
+        CalibrateFrameCollector::FrameRef
+        createFrame(int cameraId, const std::vector<cv::Point3d> &imagePoints,
+                    const std::vector<cv::Point3d> &objectPoints,
+                    int w, int h, double cost, double ts);
 
-        void onCalibrationUpdated(void (*callback)(int cameraId)) {
-            this->onUpdateCallback = callback;
-        }
+        void addFrameSet(const std::vector<CalibrateFrameCollector::FrameRef> &frameSet);
 
         void runCalibration();
 
-        void stopCalibration();
+        void stopCalibration() noexcept;
 
-        [[nodiscard]] bool isRunning() {
+        [[nodiscard]] bool isRunning() const {
             return running;
         }
 
         std::vector<std::vector<CalibrateFrameCollector::FrameRef>>
         getFrameSets(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &framesPerCam);
+
+        ~CalibrationStrategy() {
+            stopCalibration();
+        }
+
+        std::vector<std::vector<cv::Mat>>
+        getImagePointsFromFrameSets(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &frameSets) const;
+
+        bool isValid(const std::vector<CalibrateFrameCollector::FrameRef> &frameSet) const;
     };
 }
 #endif //EMBEDDED_CV_CALIBRATIONSTRATEGY_H

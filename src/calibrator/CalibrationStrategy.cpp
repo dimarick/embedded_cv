@@ -10,13 +10,16 @@ void CalibrationStrategy::runCalibration() {
         camThreads[i] = std::thread([](decltype(this) that, int i) {
             std::vector<CalibrateFrameCollector::FrameRef> pendingFrames(MAX_FRAMES_QUEUE);
             while (that->running) {
-                std::unique_lock<std::mutex> lock(that->pendingFramesMutex);
-                that->camThreadsWait[i].wait(lock);
-                if (that->running && !that->pendingFrames.empty()) {
+                {
+                    std::unique_lock<std::mutex> lock(that->pendingFramesMutex);
+                    that->camThreadsWait.wait(lock);
+                }
+                if (that->running && !that->pendingFrames[i].empty()) {
                     {
                         std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
                         std::copy(that->pendingFrames[i].begin(), that->pendingFrames[i].end(), pendingFrames.begin());
-                        that->pendingFrames.clear();
+                        pendingFrames.resize(that->pendingFrames[i].size());
+                        that->pendingFrames[i].clear();
                     }
                     that->camThreadCallback(pendingFrames, i);
                 }
@@ -24,33 +27,32 @@ void CalibrationStrategy::runCalibration() {
         }, this, i);
     }
 
-    if (multicamThread.joinable()) {
-        const auto that = this;
-        multicamThread = std::thread([](decltype(this) that) {
-            std::vector<std::set<CalibrateFrameCollector::FrameRef>> frames;
-            while (that->running) {
+    const auto that = this;
+    multicamThread = std::thread([](decltype(this) that) {
+        std::vector<std::vector<CalibrateFrameCollector::FrameRef>> frames;
+        while (that->running) {
+            {
                 std::unique_lock<std::mutex> lock(that->pendingFramesMutex);
                 that->multicamThreadWait.wait(lock);
-                if (that->running && !that->pendingFrames2.empty()) {
-                    {
-                        std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
-                        std::copy(that->pendingFrames2.begin(), that->pendingFrames2.end(), frames.begin());
-                        that->pendingFrames2.clear();
-                    }
-                    that->multicamThreadCallback(frames);
-                }
             }
-        }, this);
-    }
+            if (that->running && !that->pendingFrameSets.empty()) {
+                {
+                    std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
+                    frames.resize(that->pendingFrameSets.size());
+                    std::copy(that->pendingFrameSets.begin(), that->pendingFrameSets.end(), frames.begin());
+                    that->pendingFrameSets.clear();
+                }
+                that->multicamThreadCallback(frames);
+            }
+        }
+    }, this);
 }
 
-void CalibrationStrategy::stopCalibration() {
+void CalibrationStrategy::stopCalibration() noexcept {
     running = false;
-    for (auto &w : camThreadsWait) {
-        w.notify_one();
-    }
 
-    multicamThreadWait.notify_one();
+    camThreadsWait.notify_all();
+    multicamThreadWait.notify_all();
 
     for (auto &thread : camThreads) {
         if (thread.joinable()) {
@@ -63,38 +65,45 @@ void CalibrationStrategy::stopCalibration() {
     }
 }
 
-void CalibrationStrategy::addFrame(int cameraId,
-                                     const std::vector<cv::Point3d>& imagePoints,
-                                     const std::vector<cv::Point3d>& objectPoints,
-                                     int w, int h, double cost, double ts) {
-    auto frameRef = frameCollectors[cameraId].createFrame(imagePoints, objectPoints, w, h, cost, ts);
-    std::unique_lock<std::mutex> lock(pendingFramesMutex);
-    pendingFrames[cameraId].insert(frameRef);
-    if (pendingFrames[cameraId].size() > MAX_FRAMES_QUEUE) {
-        pendingFrames[cameraId].erase(pendingFrames[cameraId].begin());
-    }
+CalibrateFrameCollector::FrameRef CalibrationStrategy::createFrame(int cameraId, const std::vector<cv::Point3d> &imagePoints,
+                                 const std::vector<cv::Point3d> &objectPoints, int w, int h, double cost,
+                                 double ts) {
+    return frameCollectors[cameraId].createFrame(imagePoints, objectPoints, w, h, cost, ts);
+}
 
-    camThreadsWait[cameraId].notify_one();
+void CalibrationStrategy::addFrameSet(const std::vector<CalibrateFrameCollector::FrameRef> &frameSet) {
+    CV_Assert(frameSet.size() == numCameras);
+    {
+        std::unique_lock<std::mutex> lock(pendingFramesMutex);
+        pendingFrameSets.insert(frameSet);
+        if (pendingFrameSets.size() > MAX_FRAMES_QUEUE) {
+            pendingFrameSets.erase(pendingFrameSets.begin());
+        }
+        for (int i = 0; i < numCameras; ++i) {
+            pendingFrames[i].insert(frameSet[i]);
+            if (pendingFrames[i].size() > MAX_FRAMES_QUEUE) {
+                pendingFrames[i].erase(pendingFrames[i].begin());
+            }
+        }
+    }
+    camThreadsWait.notify_all();
+    multicamThreadWait.notify_all();
 }
 
 void CalibrationStrategy::camThreadCallback(const std::vector<CalibrateFrameCollector::FrameRef> &frames, int cameraId) {
     int i = cameraId;
 
+    auto sample = frameCollectors[i].getFramesSample(SAMPLE_SIZE, false);
+
     for (const auto &frame : frames) {
-        frameCollectors[cameraId].addFrame(frame);
+        if (frame != nullptr) {
+            frameCollectors[i].addFrame(frame);
+            sample.emplace_back(frame);
+        }
     }
 
-    std::vector<ecv::CalibrateFrameCollector::FrameRef> sample;
-    std::vector<ecv::CalibrateFrameCollector::FrameRef> sampleValidate;
-
-    auto sampleRaw = frameCollectors[i].getFramesSample(SAMPLE_SIZE);
-
-    for (const auto &item : sampleRaw) {
-        if (item.second->validate) {
-            sampleValidate.emplace_back(item.second);
-        } else {
-            sample.emplace_back(item.second);
-        }
+    if (sample.empty()) {
+        return;
     }
 
     auto trainData = data[i];
@@ -117,6 +126,12 @@ void CalibrationStrategy::camThreadCallback(const std::vector<CalibrateFrameColl
                 cv::CALIB_FIX_TAUX_TAUY | cv::CALIB_FIX_TANGENT_DIST | cv::CALIB_FIX_INTRINSIC |
                 cv::CALIB_FIX_SKEW;
 
+    auto sampleValidate = frameCollectors[i].getFramesSample(SAMPLE_SIZE, true);
+
+    if (sampleValidate.empty()) {
+        return;
+    }
+
     auto cost = calibrators[i].calibrateSingleCamera(
             frameSize,
             frameCollectors[i].getCollectedObjectGridsSample(sampleValidate),
@@ -129,12 +144,6 @@ void CalibrationStrategy::camThreadCallback(const std::vector<CalibrateFrameColl
     if (cost < costs[i]) {
         costs[i] = cost;
     }
-
-    pendingFrames2[i].insert(frames.begin(), frames.end());
-
-    onUpdateCallback(cameraId);
-
-    multicamThreadWait.notify_one();
 }
 
 CalibrateFrameCollector::FrameRef CalibrationStrategy::findClosestFrameByTs(
@@ -255,59 +264,60 @@ double CalibrationStrategy::getFrameTimeInterval(const std::vector<std::set<Cali
     return frameMinInterval;
 }
 
-void CalibrationStrategy::multicamThreadCallback(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &framesPerCam) {
-    const auto &frameSets = getFrameSets(framesPerCam);
+void CalibrationStrategy::multicamThreadCallback(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &frameSets) {
+    std::vector<std::vector<CalibrateFrameCollector::FrameRef>> validFrameSets;
 
-    frameCollectors[0].addMulticamFrames(frameSets);
+    for (const auto &frameSet : frameSets) {
+        if (isValid(frameSet)) {
+            validFrameSets.emplace_back(frameSet);
+        }
+    }
 
-    std::vector<std::vector<cv::Point3f>> objectPoints;
-    std::vector<std::vector<std::vector<cv::Point2f>>> imagePoints;
-    std::vector<std::vector<cv::Mat>> imagePoints2;
-    std::vector<std::vector<unsigned char>> mask;
+    if (validFrameSets.empty()) {
+        return;
+    }
+
+    frameCollectors[0].addMulticamFrames(validFrameSets);
+
+    auto mask = cv::Mat(numCameras, (int)validFrameSets.size(), CV_8U);
     std::vector<cv::Size> imageSize;
-    std::vector<int> models;
+    std::vector<unsigned char> models;
     std::vector<int> flagsForIntrinsics;
     std::vector<cv::Mat> Rs;
     std::vector<cv::Mat> Ts;
     std::vector<cv::Mat> Ks;
     std::vector<cv::Mat> Ks2;
+    std::vector<cv::Mat> Rs2;
+    std::vector<cv::Mat> Ts2;
     std::vector<cv::Mat> distortions;
     std::vector<cv::Mat> distortions2;
-    std::vector<cv::Mat> rvecs0(frameSets.size());
-    std::vector<cv::Mat> tvecs0(frameSets.size());
-    std::vector<double> perFrameErrors(frameSets.size());
-    cv::Mat initializationPairs;
+    std::vector<cv::Mat> rvecs0(validFrameSets.size());
+    std::vector<cv::Mat> tvecs0(validFrameSets.size());
+    std::vector<double> perFrameErrors(validFrameSets.size());
 
-    for (int i = 0; i < frameSets.size(); i++) {
-        objectPoints.emplace_back(frameSets[i][0]->objectGrid.size());
-        for (const auto &p : frameSets[i][0]->objectGrid) {
-            objectPoints[i].emplace_back(p.x, p.y, 0);
+    cv::Mat initializationPairs;
+    auto objectPoints = getObjectPointsFromFrameSets(validFrameSets);
+    auto imagePoints = getImagePointsFromFrameSets(validFrameSets);
+
+    for (int frameId = 0; frameId < validFrameSets.size(); frameId++) {
+        for (int camId = 0; camId < validFrameSets[frameId].size(); camId++) {
+            mask.at<unsigned char >(camId, frameId) = validFrameSets[frameId][camId] == nullptr ? 0 : 255;
         }
-        const auto &set = imagePoints.emplace_back(frameSets[i][0]->imageGrid.size());
-        for (int j = 0; j < frameSets[i].size(); j++) {
-            if (frameSets[i][j] == nullptr) {
-                mask[i][j] = 0;
-                continue;
-            }
-            mask[i][j] = 255;
-            for (const auto &p: frameSets[i][j]->imageGrid) {
-                imagePoints[i][j].emplace_back(p.x, p.y);
-            }
-        }
-        imagePoints2[i].emplace_back(set);
     }
 
     for (int i = 0; i < numCameras; ++i) {
+        const auto &calibrationData = getCalibrationData(i);
+
         imageSize.emplace_back(frameSize);
         models.emplace_back(cv::CALIB_MODEL_PINHOLE);
         flagsForIntrinsics.emplace_back(0);
-        Ks.emplace_back(data[i].cameraMatrix.clone());
-        distortions.emplace_back(data[i].distCoeff);
+        Ks.emplace_back(calibrationData.cameraMatrix);
+        distortions.emplace_back(calibrationData.distCoeff);
     }
 
     cv::calibrateMultiview(
             objectPoints,
-            imagePoints2,
+            imagePoints,
             imageSize,
             mask,
             models,
@@ -320,54 +330,47 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::set<Cali
             tvecs0,
             perFrameErrors,
             flagsForIntrinsics,
-            0,
+            cv::CALIB_USE_INTRINSIC_GUESS,
             cv::TermCriteria(10, 1e-7)
     );
 
-    const auto &sample = frameCollectors[0].getFramesSample2(100, true);
+    const auto &sampleValidate = frameCollectors[0].getFrameSetsSample(VALIDATE_SAMPLE_SIZE, true);
 
-    objectPoints.clear();
-    imagePoints.clear();
+    objectPoints = getObjectPointsFromFrameSets(sampleValidate);
+    imagePoints = getImagePointsFromFrameSets(sampleValidate);
 
-    for (int i = 0; i < frameSets.size(); i++) {
-        objectPoints.emplace_back(frameSets[i][0]->objectGrid.size());
-        for (const auto &p : frameSets[i][0]->objectGrid) {
-            objectPoints[i].emplace_back(p.x, p.y, 0);
-        }
-        imagePoints.emplace_back(frameSets[i][0]->imageGrid.size());
-        for (int j = 0; j < frameSets[i].size(); j++) {
-            if (frameSets[i][j] == nullptr) {
-                mask[i][j] = 0;
-                continue;
-            }
-            mask[i][j] = 255;
-            for (const auto &p: frameSets[i][j]->imageGrid) {
-                imagePoints[i][j].emplace_back(p.x, p.y);
-            }
+    if (sampleValidate.empty()) {
+        return;
+    }
+
+    auto mask2 = cv::Mat(numCameras, (int)sampleValidate.size(), CV_8U);
+    for (int frameId = 0; frameId < sampleValidate.size(); frameId++) {
+        for (int camId = 0; camId < sampleValidate[frameId].size(); camId++) {
+            mask2.at<unsigned char >(camId, frameId) = sampleValidate[frameId][camId] == nullptr ? 0 : 255;
         }
     }
 
-    for (int i = 0; i < numCameras; ++i) {
-        Ks2.emplace_back(data[i].cameraMatrix.clone());
-        distortions2.emplace_back(data[i].distCoeff);
-    }
+    Ks2 = Ks;
+    Rs2 = Rs;
+    Ts2 = Ts;
+    distortions2 = distortions;
 
     double cost = cv::calibrateMultiview(
             objectPoints,
-            imagePoints2,
+            imagePoints,
             imageSize,
             mask,
             models,
-            Ks,
-            distortions,
-            Rs,
-            Ts,
+            Ks2,
+            distortions2,
+            Rs2,
+            Ts2,
             initializationPairs,
             rvecs0,
             tvecs0,
             perFrameErrors,
             flagsForIntrinsics,
-            0,
+            cv::CALIB_USE_INTRINSIC_GUESS,
             cv::TermCriteria(1, 1e-7)
     );
 
@@ -375,8 +378,69 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::set<Cali
         multicamCosts = cost;
 
         for (int i = 0; i < numCameras; ++i) {
-            data[i].cameraMatrix = Ks[i].clone();
-            data[i].distCoeff = distortions[i];
+            cv::Mat tmp;
+            auto calibrationData = getCalibrationData(i);
+            calibrationData.cameraMatrix = Ks[i].clone();
+            calibrationData.distCoeff = distortions[i];
+            setCalibrationData(i, calibrationData);
+
+//            cv::initUndistortRectifyMap(calibrationData.cameraMatrix, calibrationData.distCoeff, Rs[i], Ts[i], frameSize, CV_32FC2, map[i], tmp);
+        }
+
+        for (int i = 0; i < numCameras; ++i) {
+            onUpdateCallback(i, *this);
         }
     }
+}
+
+std::vector<cv::Mat> CalibrationStrategy::getObjectPointsFromFrameSets(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &frameSets) const {
+    std::vector<cv::Mat> objectPoints;
+    for (const auto & frameSet : frameSets) {
+        std::vector<cv::Point3f> fp32Grid;
+        for (const auto &p : frameSet[0]->objectGrid) {
+            fp32Grid.emplace_back(p.x, p.y, 1.0f);
+        }
+        objectPoints.emplace_back(fp32Grid, CV_32FC3);
+    }
+
+    return objectPoints;
+}
+
+bool CalibrationStrategy::isValid(const std::vector<CalibrateFrameCollector::FrameRef> &frameSet) const {
+    const auto &frame0 = frameSet[0];
+    if (frame0 == nullptr) {
+        return false;
+    }
+    size_t w = frame0->w, h = frame0->h;
+
+    for (int camId = 1; camId < numCameras; camId++) {
+        const auto &frame = frameSet[camId];
+        if (frame == nullptr || frame->w != w || frame->h != h) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::vector<std::vector<cv::Mat>> CalibrationStrategy::getImagePointsFromFrameSets(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &frameSets) const {
+    std::vector<std::vector<cv::Mat>> imagePoints;
+    for (int camId = 0; camId < numCameras; camId++) {
+        imagePoints.emplace_back(frameSets.size());
+    }
+
+    for (int frameId = 0; frameId < frameSets.size(); frameId++) {
+//        Expected shape: NUM_CAMERAS x NUM_FRAMES x NUM_POINTS x 2.
+        const auto &frameSet = frameSets[frameId];
+        for (int camId = 0; camId < numCameras; camId++) {
+            std::vector<cv::Point2f> frameImagePoints;
+            const auto &frame = frameSet[camId];
+            for (const auto &p: frame->imageGrid) {
+                frameImagePoints.emplace_back(p.x, p.y);
+            }
+            imagePoints[camId][frameId] = cv::Mat(frameImagePoints, CV_32FC2);
+        }
+    }
+
+    return imagePoints;
 }

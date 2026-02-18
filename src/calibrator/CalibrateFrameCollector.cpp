@@ -155,6 +155,9 @@ void CalibrateFrameCollector::addFrame(const std::shared_ptr<Frame> &frameRef) {
 
 void CalibrateFrameCollector::addMulticamFrames(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &_frameSets) {
     for (const auto &f : _frameSets) {
+        if (f[0] == nullptr) {
+            continue;
+        }
         int cls = f[0]->cls;
         double cost = f[0]->cost;
         const auto &it = this->frameSets.find(cls);
@@ -174,17 +177,32 @@ void CalibrateFrameCollector::addMulticamFrame(const std::shared_ptr<Frame> &bas
     addMulticamFrameTo(&pairs, pair);
 }
 
-std::vector<std::pair<int, CalibrateFrameCollector::FrameRef>> CalibrateFrameCollector::getFramesSample(int n) const {
-    std::vector<std::pair<int, FrameRef>> f;
+std::vector<CalibrateFrameCollector::FrameRef> CalibrateFrameCollector::getFramesSample(int n, bool validate) const {
+    std::vector<FrameRef> f(n);
 
+    std::uniform_int_distribution rng(0, n - 1);
     std::mt19937 r {std::random_device{}()};
 
-    std::sample(map.begin(), map.end(), std::back_inserter(f), n, r);
+    int i = 0;
+    for (const auto &frame : map) {
+        if (frame.second->validate == validate) {
+            if (i < n) {
+                f[i] = frame.second;
+            } else {
+                f[rng(r) % n] = frame.second;
+            }
+            i++;
+        }
+    }
+
+    if (i < n) {
+        f.resize(i);
+    }
 
     return f;
 }
 
-std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrateFrameCollector::getFramesSample2(int n, bool validate) const {
+std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrateFrameCollector::getFrameSetsSample(int n, bool validate) const {
     std::vector<std::vector<FrameRef>> f(n);
 
     std::uniform_int_distribution rng(0, n - 1);
@@ -198,22 +216,13 @@ std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrateFrameCollec
             } else {
                 f[rng(r) % n] = frame.second;
             }
+            i++;
         }
     }
 
     if (i < n) {
         f.resize(i);
     }
-
-    return f;
-}
-
-std::vector<std::pair<int, CalibrateFrameCollector::FramePairRef>> CalibrateFrameCollector::getFramesPairsSample(int n) const {
-    std::vector<std::pair<int, FramePairRef>> f;
-
-    std::mt19937 r {std::random_device{}()};
-
-    std::sample(pairs.begin(), pairs.end(), std::back_inserter(f), n, r);
 
     return f;
 }
