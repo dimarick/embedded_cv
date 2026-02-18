@@ -293,7 +293,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::vector<C
     std::vector<cv::Mat> distortions2;
     std::vector<cv::Mat> rvecs0(validFrameSets.size());
     std::vector<cv::Mat> tvecs0(validFrameSets.size());
-    std::vector<double> perFrameErrors(validFrameSets.size());
+    cv::Mat perFrameErrors;
 
     cv::Mat initializationPairs;
     auto objectPoints = getObjectPointsFromFrameSets(validFrameSets);
@@ -355,24 +355,29 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::vector<C
     Ts2 = Ts;
     distortions2 = distortions;
 
-    double cost = cv::calibrateMultiview(
-            objectPoints,
-            imagePoints,
-            imageSize,
-            mask,
-            models,
-            Ks2,
-            distortions2,
-            Rs2,
-            Ts2,
-            initializationPairs,
-            rvecs0,
-            tvecs0,
-            perFrameErrors,
-            flagsForIntrinsics,
-            cv::CALIB_USE_INTRINSIC_GUESS,
-            cv::TermCriteria(1, 1e-7)
-    );
+    double cost = 1. / 0.;
+    try {
+        cost = cv::calibrateMultiview(
+                objectPoints,
+                imagePoints,
+                imageSize,
+                mask2,
+                models,
+                Ks2,
+                distortions2,
+                Rs2,
+                Ts2,
+                initializationPairs,
+                rvecs0,
+                tvecs0,
+                perFrameErrors,
+                flagsForIntrinsics,
+                cv::CALIB_USE_INTRINSIC_GUESS,
+                cv::TermCriteria(1, 1e-7)
+        );
+    } catch (const std::exception &e) {
+        std::cerr << e.what() << std::endl;
+    }
 
     if (cost < multicamCosts) {
         multicamCosts = cost;
