@@ -22,8 +22,12 @@ namespace ecv {
                 double costA = 0, costB = 0;
 
                 for (int i = 0; i < a.size(); ++i) {
-                    costA += a[i]->cost;
-                    costB += b[i]->cost;
+                    if (a[i] != nullptr) {
+                        costA += a[i]->cost;
+                    }
+                    if (b[i] != nullptr) {
+                        costB += b[i]->cost;
+                    }
                 }
 
                 if (costA == costB) return true;
@@ -32,6 +36,9 @@ namespace ecv {
         };
         struct FrameCompare {
             bool operator()(const CalibrateFrameCollector::FrameRef &a, const CalibrateFrameCollector::FrameRef &b) const {
+                if (a == nullptr && b == nullptr) return true;
+                if (a == nullptr) return false;
+                if (b == nullptr) return true;
                 if (a->cost == b->cost) return true;
                 return a->cost > b->cost;
             }

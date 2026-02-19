@@ -6,7 +6,6 @@ void CalibrationStrategy::runCalibration() {
     running = true;
 
     for (int i = 0; i < camThreads.size(); i++) {
-        const auto that = this;
         camThreads[i] = std::thread([](decltype(this) that, int i) {
             std::vector<CalibrateFrameCollector::FrameRef> pendingFrames(MAX_FRAMES_QUEUE);
             while (that->running) {
@@ -27,7 +26,6 @@ void CalibrationStrategy::runCalibration() {
         }, this, i);
     }
 
-    const auto that = this;
     multicamThread = std::thread([](decltype(this) that) {
         std::vector<std::vector<CalibrateFrameCollector::FrameRef>> frames;
         while (that->running) {
@@ -106,7 +104,7 @@ void CalibrationStrategy::camThreadCallback(const std::vector<CalibrateFrameColl
         return;
     }
 
-    auto trainData = data[i];
+    auto trainData = getCalibrationData(i);
 
     calibrators[i].calibrateSingleCamera(
             frameSize,
@@ -142,130 +140,21 @@ void CalibrationStrategy::camThreadCallback(const std::vector<CalibrateFrameColl
     );
 
     if (cost < costs[i]) {
+        setCalibrationData(i, trainData);
         costs[i] = cost;
+
+        std::cout << "Calib " << cameraId << ", c = " << cost << std::endl;
     }
-}
-
-CalibrateFrameCollector::FrameRef CalibrationStrategy::findClosestFrameByTs(
-        const std::set<CalibrateFrameCollector::FrameRef, TsCompare> &set, double v) const {
-    if (set.empty()) {
-        return nullptr;
-    }
-
-    // бинарный поиск первого элемента с ts >= v
-    auto compare = [](const CalibrateFrameCollector::FrameRef &a, double v) { return a->ts < v; };
-    auto it = set.lower_bound(v);
-
-    if (it == set.end()) {
-        return *std::prev(it);
-    }
-
-    auto found = *it;
-
-    if (found->ts == v || it == set.begin()) {
-        return found;
-    }
-
-    const auto &prev = *std::prev(it);
-    if (std::abs(v - found->ts) < std::abs(v - prev->ts)) {
-        return found;
-    }
-
-    return prev;
-}
-
-/**
- * Из массива кадров находит пары (для стерео) или кортежи (для многокамерных систем) кадров, такие что:
- * - кадры близки по времени
- * - размеры сетки совпадают
- * - размер сетки не менее чем 4х4
- *
- * @param framesPerCam
- * @return
- */
-std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrationStrategy::getFrameSets(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &framesPerCam) {
-    std::vector<std::vector<CalibrateFrameCollector::FrameRef>> result;
-
-    std::vector<std::set<CalibrateFrameCollector::FrameRef, TsCompare>> sortedFrames;
-    std::vector<std::vector<CalibrateFrameCollector::FrameRef>> sortedFramesVector;
-
-    for (const auto &camFrames : framesPerCam) {
-        const auto &sorted = sortedFrames.emplace_back(camFrames.begin(), camFrames.end());
-        sortedFramesVector.emplace_back(sorted.begin(), sorted.end());
-    }
-
-    auto interval = getFrameTimeInterval(sortedFrames);
-
-    for (int baseCam = 0; baseCam < sortedFramesVector.size(); baseCam++) {
-        result.emplace_back(framesPerCam.size());
-        for (int f = 0; f < sortedFramesVector[baseCam].size(); ++f) {
-            const auto &frame = sortedFramesVector[baseCam][f];
-            for (int pairCam = 0; pairCam < sortedFramesVector.size(); ++pairCam) {
-                if (baseCam == pairCam) {
-                    continue;
-                }
-
-                if (result[f][pairCam] != nullptr) {
-                    continue;
-                }
-
-                const auto &pair = findClosestFrameByTs(sortedFrames[pairCam], frame->ts);
-                if (std::abs(pair->ts - sortedFramesVector[baseCam][f]->ts) > interval) {
-                    continue;
-                }
-                if (frame->w < 4 || frame->h < 4 || frame->w != pair->w || frame->h != pair->h) {
-                    continue;
-                }
-
-                result[f][baseCam] = frame;
-                result[f][pairCam] = pair;
-            }
-        }
-    }
-
-    int j = 0;
-    for (int i = 0; i < result.size(); i++) {
-        auto valid = false;
-        for (const auto &k : result[i]) {
-            if (k == nullptr) {
-                continue;
-            }
-            valid = true;
-        }
-        if (valid && j < i) {
-            result[j] = result[i];
-            j++;
-        }
-    }
-
-    result.resize(j);
-
-    return result;
-}
-
-double CalibrationStrategy::getFrameTimeInterval(const std::vector<std::set<CalibrateFrameCollector::FrameRef, TsCompare>> &framesPerCam) const {
-    double frameMinInterval = 1. / 0.;
-
-    for (const auto &camFrames : framesPerCam) {
-        if (camFrames.size() < 2) {
-            continue;
-        }
-
-        double interval = 1. / 0.;
-        CalibrateFrameCollector::FrameRef prev = *camFrames.begin();
-        for (const auto &frame : camFrames | std::views::drop(1)) {
-            interval = std::min(interval, frame->ts - prev->ts);
-            prev = frame;
-        }
-
-        frameMinInterval = std::min(frameMinInterval, interval);
-    }
-
-    return frameMinInterval;
 }
 
 void CalibrationStrategy::multicamThreadCallback(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &frameSets) {
     std::vector<std::vector<CalibrateFrameCollector::FrameRef>> validFrameSets;
+
+    for (int i = 0; i < numCameras; ++i) {
+        if (costs[i] > 10) {
+            return;
+        }
+    }
 
     for (const auto &frameSet : frameSets) {
         if (isValid(frameSet)) {
@@ -286,13 +175,9 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::vector<C
     std::vector<cv::Mat> Rs;
     std::vector<cv::Mat> Ts;
     std::vector<cv::Mat> Ks;
-    std::vector<cv::Mat> Ks2;
-    std::vector<cv::Mat> Rs2;
-    std::vector<cv::Mat> Ts2;
     std::vector<cv::Mat> distortions;
-    std::vector<cv::Mat> distortions2;
-    std::vector<cv::Mat> rvecs0(validFrameSets.size());
-    std::vector<cv::Mat> tvecs0(validFrameSets.size());
+    std::vector<cv::Mat> rvecs0;
+    std::vector<cv::Mat> tvecs0;
     cv::Mat perFrameErrors;
 
     cv::Mat initializationPairs;
@@ -312,27 +197,35 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::vector<C
         models.emplace_back(cv::CALIB_MODEL_PINHOLE);
         flagsForIntrinsics.emplace_back(0);
         Ks.emplace_back(calibrationData.cameraMatrix);
-        distortions.emplace_back(calibrationData.distCoeff);
+        Rs.emplace_back();
+        Ts.emplace_back();
+        distortions.emplace_back(calibrationData.distCoeff, CV_64FC1);
     }
 
-    cv::calibrateMultiview(
-            objectPoints,
-            imagePoints,
-            imageSize,
-            mask,
-            models,
-            Ks,
-            distortions,
-            Rs,
-            Ts,
-            initializationPairs,
-            rvecs0,
-            tvecs0,
-            perFrameErrors,
-            flagsForIntrinsics,
-            cv::CALIB_USE_INTRINSIC_GUESS,
-            cv::TermCriteria(10, 1e-7)
-    );
+    double trainCost = 1. / 0.;
+    try {
+        trainCost = cv::calibrateMultiview(
+                objectPoints,
+                imagePoints,
+                imageSize,
+                mask,
+                models,
+                Ks,
+                distortions,
+                Rs,
+                Ts,
+                initializationPairs,
+                rvecs0,
+                tvecs0,
+                perFrameErrors,
+                flagsForIntrinsics,
+                cv::CALIB_USE_INTRINSIC_GUESS,
+                cv::TermCriteria(1000, 1e-7)
+        );
+    } catch (const std::exception &e) {
+        std::cerr << e.what() << std::endl;
+    }
+
 
     const auto &sampleValidate = frameCollectors[0].getFrameSetsSample(VALIDATE_SAMPLE_SIZE, true);
 
@@ -350,12 +243,20 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::vector<C
         }
     }
 
-    Ks2 = Ks;
-    Rs2 = Rs;
-    Ts2 = Ts;
-    distortions2 = distortions;
+    std::vector<cv::Mat> Ks2(numCameras);
+    std::vector<cv::Mat> Rs2(numCameras);
+    std::vector<cv::Mat> Ts2(numCameras);
+    std::vector<cv::Mat> distortions2(numCameras);
+    std::vector<cv::Mat> rvecs2;
+    std::vector<cv::Mat> tvecs2;
+    cv::Mat initializationPairs2;
 
-    double cost = 1. / 0.;
+    for (int i = 0; i < numCameras; ++i) {
+        Ks2[i] = Ks[i].clone();
+        distortions2[i] = distortions[i].clone();
+    }
+
+    double cost = trainCost;//1. / 0.;
     try {
         cost = cv::calibrateMultiview(
                 objectPoints,
@@ -367,9 +268,9 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::vector<C
                 distortions2,
                 Rs2,
                 Ts2,
-                initializationPairs,
-                rvecs0,
-                tvecs0,
+                initializationPairs2,
+                rvecs2,
+                tvecs2,
                 perFrameErrors,
                 flagsForIntrinsics,
                 cv::CALIB_USE_INTRINSIC_GUESS,
@@ -385,11 +286,14 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<std::vector<C
         for (int i = 0; i < numCameras; ++i) {
             cv::Mat tmp;
             auto calibrationData = getCalibrationData(i);
-            calibrationData.cameraMatrix = Ks[i].clone();
+            calibrationData.cameraMatrix = Ks[i];
             calibrationData.distCoeff = distortions[i];
             setCalibrationData(i, calibrationData);
+            cv::Mat R;
 
-//            cv::initUndistortRectifyMap(calibrationData.cameraMatrix, calibrationData.distCoeff, Rs[i], Ts[i], frameSize, CV_32FC2, map[i], tmp);
+            cv::Rodrigues(Rs[i], R);
+
+            cv::initUndistortRectifyMap(calibrationData.cameraMatrix, calibrationData.distCoeff, R, calibrationData.cameraMatrix, frameSize, CV_32FC2, map[i], tmp);
         }
 
         for (int i = 0; i < numCameras; ++i) {
@@ -403,7 +307,7 @@ std::vector<cv::Mat> CalibrationStrategy::getObjectPointsFromFrameSets(const std
     for (const auto & frameSet : frameSets) {
         std::vector<cv::Point3f> fp32Grid;
         for (const auto &p : frameSet[0]->objectGrid) {
-            fp32Grid.emplace_back(p.x, p.y, 1.0f);
+            fp32Grid.emplace_back(p.x, p.y, 0.0f);
         }
         objectPoints.emplace_back(fp32Grid, CV_32FC3);
     }
