@@ -207,6 +207,7 @@ int main(int argc, const char **argv) {
         std::cout << "Calibration updated " << cameraId << ",\t" << that.getProgress(cameraId) << "%\tcost " << that.getCosts(cameraId) << std::endl;
     });
 
+    calibrationStrategy.loadConfig();
     calibrationStrategy.runCalibration();
 
     while (true) {

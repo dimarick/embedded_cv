@@ -111,6 +111,8 @@ add_executable(benchmark
         src/calibrator/CalibrateFrameCollector.h
         src/calibrator/BlurFrameFilter.cpp
         src/calibrator/BlurFrameFilter.h
+        src/calibrator/GridPreferredSizeProvider.cpp
+        src/calibrator/GridPreferredSizeProvider.h
 )
 
 target_link_libraries(benchmark PUBLIC OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS})

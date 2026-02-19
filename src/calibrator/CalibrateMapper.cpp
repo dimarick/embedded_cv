@@ -494,14 +494,31 @@ namespace ecv {
         double range = zMax - zMin;
 
         int i = 0;
+        double dzSumSqr = 0.0;
+        double dzSum = 0.0;
+        double pz = pointsSet.begin()->z;
         for (const auto &p : pointsSet) {
+            const auto &z = (p.z - zMin) / range;
+
+            auto dz = std::abs(pz - z);
+            pz = z;
+
+            auto dzMean = dzSum / (i + 1);
+
+            if (i > 5) {
+                auto zStddev = sqrt(dzSumSqr / (i + 1));
+                if (std::abs(dz - dzMean) > zStddev * 3) {
+                    continue;
+                }
+            }
+            dzSum += dz;
+            dzMean = dzSum / (i + 1);
+            dzSumSqr += std::pow(dz - dzMean, 2);
+            i++;
+
+            points[i].z = z;
             points[i].x = p.x + (double)kernel / 2;
             points[i].y = p.y + (double)kernel / 2;
-            const auto &z = (p.z - zMin) / range;
-            points[i].z = z;
-            if (z > 0.2) {
-                i++;
-            }
 
             if (i > points.size()) {
                 break;

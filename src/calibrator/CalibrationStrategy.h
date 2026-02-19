@@ -9,6 +9,7 @@
 #include "opencv2/core.hpp"
 #include "CalibrateFrameCollector.h"
 #include "Calibrator.h"
+#include "GridPreferredSizeProvider.h"
 
 static const int MAX_FRAMES_QUEUE = 100;
 static const int SAMPLE_SIZE = 20;
@@ -16,9 +17,11 @@ static const int VALIDATE_SAMPLE_SIZE = 200;
 namespace ecv {
 
     class CalibrationStrategy {
+    public:
+        typedef std::vector<CalibrateFrameCollector::FrameRef> FrameRefList;
     private:
         struct FrameSetCompare {
-            bool operator()(const std::vector<CalibrateFrameCollector::FrameRef> &a, const std::vector<CalibrateFrameCollector::FrameRef> &b) const {
+            bool operator()(const FrameRefList &a, const FrameRefList &b) const {
                 double costA = 0, costB = 0;
 
                 for (int i = 0; i < a.size(); ++i) {
@@ -44,16 +47,10 @@ namespace ecv {
             }
         };
 
-        struct TsCompare {
-            using is_transparent = void;
-            bool operator()(const CalibrateFrameCollector::FrameRef &a, const CalibrateFrameCollector::FrameRef &b) const { return a->ts < b->ts; }
-            bool operator()(const CalibrateFrameCollector::FrameRef& a, double v) const { return a->ts < v; }
-            bool operator()(double v, const CalibrateFrameCollector::FrameRef& b) const { return v < b->ts; }
-        };
-
         int numCameras = 0;
         cv::Size frameSize;
         volatile bool running = false;
+        GridPreferredSizeProvider gridPreferredSizeProvider;
         std::vector<CalibrateFrameCollector> frameCollectors;
         std::vector<ecv::Calibrator> calibrators;
         mutable std::shared_mutex dataMutex;
@@ -64,7 +61,7 @@ namespace ecv {
         double multicamRoiSize = 0.;
         std::mutex pendingFramesMutex;
         std::vector<std::set<CalibrateFrameCollector::FrameRef, FrameCompare>> pendingFrames;
-        std::set<std::vector<CalibrateFrameCollector::FrameRef>, FrameSetCompare> pendingFrameSets;
+        std::set<FrameRefList, FrameSetCompare> pendingFrameSets;
         std::vector<cv::FileStorage> frameDataStorage;
         std::condition_variable camThreadsWait;
         std::vector<std::thread> camThreads;
@@ -72,13 +69,19 @@ namespace ecv {
         std::thread multicamThread;
         std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback;
 
-        void camThreadCallback(const std::vector<CalibrateFrameCollector::FrameRef> &pendingFrames, int cameraId);
-        void multicamThreadCallback(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &pendingFramesPerCam);
-        [[nodiscard]] double getFrameTimeInterval(const std::vector<std::set<CalibrateFrameCollector::FrameRef, TsCompare>> &framesPerCam) const;
-        [[nodiscard]] CalibrateFrameCollector::FrameRef findClosestFrameByTs(const std::set<CalibrateFrameCollector::FrameRef, TsCompare> &set, double v) const;
-        [[nodiscard]] std::vector<cv::Mat> getObjectPointsFromFrameSets(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &frameSets) const;
+        void camThreadCallback(const FrameRefList &pendingFrames, int cameraId);
+        void multicamThreadCallback(const std::vector<FrameRefList> &pendingFramesPerCam);
+        [[nodiscard]] std::vector<cv::Mat> getObjectPointsFromFrameSets(const std::vector<FrameRefList> &frameSets) const;
+
+        void printMulticamCalibrationStats(const std::vector<cv::Mat> &camMatrices, const std::vector<cv::Mat> &Rs,
+                                           const std::vector<cv::Mat> &Ts, const std::string &unit);
+        std::vector<bool> findOutliersPerFrameError(const cv::Mat &errors, double k = 2.0);
+        int filterOutliers(std::vector<FrameRefList> &frameSets, const std::vector<bool> &outliers) const;
     public:
-        explicit CalibrationStrategy(cv::Size frameSize, int numCameras, std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback) : frameSize(frameSize), numCameras(numCameras), onUpdateCallback(std::move(onUpdateCallback)) {
+        explicit CalibrationStrategy(
+                cv::Size frameSize, int numCameras,
+                std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback
+        ) : frameSize(frameSize), numCameras(numCameras), onUpdateCallback(std::move(onUpdateCallback)) {
             for (int i = 0; i < numCameras; ++i) {
                 frameCollectors.emplace_back(frameSize);
                 calibrators.emplace_back();
@@ -97,11 +100,13 @@ namespace ecv {
                     continue;
                 }
 
-                frameCollectors[i].load(frameDataStorage[i]);
+                frameCollectors[i].load(gridPreferredSizeProvider, frameDataStorage[i]);
 
                 frameDataStorage[i].release();
             }
         }
+
+        void loadConfig();
 
         [[nodiscard]] Calibrator::CalibrationData getCalibrationData(int cameraId) const {
             Calibrator::CalibrationData result;
@@ -142,27 +147,20 @@ namespace ecv {
                     const std::vector<cv::Point3d> &objectPoints,
                     int w, int h, double cost, double ts);
 
-        void addFrameSet(const std::vector<CalibrateFrameCollector::FrameRef> &frameSet);
+        void addFrameSet(const FrameRefList &frameSet);
 
         void runCalibration();
 
         void stopCalibration() noexcept;
-
-        [[nodiscard]] bool isRunning() const {
-            return running;
-        }
-
-        std::vector<std::vector<CalibrateFrameCollector::FrameRef>>
-        getFrameSets(const std::vector<std::set<CalibrateFrameCollector::FrameRef>> &framesPerCam);
 
         ~CalibrationStrategy() {
             stopCalibration();
         }
 
         std::vector<std::vector<cv::Mat>>
-        getImagePointsFromFrameSets(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &frameSets) const;
+        getImagePointsFromFrameSets(const std::vector<FrameRefList> &frameSets) const;
 
-        bool isValid(const std::vector<CalibrateFrameCollector::FrameRef> &frameSet) const;
+        bool isValid(const FrameRefList &frameSet) const;
     };
 }
 #endif //EMBEDDED_CV_CALIBRATIONSTRATEGY_H

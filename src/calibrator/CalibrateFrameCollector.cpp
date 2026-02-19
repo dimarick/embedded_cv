@@ -114,26 +114,30 @@ std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::createF
 }
 
 
-void CalibrateFrameCollector::addFrameTo(std::unordered_map<int, FrameRef> *m, const CalibrateFrameCollector::FrameRef &frameRef) {
+void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, std::unordered_map<int, FrameRef> *m, const CalibrateFrameCollector::FrameRef &frameRef) {
     int cls = frameRef->cls;
     const auto &it = m->find(cls);
 
+    const auto w = frameRef->w;
+    const auto h = frameRef->h;
+
+    auto preferGridSize = gridPreferredSizeProvider.getGridPreferredSize();
+
+    const auto pw = preferGridSize == nullptr ? w : preferGridSize->w;
+    const auto ph = preferGridSize == nullptr ? h : preferGridSize->h;
+    const auto ew = it == m->end() ? pw : it->second->w;
+    const auto eh = it == m->end() ? ph : it->second->h;
+
+    auto key = (int) w * 255 + (int) h;
+
     if (it == m->end()) {
+        gridPreferredSizeProvider.registerFrameStat(w, h);
         m->insert({cls, frameRef});
-    } else if (frameRef->cost < it->second->cost) {
+    // если сетка лучше или соответствует более популярному размеру
+    } else if (frameRef->cost < it->second->cost || (pw == w && ph == h && (ew != w || eh != h))) {
+        auto key2 = (int) ew * 255 + (int) eh;
+        gridPreferredSizeProvider.replaceFrameStat(w, h, ew, eh);
         m->emplace(cls, frameRef);
-    }
-}
-
-void CalibrateFrameCollector::addMulticamFrameTo(std::unordered_map<int, FramePairRef> *m,
-                                                 const CalibrateFrameCollector::FramePairRef &framePairRef) {
-    int cls = framePairRef->getClass();
-    const auto &it = m->find(cls);
-
-    if (it == m->end()) {
-        m->insert({cls, framePairRef});
-    } else if (framePairRef->cost < it->second->cost) {
-        m->emplace(cls, framePairRef);
     }
 }
 
@@ -149,8 +153,8 @@ void CalibrateFrameCollector::addMulticamFrameTo(std::unordered_map<int, FramePa
  * @param h
  * @param cost
  */
-void CalibrateFrameCollector::addFrame(const std::shared_ptr<Frame> &frameRef) {
-    addFrameTo(&map, frameRef);
+void CalibrateFrameCollector::addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const std::shared_ptr<Frame> &frameRef) {
+    addFrameTo(gridPreferredSizeProvider, &map, frameRef);
 }
 
 void CalibrateFrameCollector::addMulticamFrames(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &_frameSets) {
@@ -170,14 +174,7 @@ void CalibrateFrameCollector::addMulticamFrames(const std::vector<std::vector<Ca
     }
 }
 
-void CalibrateFrameCollector::addMulticamFrame(const std::shared_ptr<Frame> &baseFrameRef,
-                                               const std::shared_ptr<Frame> &frameRef, double cost) {
-    auto pair = FramePairRef(new FramePair{cost, baseFrameRef, frameRef});
-
-    addMulticamFrameTo(&pairs, pair);
-}
-
-std::vector<CalibrateFrameCollector::FrameRef> CalibrateFrameCollector::getFramesSample(int n, bool validate) const {
+std::vector<CalibrateFrameCollector::FrameRef> CalibrateFrameCollector::getFramesSample(int n, size_t w, size_t h, bool validate) const {
     std::vector<FrameRef> f(n);
 
     std::uniform_int_distribution rng(0, n - 1);
@@ -185,7 +182,7 @@ std::vector<CalibrateFrameCollector::FrameRef> CalibrateFrameCollector::getFrame
 
     int i = 0;
     for (const auto &frame : map) {
-        if (frame.second->validate == validate) {
+        if (frame.second->validate == validate && frame.second->w == w && frame.second->h == h) {
             if (i < n) {
                 f[i] = frame.second;
             } else {
@@ -202,19 +199,31 @@ std::vector<CalibrateFrameCollector::FrameRef> CalibrateFrameCollector::getFrame
     return f;
 }
 
-std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrateFrameCollector::getFrameSetsSample(int n, bool validate) const {
+std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrateFrameCollector::getFrameSetsSample(int n, size_t w, size_t h, bool validate) const {
     std::vector<std::vector<FrameRef>> f(n);
 
     std::uniform_int_distribution rng(0, n - 1);
     std::mt19937 r {std::random_device{}()};
 
     int i = 0;
-    for (const auto &frame : frameSets) {
-        if (frame.second[0]->validate == validate) {
+    for (const auto &frameSet : frameSets) {
+        if (frameSet.second[0]->validate == validate) {
+            if (w > 0) {
+                auto valid = true;
+                for (const auto &frame: frameSet.second) {
+                    if (frame->w != w || frame->h != h) {
+                        valid = false;
+                    }
+                }
+                if (!valid) {
+                    continue;
+                }
+            }
+
             if (i < n) {
-                f[i] = frame.second;
+                f[i] = frameSet.second;
             } else {
-                f[rng(r) % n] = frame.second;
+                f[rng(r) % n] = frameSet.second;
             }
             i++;
         }
@@ -276,7 +285,7 @@ std::vector<std::vector<cv::Point3d>> CalibrateFrameCollector::getCollectedObjec
     return result;
 }
 
-void CalibrateFrameCollector::load(const cv::FileStorage &fs) {
+void CalibrateFrameCollector::load(GridPreferredSizeProvider &gridPreferredSizeProvider, const cv::FileStorage &fs) {
     cv::FileNode framesNode = fs["frames"];
 
     for (const auto &frame: framesNode) {
@@ -289,22 +298,21 @@ void CalibrateFrameCollector::load(const cv::FileStorage &fs) {
             continue;
         }
 
-        addFrame(frameRef);
+        addFrame(gridPreferredSizeProvider, frameRef);
     }
     cv::FileNode framesPairsNode = fs["multicam"];
 
-    for (const auto &framePair: framesPairsNode) {
-        if (!framePair.isMap() || !framePair["a"].isMap() || !framePair["b"].isMap()) {
-            continue;
-        }
-        const auto &baseFrameRef = loadFrame(framePair["a"]);
-        const auto &frameRef = loadFrame(framePair["b"]);
-
-        if (baseFrameRef == nullptr || frameRef == nullptr) {
+    for (const auto &frameSet: framesPairsNode) {
+        if (!frameSet.isSeq()) {
             continue;
         }
 
-        addMulticamFrame(baseFrameRef, frameRef, (double)framePair["cost"]);
+        std::vector<FrameRef> set;
+        for (const auto &frame : frameSet) {
+            set.emplace_back(loadFrame(frame));
+        }
+
+        addMulticamFrames({set});
     }
 }
 
@@ -349,17 +357,19 @@ cv::FileStorage& operator << (cv::FileStorage& fs, const std::shared_ptr<Calibra
 }
 
 void CalibrateFrameCollector::store(cv::FileStorage &fs) const {
-    fs << "frames" << "[";
-    for (const auto &item: map) {
-        fs << item.second;
-    }
-
-    fs << "]";
+//    fs << "frames" << "[";
+//    for (const auto &item: map) {
+//        fs << item.second;
+//    }
+//
+//    fs << "]";
     fs << "multicam" << "[";
-    for (const auto &framePair: pairs) {
-        fs << "{" << "a" << framePair.second->base;
-        fs << "b" << framePair.second->current;
-        fs << "cost" << framePair.second->cost << "}";
+    for (const auto &frameSet: frameSets) {
+        fs << "[";
+        for (const auto &frame : frameSet.second) {
+            fs << frame;
+        }
+        fs << "]";
     }
 
     fs << "]";

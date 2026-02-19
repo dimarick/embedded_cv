@@ -1,8 +1,10 @@
 #ifndef EMBEDDED_CV_CALIBRATEFRAMECOLLECTOR_H
 #define EMBEDDED_CV_CALIBRATEFRAMECOLLECTOR_H
 
+#include <memory>
 #include <vector>
 #include "opencv2/core.hpp"
+#include "GridPreferredSizeProvider.h"
 #include <unordered_map>
 #include <set>
 #include <mutex>
@@ -21,21 +23,6 @@ namespace ecv {
             bool validate;
         };
         typedef std::shared_ptr<Frame> FrameRef;
-
-        struct FramePair {
-            double cost;
-            FrameRef base;
-            FrameRef current;
-
-            bool isValidate() {
-                return base->validate;
-            }
-
-            int getClass() {
-                return base->cls;
-            }
-        };
-        typedef std::shared_ptr<FramePair> FramePairRef;
     private:
         cv::Size frameSize;
 
@@ -44,7 +31,6 @@ namespace ecv {
         const int CLASSES_CUBE_SIZE = (int)std::round(std::pow(NUM_CLASSES, 1. / (double)CLASSES_CUBE_DIM));
 
         std::unordered_map<int, FrameRef> map;
-        std::unordered_map<int, FramePairRef> pairs;
         std::unordered_map<int, std::vector<FrameRef>> frameSets;
 
         double maxRotValue[2] = {0,0};
@@ -52,42 +38,21 @@ namespace ecv {
         double minDistValue = 1;
 
         int getClass(const Frame &frame);
-        void addFrameTo(decltype(map) *m, const FrameRef &frameRef);
-        void addMulticamFrameTo(decltype(pairs) *m, const CalibrateFrameCollector::FramePairRef &framePairRef);
+        void addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, decltype(map) *m, const FrameRef &frameRef);
     public:
         FrameRef createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts);
-        explicit CalibrateFrameCollector(cv::Size frameSize) : frameSize(frameSize) {};
-        void addFrame(const FrameRef &frameRef);
-        void addMulticamFrame(const FrameRef &baseFrameRef, const FrameRef &frameRef, double cost);
-        void addMulticamFrames(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>>& _frameSets);
-
+        explicit CalibrateFrameCollector(cv::Size frameSize) : frameSize(frameSize) {}
+        void addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const FrameRef &frameRef);
+        void addMulticamFrames(const std::vector<std::vector<FrameRef>>& _frameSets);
         double getProgress() const;
-        std::vector<FrameRef> getFramesSample(int n, bool validate) const;
-        std::vector<std::vector<CalibrateFrameCollector::FrameRef>> getFrameSetsSample(int n, bool validate) const;
+        std::vector<FrameRef> getFramesSample(int n, size_t w, size_t h, bool validate) const;
+        std::vector<std::vector<FrameRef>> getFrameSetsSample(int n, size_t w, size_t h, bool validate) const;
         std::vector<std::vector<cv::Point3d>> getCollectedImageGridsSample(const std::vector<FrameRef> &sample) const;
         std::vector<std::vector<cv::Point3d>> getCollectedObjectGridsSample(const std::vector<FrameRef> &sample) const;
-        template <typename Iterator> std::vector<std::vector<cv::Point3d>> getCollectedImageGridsSample(Iterator first, Iterator last) const {
-            std::vector<std::vector<cv::Point3d>> result;
-
-            for (auto &it = first; it != last; ++it) {
-                result.emplace_back((*it)->imageGrid);
-            }
-
-            return result;
-        }
-        template <typename Iterator> std::vector<std::vector<cv::Point3d>> getCollectedObjectGridsSample(Iterator first, Iterator last) const {
-            std::vector<std::vector<cv::Point3d>> result;
-
-            for (auto &it = first; it != last; ++it) {
-                result.emplace_back((*it)->objectGrid);
-            }
-
-            return result;
-        }
-
         FrameRef loadFrame(const cv::FileNode &frame);
-        void load(const cv::FileStorage &fs);
+        void load(GridPreferredSizeProvider &gridPreferredSizeProvider, const cv::FileStorage &fs);
         void store(cv::FileStorage &fs) const;
+
     };
 };
 
