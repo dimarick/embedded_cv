@@ -296,9 +296,13 @@ int main(int argc, const char **argv) {
                     frameSet[i] = calibrationStrategy.createFrame(i, imageGrid, objectGrid, (int)w, (int)h, frameBlur[i], getFrameTs[i]);
                 }
 
-                cv::putText(debug, std::format("sz = {}x{}\nsrcGridQ = {}\ngridQ = {}\nbestQ = {}\npatternSize = {}\npatternSkew = {}\nfx/fy = {} / {}\nprogress = {}%",
-                                               w, h, srcGridQ, calibGridQ, i == 0 ? bestQ[i] : bestPairQ[i], calibrateMapper[i].patternSize, calibrateMapper[i].skew, calibrator[i].getFx(), calibrator[i].getFy(), progress[i] * 100), cv::Point2i(30, 30), 1, 2,
-                            cv::Scalar(0,0,255));
+                const cv::String &text = std::format(
+                        "sz = {}x{}\nsrcGridQ = {}\nbestQ = {}\nmcBestQ = {}\npatternSize = {}\npatternSkew = {}\nprogress = {}%",
+                        w, h, srcGridQ, calibrationStrategy.getCosts(i), calibrationStrategy.getMulticamCosts(),
+                        calibrateMapper[i].patternSize, calibrateMapper[i].skew,
+                        calibrationStrategy.getProgress(i) * 100
+                );
+                cv::putText(debug, text, cv::Point2i(30, 30), 1, 2, cv::Scalar(0, 0, 255));
             }
 
 #ifdef HAVE_OPENCV_HIGHGUI
