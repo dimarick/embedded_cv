@@ -68,6 +68,27 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cpptrace)
 
+Include(FetchContent)
+
+FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG        v3.13.0
+)
+
+FetchContent_MakeAvailable(Catch2)
+
+
+add_executable(tests
+        src/calibrator/Calibrator.cpp
+        src/calibrator/CalibrationStrategy.cpp
+        src/calibrator/CalibrateFrameCollector.cpp
+        src/calibrator/GridPreferredSizeProvider.cpp
+        tests/calibrator/CalibrateFrameCollectorTest.cpp
+        tests/calibrator/CalibrationStrategyTest.cpp
+)
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain PUBLIC OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
+
 include_directories( ${OpenCV_INCLUDE_DIRS} )
 
 include_directories(./mini_server)
@@ -84,6 +105,7 @@ add_executable(calib
         src/calibrator/BlurFrameFilter.cpp
         MatStorage.cpp
         MatStorage.h
+        src/calibrator/GridPreferredSizeProvider.cpp
         src/calibrator/CalibrationStrategy.cpp
         src/calibrator/CalibrationStrategy.h
 )
