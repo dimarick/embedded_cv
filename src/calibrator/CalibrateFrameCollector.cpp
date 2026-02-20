@@ -250,11 +250,8 @@ double CalibrateFrameCollector::getProgress() const {
     for (const auto &item : map) {
         auto i = item.first;
         auto xy = i / sz;
-        auto x = xy / sz - sz2 + (int)std::round((double)dim1 / 2);
-        auto y = xy % sz - sz2 + (int)std::round((double)dim2 / 2);
-
-        CV_Assert(x >= 0 && x < dim1 + 1);
-        CV_Assert(y >= 0 && y < dim2 + 1);
+        auto x = std::clamp(xy / sz - sz2 + (int)std::round((double)dim1 / 2), 0, dim1);
+        auto y = std::clamp(xy % sz - sz2 + (int)std::round((double)dim2 / 2), 0, dim2);
 
         progressView.at<unsigned char>(y, x) += zStep;
     }

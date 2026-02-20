@@ -136,14 +136,6 @@ int main(int argc, const char **argv) {
     std::vector<std::thread> readerThreads(frames.size());
     volatile bool threadRunning[frames.size()];
 
-
-//    ecv::DisparityEvaluator disparityEvaluator;
-//    disparityEvaluator.lazyInitializeOcl();
-//    cv::UMat left, right;
-//
-//    disparityEvaluator.evaluateDisparity(left, right);
-
-
     auto captureThreadCallback = [&captures, &framesMutex, &readingFrames, &frameTs, &readFrames, &threadRunning](int i) {
         while (threadRunning[i]) {
             captures[i].read(readingFrames[i]);
@@ -165,23 +157,8 @@ int main(int argc, const char **argv) {
     std::vector<ecv::Calibrator> calibrator(frames.size());
     std::vector<ecv::Calibrator::CalibrationData> calibrationData(frames.size());
 
-    std::mutex mapsMutex;
-    std::vector<cv::Mat> maps(frames.size());
-
-    for (int i = 0; i < frames.size(); ++i) {
-        ecv::MatStorage::matRead(std::format("map_{}.bin", i), maps[i]);
-    }
-
     for (int i = 0; i < frames.size(); ++i) {
         captures[i].read(frames[i]);
-    }
-
-    for (int i = 0; i < frames.size(); ++i) {
-        if (maps[i].empty()) {
-            maps[i] = cv::Mat(frames[i].size(), CV_32FC2);
-            maps[i].setZero();
-            noAction(maps[i]);
-        }
     }
 
     std::vector<double> frameBlur(frames.size());
@@ -194,17 +171,29 @@ int main(int argc, const char **argv) {
 
     std::vector<double> progress(frames.size(), 0);
 
-    std::shared_ptr<ecv::CalibrateFrameCollector::Frame> baseFrameRef;
+    std::mutex mapsMutex;
+    std::vector<cv::Mat> maps(frames.size());
+
+    for (int i = 0; i < frames.size(); ++i) {
+        ecv::MatStorage::matRead(std::format("map_{}.bin", i), maps[i]);
+    }
+
+    for (int i = 0; i < frames.size(); ++i) {
+        if (maps[i].empty()) {
+            maps[i] = cv::Mat(frames[i].size(), CV_32FC2);
+            maps[i].setZero();
+            noAction(maps[i]);
+        }
+    }
 
     const cv::Size &size = frames[0].size();
-    ecv::CalibrationStrategy calibrationStrategy(size, (int)frames.size(), [&maps, &mapsMutex, &progress](int cameraId, const ecv::CalibrationStrategy &that) {
+    ecv::CalibrationStrategy calibrationStrategy(size, (int)frames.size(), [&maps, &mapsMutex](int cameraId, const ecv::CalibrationStrategy &that) {
         {
             std::unique_lock lock(mapsMutex);
             maps[cameraId] = that.getMap(cameraId);
         }
-        progress[cameraId] = that.getProgress(cameraId);
 
-        std::cout << "Calibration updated " << cameraId << ",\t" << that.getProgress(cameraId) << "%\tcost " << that.getCosts(cameraId) << std::endl;
+        std::cout << "Calibration updated " << cameraId << ",\t" << that.getProgress(cameraId) << "%\tcost " << that.getViewCosts(cameraId) << std::endl;
     });
 
     calibrationStrategy.loadConfig();
@@ -235,8 +224,6 @@ int main(int argc, const char **argv) {
             usleep(10000);
             continue;
         }
-
-        baseFrameRef.reset();
 
         bool abortCalibration[frames.size()];
         for (int i = 0; i < frames.size(); ++i) {
@@ -285,7 +272,6 @@ int main(int argc, const char **argv) {
                     calibrateMapper[i].drawGrid(debug, objectGrid, w, h, cv::Scalar(255, 0, 255), 2);
                 }
 
-                double calibGridQ = 1. / 0.;
                 std::vector<ecv::CalibrateMapper::Point3> calibImageGrid(500), calibObjectGrid(500);
                 cv::Mat map;
                 cv::Mat testFrame;
@@ -298,10 +284,14 @@ int main(int argc, const char **argv) {
                 }
 
                 const cv::String &text = std::format(
-                        "sz = {}x{}\nsrcGridQ = {}\nbestQ = {}\nmcBestQ = {}\npatternSize = {}\npatternSkew = {}\nprogress = {}%",
-                        w, h, srcGridQ, calibrationStrategy.getCosts(i), calibrationStrategy.getMulticamCosts(),
+                        "sz = {}x{}\nsrcGridQ = {}\nbestQ = {}\nmcBestQ = {}\npatternSize = {}\npatternSkew = {}\nprogress = {}%\nf = {}x{}\nc = {}x{}",
+                        w, h, srcGridQ, calibrationStrategy.getViewCosts(i), calibrationStrategy.getViewMulticamCosts(i),
                         calibrateMapper[i].patternSize, calibrateMapper[i].skew,
-                        calibrationStrategy.getProgress(i) * 100
+                        calibrationStrategy.getProgress(i) * 100,
+                        calibrationStrategy.getF(i).x,
+                        calibrationStrategy.getF(i).y,
+                        calibrationStrategy.getC(i).x,
+                        calibrationStrategy.getC(i).y
                 );
                 cv::putText(debug, text, cv::Point2i(30, 30), 1, 2, cv::Scalar(0, 0, 255));
             }

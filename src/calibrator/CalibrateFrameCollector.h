@@ -36,10 +36,9 @@ namespace ecv {
         double maxRotValue[2] = {0,0};
         double maxDistValue = 0;
         double minDistValue = 1;
-
-        int getClass(const Frame &frame);
         void addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, decltype(map) *m, const FrameRef &frameRef);
     public:
+        int getClass(const Frame &frame);
         FrameRef createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts);
         explicit CalibrateFrameCollector(cv::Size frameSize) : frameSize(frameSize) {}
         void addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const FrameRef &frameRef);
@@ -52,7 +51,7 @@ namespace ecv {
         FrameRef loadFrame(const cv::FileNode &frame);
         void load(GridPreferredSizeProvider &gridPreferredSizeProvider, const cv::FileStorage &fs);
         void store(cv::FileStorage &fs) const;
-
+        int getClassesCubeSize() const { return CLASSES_CUBE_SIZE; }
     };
 };
 

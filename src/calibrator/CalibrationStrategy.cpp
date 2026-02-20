@@ -78,11 +78,15 @@ void CalibrationStrategy::addFrameSet(const FrameRefList &frameSet) {
         if (pendingFrameSets.size() > MAX_FRAMES_QUEUE) {
             pendingFrameSets.erase(pendingFrameSets.begin());
         }
+    }
+    {
+        std::unique_lock<std::mutex> lock(pendingFramesMutex);
         for (int i = 0; i < numCameras; ++i) {
             pendingFrames[i].insert(frameSet[i]);
             if (pendingFrames[i].size() > MAX_FRAMES_QUEUE) {
                 pendingFrames[i].erase(pendingFrames[i].begin());
             }
+            std::cout << "Frame " << i << " " << (frameSet[i] != nullptr ? frameSet[i]->w : -1) << "x" << (frameSet[i] != nullptr ? frameSet[i]->h : -1) << std::endl;
         }
     }
     camThreadsWait.notify_all();
@@ -129,6 +133,10 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
                 cv::CALIB_FIX_TAUX_TAUY | cv::CALIB_FIX_TANGENT_DIST | cv::CALIB_FIX_INTRINSIC |
                 cv::CALIB_FIX_SKEW;
 
+    preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
+    w = preferredSize != nullptr ? preferredSize->w : 0;
+    h = preferredSize != nullptr ? preferredSize->h : 0;
+
     auto sampleValidate = frameCollectors[i].getFramesSample(SAMPLE_SIZE, w, h, true);
 
     if (sampleValidate.empty()) {
@@ -147,8 +155,12 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
     if (cost < costs[i]) {
         setCalibrationData(i, trainData);
         costs[i] = cost;
+        viewCosts[i] = cost;
+        multicamCosts = 1. / 0.;
 
         std::cout << "Calib " << cameraId << ", c = " << cost << std::endl;
+    } else {
+        costs[i] *= 1.02;
     }
 }
 
@@ -161,6 +173,10 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         }
     }
 
+    auto preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
+    auto w = preferredSize != nullptr ? preferredSize->w : 0;
+    auto h = preferredSize != nullptr ? preferredSize->h : 0;
+
     for (const auto &frameSet : frameSets) {
         if (isValid(frameSet)) {
             validFrameSets.emplace_back(frameSet);
@@ -169,6 +185,14 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
 
     if (validFrameSets.empty()) {
         return;
+    }
+
+    auto sample = frameCollectors[0].getFrameSetsSample(SAMPLE_SIZE, w, h, false);
+
+    for (const auto &frameSet : sample) {
+        if (isValid(frameSet)) {
+            validFrameSets.emplace_back(frameSet);
+        }
     }
 
     frameCollectors[0].addMulticamFrames(validFrameSets);
@@ -250,9 +274,9 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
 
     frameCollectors[0].addMulticamFrames(validFrameSets);
 
-    auto preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
-    auto w = preferredSize != nullptr ? preferredSize->w : 0;
-    auto h = preferredSize != nullptr ? preferredSize->h : 0;
+    preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
+    w = preferredSize != nullptr ? preferredSize->w : 0;
+    h = preferredSize != nullptr ? preferredSize->h : 0;
 
     const auto &sampleValidate = frameCollectors[0].getFrameSetsSample(VALIDATE_SAMPLE_SIZE, w, h, true);
 
@@ -317,6 +341,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         printMulticamCalibrationStats(Ks, Rs, Ts, "c");
 
         for (int i = 0; i < numCameras; ++i) {
+            viewMulticamCosts[i] = cost;
             cv::Mat tmp;
             auto calibrationData = getCalibrationData(i);
             calibrationData.cameraMatrix = Ks[i];
@@ -345,7 +370,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
             onUpdateCallback(i, *this);
         }
     } else {
-        multicamCosts *= 1.05;
+        multicamCosts *= 1.02;
     }
 }
 
@@ -615,17 +640,17 @@ std::vector<bool> CalibrationStrategy::findOutliersPerFrameError(const cv::Mat& 
 }
 
 void CalibrationStrategy::loadConfig() {
-//    for (int i = 0; i < numCameras; ++i) {
-//        frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::READ);
-//
-//        if (!frameDataStorage[i].isOpened()) {
-//            continue;
-//        }
-//
-//        frameCollectors[i].load(gridPreferredSizeProvider, frameDataStorage[i]);
-//
-//        frameDataStorage[i].release();
-//    }
+    for (int i = 0; i < numCameras; ++i) {
+        frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::READ);
+
+        if (!frameDataStorage[i].isOpened()) {
+            continue;
+        }
+
+        frameCollectors[i].load(gridPreferredSizeProvider, frameDataStorage[i]);
+
+        frameDataStorage[i].release();
+    }
 
     auto preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
     auto w = preferredSize != nullptr ? preferredSize->w : 0;

@@ -68,6 +68,9 @@ namespace ecv {
         std::condition_variable multicamThreadWait;
         std::thread multicamThread;
         std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback;
+        std::string configPath;
+        std::vector<double> viewCosts;
+        std::vector<double> viewMulticamCosts;
 
         void camThreadCallback(const FrameRefList &pendingFrames, int cameraId);
         void multicamThreadCallback(const std::vector<FrameRefList> &pendingFramesPerCam);
@@ -80,30 +83,39 @@ namespace ecv {
     public:
         explicit CalibrationStrategy(
                 cv::Size frameSize, int numCameras,
-                std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback
-        ) : frameSize(frameSize), numCameras(numCameras), onUpdateCallback(std::move(onUpdateCallback)) {
+                std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback,
+                std::string configPath = ""
+        ) : frameSize(frameSize), numCameras(numCameras), configPath(std::move(configPath)), onUpdateCallback(std::move(onUpdateCallback)) {
+
+            // Предварительно выделяем память, но не вызываем конструкторы объектов.
+            // Это важно так как  при добавлении второй камеры через emplace_back
+            // происходит реаллокация и перемещение вектора.
+            // Как правило, это происходит прозрачно и несет только накладные расходы на лишний вызов аллокатора,
+            // но в частности FileStorage, (точнее порождаемые им FileNode)
+            // содержат небезопасные ссылки (char * и т.п.), в результате FileStorage сваливаается в SIGSEGV
+            // на некоторых абсолютно корректных файлах
+            frameCollectors.reserve(numCameras);
+            frameDataStorage.reserve(numCameras);
+            calibrators.reserve(numCameras);
+            data.reserve(numCameras);
+            map.reserve(numCameras);
+            costs.reserve(numCameras);
+            camThreads.reserve(numCameras);
+            viewCosts.reserve(numCameras);
+            viewMulticamCosts.reserve(numCameras);
+
             for (int i = 0; i < numCameras; ++i) {
                 frameCollectors.emplace_back(frameSize);
+                frameDataStorage.emplace_back();
                 calibrators.emplace_back();
                 data.emplace_back();
                 map.emplace_back();
                 costs.emplace_back(1. / 0.);
-                frameDataStorage.emplace_back();
                 camThreads.emplace_back();
+                viewCosts.emplace_back();
+                viewMulticamCosts.emplace_back();
             }
             pendingFrames.resize(numCameras);
-
-            for (int i = 0; i < numCameras; ++i) {
-                frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::READ);
-
-                if (!frameDataStorage[i].isOpened()) {
-                    continue;
-                }
-
-                frameCollectors[i].load(gridPreferredSizeProvider, frameDataStorage[i]);
-
-                frameDataStorage[i].release();
-            }
         }
 
         void loadConfig();
@@ -116,6 +128,20 @@ namespace ecv {
             }
 
             return result;
+        }
+
+        [[nodiscard]] cv::Point2d getF(int cameraId) {
+            return {
+                data[cameraId].cameraMatrix.at<double>(0, 0),
+                data[cameraId].cameraMatrix.at<double>(1, 1),
+            };
+        }
+
+        [[nodiscard]] cv::Point2d getC(int cameraId) {
+            return {
+                data[cameraId].cameraMatrix.at<double>(0, 2),
+                data[cameraId].cameraMatrix.at<double>(1, 2),
+            };
         }
 
         void setCalibrationData(int cameraId, const Calibrator::CalibrationData &updatedData) {
@@ -131,15 +157,12 @@ namespace ecv {
             return frameCollectors[cameraId].getProgress();
         }
 
-        [[nodiscard]] double getCosts(int cameraId) const {
-            return costs[cameraId];
+        [[nodiscard]] double getViewCosts(int cameraId) const {
+            return viewCosts[cameraId];
         }
 
-        [[nodiscard]] double getMulticamCosts() const {
-            return multicamCosts;
-        }
-        [[nodiscard]] double getMulticamRoiSize() const {
-            return multicamRoiSize;
+        [[nodiscard]] double getViewMulticamCosts(int cameraId) const {
+            return viewMulticamCosts[cameraId];
         }
 
         CalibrateFrameCollector::FrameRef

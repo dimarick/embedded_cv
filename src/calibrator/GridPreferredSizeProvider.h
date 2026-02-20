@@ -12,6 +12,8 @@ namespace ecv {
             size_t w;
             size_t h;
             int count;
+
+            GridStat(size_t w, size_t h, int count) : w(w), h(h), count(count) {}
         };
         std::mutex mutex;
         std::unordered_map<int, std::shared_ptr<GridStat>> gridSizeStat;
