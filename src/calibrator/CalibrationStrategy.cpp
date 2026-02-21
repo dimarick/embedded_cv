@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <calib3d.hpp>
 #include "CalibrationStrategy.h"
 
 using namespace ecv;
@@ -340,7 +341,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
 
         printMulticamCalibrationStats(Ks, Rs, Ts, "c");
 
-        for (int i = 0; i < numCameras; ++i) {
+        for (int i = 1; i < numCameras; ++i) {
             viewMulticamCosts[i] = cost;
             cv::Mat tmp;
             auto calibrationData = getCalibrationData(i);
@@ -351,7 +352,23 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
 
             cv::Rodrigues(Rs[i], R);
 
-            cv::initUndistortRectifyMap(calibrationData.cameraMatrix, calibrationData.distCoeff, R, calibrationData.cameraMatrix, frameSize, CV_32FC2, map[i], tmp);
+            cv::Mat R1, R2, P1, P2, Q;
+            cv::Rect roi1, roi2;
+            cv::stereoRectify(
+                    Ks[0], distortions[0],
+                    Ks[i], distortions[i],
+                    frameSize,
+                    R, Ts[i],
+                    R1, R2, P1, P2, Q,
+                    cv::CALIB_ZERO_DISPARITY,
+                    1.0, // alpha
+                    frameSize, &roi1, &roi2
+            );
+
+            multicamRoiSize = roi2.width * roi2 .height;
+
+            cv::initUndistortRectifyMap(Ks[0], distortions[0], R1, P1, frameSize, CV_32FC2, map[0], tmp);
+            cv::initUndistortRectifyMap(Ks[i], distortions[i], R2, P2, frameSize, CV_32FC2, map[i], tmp);
         }
 
         for (int i = 0; i < numCameras; ++i) {

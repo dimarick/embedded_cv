@@ -53,16 +53,15 @@ namespace ecv {
             drawGrid(debugFrame, imageGrid, *w, *h, cv::Scalar(255, 0, 0));
         }
 
-        if (result < 0.3 && squareRmse < 0.3 && result < prevSquareRmse * 1.1 && *w > 3 && *h > 3) {
-            prevSkew = skew;
-            prevSquareRmse = result;
+        if (result < 0.3 && squareRmse < 0.3 && result < prevError * 1.1 && *w > 3 && *h > 3) {
+            prevError = result;
             setPattern(suggestPatternSize(imageGrid, square, *w, *h), (float) suggestSkew(imageGrid, *w, *h));
-        } else if (result > 5 * prevSquareRmse || result > 0.3) {
+        } else if (result > 5 * prevError || result > 0.3) {
             std::normal_distribution<float> rngSkew(skew, 0.05);
             std::normal_distribution<float> rngSize((float)patternSize, 3);
             std::mt19937 r {std::random_device{}()};
             setPattern(std::clamp((int)rngSize(r), 16, 256), std::clamp((float)rngSkew(r), -0.5f, 0.5f));
-            prevSquareRmse = result;
+            prevError = result;
         }
 
         return result;
