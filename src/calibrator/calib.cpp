@@ -251,7 +251,7 @@ int main(int argc, const char **argv) {
             cv::Mat debug;
             frames[i].copyTo(debug);
             std::vector<ecv::CalibrateMapper::Point3> imageGrid(500), objectGrid(500);
-            size_t w = 0, h = 0;
+            int w = 0, h = 0;
 
             if (!maps[i].empty()) {
                 cv::Mat map;

@@ -26,7 +26,7 @@ namespace ecv {
     private:
         cv::Size frameSize;
 
-        const int NUM_CLASSES = 30*30*30;
+        const int NUM_CLASSES = 10*10*10;
         const int CLASSES_CUBE_DIM = 3;
         const int CLASSES_CUBE_SIZE = (int)std::round(std::pow(NUM_CLASSES, 1. / (double)CLASSES_CUBE_DIM));
 

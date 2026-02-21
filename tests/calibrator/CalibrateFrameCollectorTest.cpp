@@ -1,4 +1,3 @@
-// test/test_calibrate_collector.cpp
 #include <catch2/catch_test_macros.hpp>
 #include "../../src/calibrator/CalibrateFrameCollector.h"
 #include <opencv2/core.hpp>

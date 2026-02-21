@@ -1,8 +1,10 @@
 #include "CalibrateMapper.h"
+#include "StatStreaming.h"
 #include <ext/pb_ds/assoc_container.hpp>
 #ifdef HAVE_OPENCV_HIGHGUI
 #include <highgui.hpp>
 #include <iostream>
+#include <random>
 
 #endif
 
@@ -38,30 +40,11 @@ namespace ecv {
     }
 
     double CalibrateMapper::detectFrameImagePointsGrid(const cv::UMat &frame, const std::vector<Point3> &peaks, std::vector<Point3> &imageGrid,
-                                                       size_t *w, size_t *h, cv::Mat &debugFrame) {
+                                                       int *w, int *h, cv::Mat &debugFrame) {
         BaseSquare square;
         size_t size = peaks.size();
         drawPeaks(debugFrame, peaks, size, cv::Scalar(0, 255, 0));
         auto squareRmse = detectBaseSquare(frame.size(), peaks , square);
-
-        if (squareRmse > 0.2) {
-            *w = 0;
-            *h = 0;
-
-            return 1. / 0.;
-        }
-
-        bool updatePattern = false;
-
-        if (squareRmse < prevSquareRmse * 1.01) {
-            prevSkew = skew;
-            prevSquareRmse = squareRmse;
-            updatePattern = true;
-        } else if (squareRmse > 1.4 * prevSquareRmse) {
-            setPattern(64, 0);
-            prevSquareRmse = squareRmse;
-            skew = prevSkew;
-        }
 
         auto result = detectFrameImagePointsGrid(frame.size(), peaks, square, imageGrid, w, h);
 
@@ -70,8 +53,16 @@ namespace ecv {
             drawGrid(debugFrame, imageGrid, *w, *h, cv::Scalar(255, 0, 0));
         }
 
-        if (updatePattern || *w < 4 && *h < 4) {
-            setPattern(suggestPatternSize(imageGrid, square, *w, *h), suggestSkew(square));
+        if (result < 0.3 && squareRmse < 0.3 && result < prevSquareRmse * 1.1 && *w > 3 && *h > 3) {
+            prevSkew = skew;
+            prevSquareRmse = result;
+            setPattern(suggestPatternSize(imageGrid, square, *w, *h), (float) suggestSkew(imageGrid, *w, *h));
+        } else if (result > 5 * prevSquareRmse || result > 0.3) {
+            std::normal_distribution<float> rngSkew(skew, 0.05);
+            std::normal_distribution<float> rngSize((float)patternSize, 3);
+            std::mt19937 r {std::random_device{}()};
+            setPattern(std::clamp((int)rngSize(r), 16, 256), std::clamp((float)rngSkew(r), -0.5f, 0.5f));
+            prevSquareRmse = result;
         }
 
         return result;
@@ -80,8 +71,8 @@ namespace ecv {
     void CalibrateMapper::detectPeaks(const cv::UMat &frame, std::vector<Point3> &peaks, size_t *size) {
         cv::UMat gray, grayF;
         cv::cvtColor(frame, gray, cv::ColorConversionCodes::COLOR_BGR2GRAY);
-        auto clahe = cv::createCLAHE(1, cv::Size(3,3));
-        clahe->apply(gray, gray);
+//        auto clahe = cv::createCLAHE(1, cv::Size(3,3));
+//        clahe->apply(gray, gray);
         gray.convertTo(grayF, CV_32F);
         auto matches = cv::UMat(gray.size(), CV_32F);
 
@@ -177,9 +168,9 @@ namespace ecv {
         return qNorm;
     }
 
-    size_t CalibrateMapper::suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, size_t w, size_t h) {
+    size_t CalibrateMapper::suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, int w, int h) const {
         if (h < 2 || w < 2) {
-            return 64;
+            return patternSize;
         }
         auto list = {
                 square.topRight.x - square.topLeft.x,
@@ -205,15 +196,40 @@ namespace ecv {
             }
         }
 
-        auto pSize = (size_t)(m * 0.9f);
-        pSize -= pSize % 2;
+        auto dSize = (m * 0.8f);
+
+        auto ema = 2. / (3. + 1.);
+        dSize = ema * dSize + (1 - ema) * (double)patternSize;
+
+        auto pSize = (size_t)dSize - (size_t)dSize % 2;
         pSize = std::clamp(pSize, (size_t)16, (size_t)256);
 
         return pSize;
     }
 
+    double CalibrateMapper::suggestSkew(const std::vector<Point3> &imageGrid, int w, int h) const {
+        StatStreaming stat;
+
+        stat.addFirstValue(0);
+
+        int cH = h / 2;
+
+        for (int i = cH * w; i < cH * w + w - 1; i++) {
+            auto vector = imageGrid[i] - imageGrid[i + 1];
+            auto tan = vector.y / vector .x;
+            stat.addValue(tan);
+        }
+
+        if (std::abs(stat.mean()) < 1) {
+            auto ema = 2. / (5. + 1.);
+            return ema * stat.mean() + (1 - ema) * skew;
+        }
+
+        return skew;
+    }
+
     double
-    CalibrateMapper::detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks, const BaseSquare &square, std::vector<Point3> &imageGrid, size_t *w, size_t *h) {
+    CalibrateMapper::detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks, const BaseSquare &square, std::vector<Point3> &imageGrid, int *w, int *h) {
         auto pointsCount = peaks.size();
 
         if (pointsCount < 4 * 4) {
@@ -229,8 +245,8 @@ namespace ecv {
                 distance2(square.bottomRight, square.topRight)
         ) / 2;
 //        auto pixelsPerPoint = std::sqrt(imageArea / pointsCount);
-        auto _w = (size_t)(frameSize.width / pixelsPerPointW);
-        auto _h = (size_t)(frameSize.height / pixelsPerPointH);
+        auto _w = (int)(frameSize.width / pixelsPerPointW);
+        auto _h = (int)(frameSize.height / pixelsPerPointH);
         auto ratio = (double)_w / (double)_h;
 
         for (auto &item : imageGrid) {
@@ -241,8 +257,8 @@ namespace ecv {
             return 1.0 / 0.0;
         }
 
-        _h = std::min((size_t)(_h - 3) * 2, (size_t)std::sqrt((double)imageGrid.size() / ratio));
-        _w = std::min((size_t)(_w - 3) * 2, (size_t)std::sqrt((double)imageGrid.size() * ratio));
+        _h = std::min((_h - 3) * 2, (int)std::sqrt((double)imageGrid.size() / ratio));
+        _w = std::min((_w - 3) * 2, (int)std::sqrt((double)imageGrid.size() * ratio));
 
         auto cH = _h / 2 - 1;
         auto cW = _w / 2 - 1;
@@ -262,6 +278,7 @@ namespace ecv {
         }
 
         auto err = (double)0.0;
+        auto pointCount = 0;
 
         for (auto i = 0; i < cH; i++) {
             for (auto s = -1; s <= 1; s += 2) { // двигаемся в обе стороны от центра
@@ -274,10 +291,14 @@ namespace ecv {
 
                     auto tp = distance2(current, prev);
                     auto searchRadius = tp * 0.2f;
+
                     auto nextApproximated = approximate(current, prev);
                     *next = findNearestPoint(nextApproximated, peaks, searchRadius);
 
-                    err += distance2(*next, nextApproximated) / tp;
+                    if (next->z != -1) {
+                        err += distance2(*next, nextApproximated) / tp;
+                        pointCount++;
+                    }
                 }
                 // заполним остальную сетку аппроксимируя по двум точкам
                 for (auto k = 0; k < cW; k++) {
@@ -288,19 +309,28 @@ namespace ecv {
                         auto next = &imageGrid[(cH + s * (i + 1)) * _w + cW + ks * (k + 1)];
                         CV_Assert(next < gridMaxOffset);
                         auto tp = distance2(current, left);
+
                         auto searchRadius = tp * 0.2f;
                         auto nextApproximated = approximate2(current, left, top);
                         *next = findNearestPoint(nextApproximated, peaks, searchRadius);
 
-                        err += distance2(*next, nextApproximated) / tp;
+                        if (next->z != -1) {
+                            err += distance2(*next, nextApproximated) / tp;
+                            pointCount++;
+                        }
                     }
                 }
             }
         }
+        size_t pw;
+        size_t ph;
+        do {
+            pw = *w;
+            ph = *h;
+            cropGrid(imageGrid, w, h, findPointsMassCenter(imageGrid));
+        } while(*w < pw || *h < ph);
 
-        cropGrid(imageGrid, w, h);
-
-        return err / (double)(_w * _h);
+        return err / pointCount;
     }
 
     /**
@@ -311,7 +341,7 @@ namespace ecv {
      * @param h
      * @return возвращает среднюю дистанцию между точкой объекта и точкой на изображении, скорректированную на площадь сетки на изображении.
      */
-    double CalibrateMapper::generateFrameObjectPointsGrid(std::vector<Point3> &objectGrid, size_t w, size_t h) {
+    double CalibrateMapper::generateFrameObjectPointsGrid(std::vector<Point3> &objectGrid, int w, int h) {
         CV_Assert(w * h <= objectGrid.size());
 
         std::vector<Point3> o(w * h);
@@ -364,7 +394,7 @@ namespace ecv {
 
     }
 
-    void CalibrateMapper::drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, size_t w, size_t h, const cv::Scalar& color, int thickness) {
+    void CalibrateMapper::drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, int w, int h, const cv::Scalar& color, int thickness) {
 
         for (int x = 0; x < w; ++x) {
             for (int y = 0; y < h; ++y) {
@@ -372,14 +402,19 @@ namespace ecv {
                 auto right = x + 1 == w ? Point3(0, 0, 0): grid[y * w + x + 1];
                 auto bottom = y + 1 == h ? Point3(0, 0, 0) : grid[(y + 1) * w + x];
 
+                const auto viewPoint = Point((int)std::round(p.x), (int)std::round(p.y));
                 if (x < w - 1) {
-                    cv::line(target, Point((int) p.x, (int) p.y), Point((int) right.x, (int) right.y),
+                    cv::line(target, viewPoint, Point((int) std::round(right.x), (int) std::round(right.y)),
                              color, thickness);
                 }
 
                 if (y < h - 1) {
-                    cv::line(target, Point((int) p.x, (int) p.y), Point((int) bottom.x, (int) bottom.y),
+                    cv::line(target, viewPoint, Point((int) std::round(bottom.x), (int) std::round(bottom.y)),
                              color, thickness);
+                }
+
+                if (p.z < 0) {
+                    cv::drawMarker(target, viewPoint, cv::Scalar(0, 0, 255), cv::MARKER_DIAMOND, 20, 5);
                 }
             }
         }
@@ -418,7 +453,7 @@ namespace ecv {
         const int granule = (int)kernel / 2;
         const int granule2 = granule / 2;
         const int w = mat.cols;
-        const auto step = 1;
+        const auto step = 3;
 
         std::mutex pointsSetLock;
         std::multiset<Point3, Point3Compare> pointsSet;
@@ -493,39 +528,36 @@ namespace ecv {
 
         double range = zMax - zMin;
 
-        int i = 0;
-        double dzSumSqr = 0.0;
-        double dzSum = 0.0;
-        double pz = pointsSet.begin()->z;
+        StatStreaming stat;
+
+        stat.addFirstValue(0);
+
         for (const auto &p : pointsSet) {
             const auto &z = (p.z - zMin) / range;
 
-            auto dz = std::abs(pz - z);
-            pz = z;
+            if (z < 0.05) {
+                continue;
+            }
 
-            auto dzMean = dzSum / (i + 1);
+            auto i = stat.n();
 
             if (i > 5) {
-                auto zStddev = sqrt(dzSumSqr / (i + 1));
-                if (std::abs(dz - dzMean) > zStddev * 3) {
+                if (stat.sigmaValue(z) > 3) {
                     continue;
                 }
             }
-            dzSum += dz;
-            dzMean = dzSum / (i + 1);
-            dzSumSqr += std::pow(dz - dzMean, 2);
-            i++;
+            stat.addValue(z);
 
             points[i].z = z;
             points[i].x = p.x + (double)kernel / 2;
             points[i].y = p.y + (double)kernel / 2;
 
-            if (i > points.size()) {
+            if (stat.n() > points.size()) {
                 break;
             }
         }
 
-        *size = i;
+        *size = stat.n();
     }
 
     typename CalibrateMapper::Point3 CalibrateMapper::findMassCenter(const cv::Mat &mat, int x, int y, int searchRadius) {
@@ -576,9 +608,9 @@ namespace ecv {
         auto sumY = 0.;
 
         for (const auto &p : points) {
-            mass += p.z;
-            sumX += p.z * p.x;
-            sumY += p.z * p.y;
+            mass += std::max(0., p.z);
+            sumX += std::max(0., p.z) * p.x;
+            sumY += std::max(0., p.z) * p.y;
         }
 
         auto cX = sumX > 0 && mass > 0 ? (sumX / mass) : 0;
@@ -717,7 +749,7 @@ namespace ecv {
 
 
 
-        return {sqrt(cost) / min + 1e-16, max};
+        return {sqrt(cost) / (min + 1e-16), max};
     }
 
     typename CalibrateMapper::Point3 CalibrateMapper::approximate(Point3 current, Point3 prev) {
@@ -735,79 +767,147 @@ namespace ecv {
      * @return
      */
     typename CalibrateMapper::Point3 CalibrateMapper::approximate2(Point3 current, Point3 left, Point3 top) {
-        auto x = current.x + (left.x - current.x) + (top.x - current.x);
-        auto y = current.y + (left.y - current.y) + (top.y - current.y);
+//        auto x = current.x + (left.x - current.x) + (top.x - current.x);
+//        auto y = current.y + (left.y - current.y) + (top.y - current.y);
+        auto x = top.x + (left.x - current.x);
+        auto y = left.y + (top.y - current.y);
 
-        return {x, y, (current.z + left.z + top.z) / 3};
+        return {x, y, -1};
     }
 
-    void CalibrateMapper::cropGrid(std::vector<Point3> &grid, size_t *w, size_t *h) {
+    void CalibrateMapper::cropGrid(std::vector<Point3> &grid, int *w, int *h, Point3 center) const {
+        auto centerId = findNearestPointId(center, grid, 100);
+
+        if (centerId < 0) {
+            return;
+        }
+
         int top = 0, left = 0, right = 0, bottom = 0;
-        size_t cW = *w / 2;
-        size_t cH = *h / 2;
-        int w4 = (int)*w / 4;
-        int h4 = (int)*h / 4;
+        int cW = centerId % *w;
+        int cH = centerId / *w;
+        int wpad;
+        int hpad;
+
+        if (*w < 4 || *h < 4) {
+            return;
+        }
 
         auto wScore = 0., hScore = 0.;
-        auto threshold = 0.33; // чем меньше - тем больше площадь сетки, но тем больше шанс захвата невалидных точек
 
-        for (int x = w4; x < *w - w4; ++x) {
-            wScore += std::max((double)0., grid[cH * *w + x].z);
+        auto maxWpad = std::min(cW, *w - cW) - 2;
+        auto maxHpad = std::min(cH, *h - cH) - 2;
+
+        if (maxWpad < 0 || maxHpad < 0) {
+            return;
         }
 
-        for (int y = h4; y < *h - h4; ++y) {
-            hScore += std::max((double)0., grid[y * *w + cW].z);
+        for (wpad = 0; wpad < maxWpad && wScore <= 0; ++wpad) {
+            wScore = 0.;
+            for (int x = wpad; x < *w - wpad - 1; ++x) {
+                wScore += grid[cH * *w + x].z;
+            }
         }
 
-        double wThreshold = wScore * threshold;
-        double hThreshold = hScore * threshold;
+        for (hpad = 0; hpad < maxHpad && hScore <= 0; ++hpad) {
+            hScore = 0.;
+            for (int y = hpad; y < *h - hpad - 1; ++y) {
+                hScore += grid[y * *w + cW].z;
+            }
+        }
 
-        for (int y = 0; y < cH - 1; ++y) {
+        wpad = std::min(wpad + 2, maxWpad);
+        hpad = std::min(hpad + 2, maxHpad);
+
+        wScore = 0.;
+        for (int x = wpad; x < *w - wpad - 1; ++x) {
+            wScore += grid[cH * *w + x].z;
+        }
+        hScore = 0.;
+        for (int y = hpad; y < *h - hpad - 1; ++y) {
+            hScore += grid[y * *w + cW].z;
+        }
+
+        int i;
+
+        StatStreaming stat;
+        stat.addFirstValue(wScore);
+        // от центра идем вверх до первого "провала" в значениях
+        i = 0;
+        for (int y = cH + 1; y >= 0; --y, ++i) {
             top = y;
             auto rowScore = 0.;
-            for (int x = w4; x < *w - w4; ++x) {
+            for (int x = wpad; x < *w - wpad - 1; ++x) {
                 rowScore += grid[y * *w + x].z;
             }
 
-            if (rowScore > wThreshold) {
-                break;
+            if (stat.stddev() > 0 && stat.sigmaValue(rowScore) > 2) {
+                if (i > 3) {
+                    top++;
+                    break;
+                }
+                continue;
             }
+            stat.addValue(rowScore);
         }
 
-        for (int y = (int)*h - 1; y >= cH; --y) {
+        stat.addFirstValue(wScore);
+        // от центра идем вниз до первого "провала" в значениях
+        i = 0;
+        for (int y = cH - 2; y < *h; ++y, ++i) {
             bottom = y + 1;
             auto rowScore = 0.;
-            for (int x = w4; x < *w - w4; ++x) {
+            for (int x = wpad; x < *w - wpad - 1; ++x) {
                 rowScore += grid[y * *w + x].z;
             }
 
-            if (rowScore > wThreshold) {
-                break;
+            if (stat.stddev() > 0 && stat.sigmaValue(rowScore) > 2) {
+                if (i > 3) {
+                    bottom--;
+                    break;
+                }
+                continue;
             }
+            stat.addValue(rowScore);
         }
 
-        for (int x = 0; x < cW - 1; ++x) {
+        stat.addFirstValue(hScore);
+        // от центра идем влево до первого "провала" в значениях
+        i = 0;
+        for (int x = cW + 1; x >= 0; --x, ++i) {
             left = x;
-            auto rowScore = 0.;
-            for (int y = h4; y < *h - h4; ++y) {
-                rowScore += grid[y * *w + x].z;
+            auto colScore = 0.;
+            for (int y = hpad; y < *h - hpad - 1; ++y) {
+                colScore += grid[y * *w + x].z;
             }
 
-            if (rowScore > hThreshold) {
-                break;
+            if (stat.stddev() > 0 && stat.sigmaValue(colScore) > 2) {
+                if (i > 3) {
+                    left++;
+                    break;
+                }
+                continue;
             }
+            stat.addValue(colScore);
         }
 
-        for (int x = (int)*w - 1; x >= cW; --x) {
+        stat.addFirstValue(hScore);
+        // от центра идем вправо до первого "провала" в значениях
+        i = 0;
+        for (int x = cW - 2; x < *w; ++x, ++i) {
             right = x + 1;
-            auto rowScore = 0.;
-            for (int y = h4; y < *h - h4; ++y) {
-                rowScore += grid[y * *w + x].z;
+            auto colScore = 0.;
+            for (int y = hpad; y < *h - hpad - 1; ++y) {
+                colScore += grid[y * *w + x].z;
             }
 
-            if (rowScore > hThreshold) {
-                break;
+            if (stat.stddev() > 0 && stat.sigmaValue(colScore) > 2) {
+                if (i > 3) {
+                    right--;
+                    break;
+                }
+                continue;
             }
+            stat.addValue(colScore);
         }
 
         auto w0 = *w;
@@ -830,7 +930,7 @@ namespace ecv {
                 auto current = grid[(cH + j) * w + cW + s * i];
                 auto prev = grid[(cH + j) * w + cW + s * (i - 1)];
                 auto next = &grid[(cH + j) * w + cW + s * (i + 1)];
-                auto searchRadius = distance2(current, prev) * 0.2f;
+                auto searchRadius = distance2(current, prev) * 0.3f;
                 auto nextApproximated = approximate(current, prev);
                 *next = findNearestPoint(nextApproximated, peaks, searchRadius);
             }
@@ -838,11 +938,22 @@ namespace ecv {
     }
 
     CalibrateMapper::Point3 CalibrateMapper::findNearestPoint(const Point3 &point, const std::vector<Point3> &points,
-                                                                       double searchRadius) {
-        auto found = Point3(0, 0, 0);
+                                                                       double searchRadius) const {
+        auto i = findNearestPointId(point, points, searchRadius);
+
+        if (i < 0) {
+            return {point.x, point.y, -1};
+        }
+
+        return points[i];
+    }
+
+    int CalibrateMapper::findNearestPointId(const Point3 &point, const std::vector<Point3> &points, double searchRadius) const {
+        auto found = -1;
         auto foundDistance = 1e6;
-        for (auto p : points) {
-            if (std::abs(p.x - point.x) > searchRadius || std::abs(p.y - point.y) > searchRadius) {
+        for (int i = 0; i < points.size(); i++) {
+            auto p = points[i];
+            if (std::abs(p.x - point.x) > searchRadius || std::abs(p.y - point.y) > searchRadius || p.z < 0) {
                 continue;
             }
 
@@ -850,18 +961,18 @@ namespace ecv {
 
             if (d < foundDistance) {
                 foundDistance = d;
-                found = p;
+                found = i;
             }
         }
 
-        if (found.z <= 0) {
-            return {point.x, point.y, -1};
+        if (found < 0) {
+            return -1;
         }
 
         return found;
     }
 
-    double CalibrateMapper::distance2(Point3 p1, Point3 p2) {
+    double CalibrateMapper::distance2(Point3 p1, Point3 p2) const {
         return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
     }
 

@@ -86,6 +86,8 @@ add_executable(tests
         src/calibrator/GridPreferredSizeProvider.cpp
         tests/calibrator/CalibrateFrameCollectorTest.cpp
         tests/calibrator/CalibrationStrategyTest.cpp
+        tests/calibrator/StatStreamingTest.cpp
+        tests/calibrator/StatStreamingTest.cpp
 )
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain PUBLIC OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
 
@@ -108,6 +110,7 @@ add_executable(calib
         src/calibrator/GridPreferredSizeProvider.cpp
         src/calibrator/CalibrationStrategy.cpp
         src/calibrator/CalibrationStrategy.h
+        src/calibrator/StatStreaming.h
 )
 
 target_link_libraries(calib PUBLIC OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})

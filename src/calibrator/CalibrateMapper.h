@@ -41,10 +41,10 @@ namespace ecv {
         double findSquareByTopLeft(const std::vector<Point3> &points, size_t size, BaseSquare &result);
         Point3 approximate(Point3 current, Point3 prev);
         Point3 approximate2(Point3 current, Point3 left, Point3 top);
-        void cropGrid(std::vector<Point3> &grid, size_t *w, size_t *h);
+        void cropGrid(std::vector<Point3> &grid, int *w, int *h, Point3 center) const;
         void fillGridRow(size_t w, size_t cH, size_t cW, int j, const std::vector<Point3> &peaks, std::vector<Point3> &grid);
-        Point3 findNearestPoint(const Point3 &point, const std::vector<Point3> &points, double searchRadius);
-        double distance2(Point3 p1, Point3 p2);
+        Point3 findNearestPoint(const Point3 &point, const std::vector<Point3> &points, double searchRadius) const;
+        double distance2(Point3 p1, Point3 p2) const;
         double sign(double val);
     public:
 
@@ -53,21 +53,20 @@ namespace ecv {
         void setPattern(size_t patternSize, float _skew);
         void detectPeaks(const cv::UMat &frame, std::vector<Point3> &peaks, size_t *size);
         double detectBaseSquare(const cv::Size &frameSize, const std::vector<Point3> &peaks, BaseSquare &square);
-        double detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks, const BaseSquare &square, std::vector<Point3> &imageGrid, size_t *w, size_t *h);
-        double detectFrameImagePointsGrid(const cv::UMat &frame, const std::vector<Point3>& peaks, std::vector<Point3> &imageGrid, size_t *w, size_t *h, cv::Mat &debugFrame);
-        size_t suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, size_t w, size_t h);
-        double generateFrameObjectPointsGrid(std::vector<Point3> &objectGrid, size_t w, size_t h);
+        double detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks, const BaseSquare &square, std::vector<Point3> &imageGrid, int *w, int *h);
+        double detectFrameImagePointsGrid(const cv::UMat &frame, const std::vector<Point3>& peaks, std::vector<Point3> &imageGrid, int *w, int *h, cv::Mat &debugFrame);
+        size_t suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, int w, int h) const;
+        double suggestSkew(const std::vector<Point3> &imageGrid, int w, int h) const;
 
+        double generateFrameObjectPointsGrid(std::vector<Point3> &objectGrid, int w, int h);
         void drawPeaks(cv::Mat &target, const std::vector<Point3> &peaks, size_t size, const cv::Scalar& color);
         void drawBaseSquare(cv::Mat &target, const BaseSquare &square, const cv::Scalar& color);
-        void drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, size_t w, size_t h, const cv::Scalar& color, int thickness = 5);
 
-        float suggestSkew(BaseSquare square) {
-            auto topVector = square.topRight - square.topLeft;
-            return (float)topVector.y / (float)topVector .x;
-        }
+        void drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, int w, int h, const cv::Scalar& color, int thickness = 5);
 
         bool isInsideQuadSimple(const Point3 &p, BaseSquare quad);
+
+        int findNearestPointId(const Point3 &point, const std::vector<Point3> &points, double searchRadius) const;
     };
 } // ecv
 
