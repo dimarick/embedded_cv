@@ -10,10 +10,9 @@ using namespace ecv;
  */
 double BlurFrameFilter::getValue(const cv::UMat &frame) {
     cv::UMat thumb, lap;
-    int w3 = frame.cols / 3;
-    int h3 = frame.rows / 3;
-    cv::extractChannel(frame(cv::Rect(w3, h3, w3, h3)), thumb, 1); // green
-    cv::resize(frame, thumb, cv::Size(320, 240), cv::INTER_NEAREST);
+    int w3 = frame.cols / 5;
+    int h3 = frame.rows / 5;
+    cv::extractChannel(frame(cv::Rect(frame.cols * 2 / 5, frame.rows * 2 / 5, w3, h3)), thumb, 1); // green
     cv::Laplacian(thumb, lap, CV_32F);
     cv::absdiff(lap, 0, lap);
     return cv::mean(lap)[0];
@@ -22,7 +21,7 @@ double BlurFrameFilter::getValue(const cv::UMat &frame) {
 /**
  * Отделяет percentile лучших value. Лучше == больше.
  * Используется адаптивный порог резкости, устанавливающийся автоматически для достижения
- * целевого percentile.
+ * целевого percentile. При установившемся пороге, пропускает все кадры, которые незначительно ниже порога
  * @param frame
  * @return
  */
@@ -47,9 +46,9 @@ bool BlurFrameFilter::streamingPercentile(double value) {
         currentThreshold /= 1 + step;
     }
 
-    if ((trueValues + falseValues) > 1000) {
-        trueValues *= 0.998;
-        falseValues *= 0.998;
+    if ((trueValues + falseValues) > 100) {
+        trueValues *= 0.98;
+        falseValues *= 0.98;
     }
 
     bool result = solution || relDiff < 1e-2;

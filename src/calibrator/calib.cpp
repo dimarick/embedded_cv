@@ -190,7 +190,7 @@ int main(int argc, const char **argv) {
     ecv::CalibrationStrategy calibrationStrategy(size, (int)frames.size(), [&maps, &mapsMutex](int cameraId, const ecv::CalibrationStrategy &that) {
         {
             std::unique_lock lock(mapsMutex);
-            maps[cameraId] = that.getMap(cameraId);
+            maps[cameraId] = that.getMap(cameraId).clone();
         }
 
         std::cout << "Calibration updated " << cameraId << ",\t" << that.getProgress(cameraId) << "%\tcost " << that.getViewCosts(cameraId) << std::endl;
@@ -234,10 +234,10 @@ int main(int argc, const char **argv) {
 #pragma omp parallel for default(none) shared(frameBlur, peaks, frames, calibrateMapper, blurFrameFilter, abortCalibration, std::cout)
         for (int i = 0; i < frames.size(); ++i) {
             frameBlur[i] = blurFrameFilter[i].getValue(frames[i]);
-//            if (!blurFrameFilter[i].streamingPercentile(frameBlur[i])) {
-//                abortCalibration[i] = true;
-//                continue;
-//            }
+            if (!blurFrameFilter[i].streamingPercentile(frameBlur[i])) {
+                abortCalibration[i] = true;
+                continue;
+            }
 
             size_t peaksSize;
 
@@ -257,7 +257,7 @@ int main(int argc, const char **argv) {
                 cv::Mat map;
                 {
                     std::unique_lock lock(mapsMutex);
-                    map = maps[i];
+                    map = maps[i].clone();
                 }
                 cv::remap(frames[i], plainFrames[i], map, cv::noArray(), cv::INTER_NEAREST);
             } else {

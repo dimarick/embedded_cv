@@ -101,12 +101,14 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
     auto w = preferredSize != nullptr ? preferredSize->w : 0;
     auto h = preferredSize != nullptr ? preferredSize->h : 0;
 
-    auto sample = frameCollectors[i].getFramesSample(SAMPLE_SIZE, w, h, false);
+    auto sample = frameCollectors[i].getFramesSample(TRAIN_SAMPLE_SIZE, w, h, false);
 
     for (const auto &frame : frames) {
         if (frame != nullptr) {
             frameCollectors[i].addFrame(gridPreferredSizeProvider, frame);
-            sample.emplace_back(frame);
+            if (!frame->validate) {
+                sample.emplace_back(frame);
+            }
         }
     }
 
@@ -138,7 +140,7 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
     w = preferredSize != nullptr ? preferredSize->w : 0;
     h = preferredSize != nullptr ? preferredSize->h : 0;
 
-    auto sampleValidate = frameCollectors[i].getFramesSample(SAMPLE_SIZE, w, h, true);
+    auto sampleValidate = frameCollectors[i].getFramesSample(TRAIN_SAMPLE_SIZE, w, h, true);
 
     if (sampleValidate.empty()) {
         return;
@@ -167,6 +169,7 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
 
 void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList> &frameSets) {
     std::vector<FrameRefList> validFrameSets;
+    std::vector<FrameRefList> trainFrameSets;
 
     for (int i = 0; i < numCameras; ++i) {
         if (costs[i] > 10) {
@@ -181,6 +184,9 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
     for (const auto &frameSet : frameSets) {
         if (isValid(frameSet)) {
             validFrameSets.emplace_back(frameSet);
+            if (!frameSet[0]->validate) {
+                trainFrameSets.emplace_back(frameSet);
+            }
         }
     }
 
@@ -188,15 +194,13 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         return;
     }
 
-    auto sample = frameCollectors[0].getFrameSetsSample(SAMPLE_SIZE, w, h, false);
+    frameCollectors[0].addMulticamFrames(validFrameSets);
+
+    auto sample = frameCollectors[0].getFrameSetsSample(TRAIN_SAMPLE_SIZE, w, h, false);
 
     for (const auto &frameSet : sample) {
-        if (isValid(frameSet)) {
-            validFrameSets.emplace_back(frameSet);
-        }
+        trainFrameSets.emplace_back(frameSet);
     }
-
-    frameCollectors[0].addMulticamFrames(validFrameSets);
 
     auto mask = cv::Mat(numCameras, (int)validFrameSets.size(), CV_8U);
     std::vector<cv::Size> imageSize;
@@ -219,7 +223,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
 
         imageSize.emplace_back(frameSize);
         models.emplace_back(cv::CALIB_MODEL_PINHOLE);
-        flagsForIntrinsics.emplace_back(0);
+        flagsForIntrinsics.emplace_back(cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC);
         Ks.emplace_back(calibrationData.cameraMatrix);
         Rs.emplace_back();
         Ts.emplace_back();
@@ -252,8 +256,8 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
                     tvecs0,
                     perFrameErrors,
                     flagsForIntrinsics,
-                    cv::CALIB_USE_INTRINSIC_GUESS,
-                    cv::TermCriteria(1000, 1e-7)
+                    cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC,
+                    cv::TermCriteria(10, 1e-7)
             );
         } catch (const std::exception &e) {
             std::cerr << e.what() << std::endl;
@@ -354,14 +358,15 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
 
             cv::Mat R1, R2, P1, P2, Q;
             cv::Rect roi1, roi2;
+
             cv::stereoRectify(
                     Ks[0], distortions[0],
                     Ks[i], distortions[i],
                     frameSize,
-                    R, Ts[i],
+                    Rs[i], Ts[i],
                     R1, R2, P1, P2, Q,
                     cv::CALIB_ZERO_DISPARITY,
-                    1.0, // alpha
+                    0.0, // alpha
                     frameSize, &roi1, &roi2
             );
 
@@ -510,8 +515,6 @@ void CalibrationStrategy::printMulticamCalibrationStats(
         CV_Assert(R.size() == cv::Size(1,3));
         CV_Assert(!T.empty() && T.total() == 3);
 
-        cv::Mat RR;
-        cv::Rodrigues(R, RR);
         // --- 1. Трансляция ---
         cv::Vec3d t;
         if (T.rows == 3 && T.cols == 1)
@@ -537,8 +540,7 @@ void CalibrationStrategy::printMulticamCalibrationStats(
         }
 
         // --- 2. Вращение ---
-        cv::Vec3d rvec;
-        cv::Rodrigues(RR, rvec);
+        cv::Vec3d rvec = R;
         double angle = cv::norm(rvec);
         double angle_deg = angle * 180.0 / CV_PI;
         cv::Vec3d axis = rvec / (angle + 1e-12);
@@ -548,9 +550,9 @@ void CalibrationStrategy::printMulticamCalibrationStats(
         std::cout << "    Ось поворота: [ " << axis[0] << ", " << axis[1] << ", " << axis[2] << " ]\n";
         if (angle_deg < 10.0) {
             std::cout << "    Разложение по осям (приблизительно):\n";
-            std::cout << "      roll  (X): " << rvec[0] * 180.0 / CV_PI << "°\n";
-            std::cout << "      pitch (Y): " << rvec[1] * 180.0 / CV_PI << "°\n";
-            std::cout << "      yaw   (Z): " << rvec[2] * 180.0 / CV_PI << "°\n";
+            std::cout << "      pitch (X): " << rvec[0] * 180.0 / CV_PI << "°\n";
+            std::cout << "      yaw   (Y): " << rvec[1] * 180.0 / CV_PI << "°\n";
+            std::cout << "      roll  (Z): " << rvec[2] * 180.0 / CV_PI << "°\n";
         } else {
             std::cout << "    Вектор Родригеса (rx, ry, rz): [ "
                       << rvec[0] << ", " << rvec[1] << ", " << rvec[2] << " ] рад\n";

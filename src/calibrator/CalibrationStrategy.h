@@ -12,8 +12,8 @@
 #include "GridPreferredSizeProvider.h"
 
 static const int MAX_FRAMES_QUEUE = 100;
-static const int SAMPLE_SIZE = 20;
-static const int VALIDATE_SAMPLE_SIZE = 200;
+static const int TRAIN_SAMPLE_SIZE = 50;
+static const int VALIDATE_SAMPLE_SIZE = 100;
 namespace ecv {
 
     class CalibrationStrategy {
