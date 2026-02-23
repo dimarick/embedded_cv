@@ -72,6 +72,11 @@ CalibrateFrameCollector::FrameRef CalibrationStrategy::createFrame(int cameraId,
 }
 
 void CalibrationStrategy::addFrameSet(const FrameRefList &frameSet) {
+    if (frameSet[0] == nullptr) {
+        return;
+    }
+    auto validate = frameSet[0]->validate;
+
     CV_Assert(frameSet.size() == numCameras);
     {
         std::unique_lock<std::mutex> lock(pendingFramesMutex);
@@ -83,11 +88,13 @@ void CalibrationStrategy::addFrameSet(const FrameRefList &frameSet) {
     {
         std::unique_lock<std::mutex> lock(pendingFramesMutex);
         for (int i = 0; i < numCameras; ++i) {
-            pendingFrames[i].insert(frameSet[i]);
-            if (pendingFrames[i].size() > MAX_FRAMES_QUEUE) {
-                pendingFrames[i].erase(pendingFrames[i].begin());
+            if (frameSet[i] != nullptr) {
+                frameSet[i]->validate = validate;
+                pendingFrames[i].insert(frameSet[i]);
+                if (pendingFrames[i].size() > MAX_FRAMES_QUEUE) {
+                    pendingFrames[i].erase(pendingFrames[i].begin());
+                }
             }
-            std::cout << "Frame " << i << " " << (frameSet[i] != nullptr ? frameSet[i]->w : -1) << "x" << (frameSet[i] != nullptr ? frameSet[i]->h : -1) << std::endl;
         }
     }
     camThreadsWait.notify_all();
@@ -124,46 +131,34 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
             frameCollectors[i].getCollectedImageGridsSample(sample),
             trainData,
             0,
-            cv::TermCriteria(10, 1e-7)
+            cv::TermCriteria(100, 1e-7)
     );
 
     auto testData = trainData;
-
-    int flags = cv::CALIB_RATIONAL_MODEL | cv::CALIB_THIN_PRISM_MODEL | cv::CALIB_TILTED_MODEL |
-                cv::CALIB_FIX_ASPECT_RATIO | cv::CALIB_FIX_PRINCIPAL_POINT |
-                cv::CALIB_FIX_FOCAL_LENGTH | cv::CALIB_FIX_K1 | cv::CALIB_FIX_K2 | cv::CALIB_FIX_K3 |
-                cv::CALIB_FIX_K4 | cv::CALIB_FIX_K5 | cv::CALIB_FIX_K6 | cv::CALIB_FIX_S1_S2_S3_S4 |
-                cv::CALIB_FIX_TAUX_TAUY | cv::CALIB_FIX_TANGENT_DIST | cv::CALIB_FIX_INTRINSIC |
-                cv::CALIB_FIX_SKEW;
 
     preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
     w = preferredSize != nullptr ? preferredSize->w : 0;
     h = preferredSize != nullptr ? preferredSize->h : 0;
 
-    auto sampleValidate = frameCollectors[i].getFramesSample(TRAIN_SAMPLE_SIZE, w, h, true);
+    auto sampleValidate = frameCollectors[i].getFramesSample(VALIDATE_SAMPLE_SIZE, w, h, true);
 
     if (sampleValidate.empty()) {
         return;
     }
 
-    auto cost = calibrators[i].calibrateSingleCamera(
+    auto cost = calibrators[i].validateSingleCamera(
             frameSize,
             frameCollectors[i].getCollectedObjectGridsSample(sampleValidate),
             frameCollectors[i].getCollectedImageGridsSample(sampleValidate),
-            testData,
-            flags,
-            cv::TermCriteria(1, 1e-7)
-    );
+            testData);
 
-    if (cost < costs[i]) {
+    if (cost < costs[i] * 1.3 && cost < 10) {
         setCalibrationData(i, trainData);
-        costs[i] = cost;
+        costs[i] = std::min(cost, costs[i]);
         viewCosts[i] = cost;
-        multicamCosts = 1. / 0.;
+        multicamCosts = cost * 2;
 
         std::cout << "Calib " << cameraId << ", c = " << cost << std::endl;
-    } else {
-        costs[i] *= 1.02;
     }
 }
 
@@ -202,7 +197,10 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         trainFrameSets.emplace_back(frameSet);
     }
 
-    auto mask = cv::Mat(numCameras, (int)validFrameSets.size(), CV_8U);
+    if (trainFrameSets.empty()) {
+        return;
+    }
+
     std::vector<cv::Size> imageSize;
     std::vector<unsigned char> models;
     std::vector<int> flagsForIntrinsics;
@@ -231,12 +229,13 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
     }
 
     for (int j = 0; j < 2; ++j) {
-        objectPoints = getObjectPointsFromFrameSets(validFrameSets);
-        imagePoints = getImagePointsFromFrameSets(validFrameSets);
+        auto mask = cv::Mat(numCameras, (int)trainFrameSets.size(), CV_8U);
+        objectPoints = getObjectPointsFromFrameSets(trainFrameSets);
+        imagePoints = getImagePointsFromFrameSets(trainFrameSets);
 
-        for (int frameId = 0; frameId < validFrameSets.size(); frameId++) {
-            for (int camId = 0; camId < validFrameSets[frameId].size(); camId++) {
-                mask.at<unsigned char>(camId, frameId) = validFrameSets[frameId][camId] == nullptr ? 0 : 255;
+        for (int frameId = 0; frameId < trainFrameSets.size(); frameId++) {
+            for (int camId = 0; camId < trainFrameSets[frameId].size(); camId++) {
+                mask.at<unsigned char>(camId, frameId) = trainFrameSets[frameId][camId] == nullptr ? 0 : 255;
             }
         }
 
@@ -257,7 +256,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
                     perFrameErrors,
                     flagsForIntrinsics,
                     cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC,
-                    cv::TermCriteria(10, 1e-7)
+                    cv::TermCriteria(50, 1e-7)
             );
         } catch (const std::exception &e) {
             std::cerr << e.what() << std::endl;
@@ -270,14 +269,14 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
 
         auto outliers = findOutliersPerFrameError(perFrameErrors);
 
-        auto filtered = filterOutliers(validFrameSets, outliers);
+        auto filtered = filterOutliers(trainFrameSets, outliers);
 
         if (filtered == 0) {
             break;
         }
     }
 
-    frameCollectors[0].addMulticamFrames(validFrameSets);
+    frameCollectors[0].addMulticamFrames(trainFrameSets);
 
     preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
     w = preferredSize != nullptr ? preferredSize->w : 0;
@@ -340,8 +339,8 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         return;
     }
 
-    if (cost < multicamCosts) {
-        multicamCosts = cost;
+    if (cost < multicamCosts * 1.3) {
+        multicamCosts = std::min(cost, multicamCosts);
 
         printMulticamCalibrationStats(Ks, Rs, Ts, "c");
 
@@ -391,8 +390,6 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         for (int i = 0; i < numCameras; ++i) {
             onUpdateCallback(i, *this);
         }
-    } else {
-        multicamCosts *= 1.02;
     }
 }
 
@@ -678,4 +675,18 @@ void CalibrationStrategy::loadConfig() {
     for (const auto &item : sample) {
         addFrameSet(item);
     }
+
+    auto size = gridPreferredSizeProvider.getGridPreferredSize();
+
+    if (size == nullptr) {
+        return;
+    }
+
+    for (int i = 0; i < numCameras; ++i) {
+        const auto &framesSample = frameCollectors[i].getFramesSample(100, size->w, size->h, false);
+        camThreadCallback(framesSample, i);
+    }
+
+    const auto &framesSample = frameCollectors[0].getFrameSetsSample(100, size->w, size->h, false);
+    multicamThreadCallback(framesSample);
 }

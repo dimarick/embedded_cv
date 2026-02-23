@@ -21,6 +21,7 @@ namespace ecv {
         void convertToPlain3dPoints(const std::vector<cv::Point3d> &points1, std::vector<cv::Point3f> &points2);
     public:
         struct CalibrationData {
+            int callCount = 0;
             cv::Mat cameraMatrix;
             std::vector<double> distCoeff;
             cv::Mat rvecs;
@@ -71,17 +72,6 @@ namespace ecv {
                 int flags,
                 cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
-
-        double calibrateSingleCamera(
-                cv::Size frameSize,
-                const std::vector<std::vector<cv::Point3d>> &collectedObjectPoints,
-                const std::vector<std::vector<cv::Point3d>> &collectedImagePoints,
-                const std::vector<cv::Point3d> &newObjectPoints,
-                const std::vector<cv::Point3d> &newImagePoints,
-                CalibrationData &data,
-                int flags,
-                cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
-        );
         double calibrateSingleCamera(
                 cv::Size frameSize,
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
@@ -91,15 +81,8 @@ namespace ecv {
                 cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
 
-        std::tuple<cv::Mat, cv::Mat, double> getStereoUndistortMap(cv::Size frameSize, const CalibrationData &base, const CalibrationData &current, double alpha);
-
-        double getFx() const {
-            return fx;
-        }
-
-        double getFy() const {
-            return fy;
-        }
+        double validateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3d>> &objectPoints,
+                                    const std::vector<std::vector<cv::Point3d>> &imagePoints, const CalibrationData &data);
     };
 } // ecv
 

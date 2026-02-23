@@ -48,19 +48,19 @@ namespace ecv {
 
         auto result = detectFrameImagePointsGrid(frame.size(), peaks, square, imageGrid, w, h);
 
-        if (!debugFrame.empty()) {
+        if (result < 0.1 && !debugFrame.empty()) {
             drawBaseSquare(debugFrame, square, squareRmse < 0.1f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255));
             drawGrid(debugFrame, imageGrid, *w, *h, cv::Scalar(255, 0, 0));
         }
 
-        if (result < 0.3 && squareRmse < 0.3 && result < prevError * 1.1 && *w > 3 && *h > 3) {
+        if (result < 0.1 && squareRmse < 0.3 && result < prevError * 1.1 && *w > 3 && *h > 3) {
             prevError = result;
             setPattern(suggestPatternSize(imageGrid, square, *w, *h), (float) suggestSkew(imageGrid, *w, *h));
         } else if (result > 5 * prevError || result > 0.3) {
             std::normal_distribution<float> rngSkew(skew, 0.05);
             std::normal_distribution<float> rngSize((float)patternSize, 3);
             std::mt19937 r {std::random_device{}()};
-            setPattern(std::clamp((int)rngSize(r), 16, 256), std::clamp((float)rngSkew(r), -0.5f, 0.5f));
+            setPattern(std::clamp((int)rngSize(r), 12, 256), std::clamp((float)rngSkew(r), -0.5f, 0.5f));
             prevError = result;
         }
 
@@ -201,7 +201,7 @@ namespace ecv {
         dSize = ema * dSize + (1 - ema) * (double)patternSize;
 
         auto pSize = (size_t)dSize - (size_t)dSize % 2;
-        pSize = std::clamp(pSize, (size_t)16, (size_t)256);
+        pSize = std::clamp(pSize, (size_t)12, (size_t)256);
 
         return pSize;
     }
@@ -232,18 +232,19 @@ namespace ecv {
         auto pointsCount = peaks.size();
 
         if (pointsCount < 4 * 4) {
-            return 1.0 / 0.0;
+            return 1.0;
         }
 
-        auto pixelsPerPointW = (
-                distance2(square.topLeft, square.topRight) +
-                distance2(square.bottomLeft, square.bottomRight)
-        ) / 2;
-        auto pixelsPerPointH = (
-                distance2(square.topLeft, square.bottomLeft) +
-                distance2(square.bottomRight, square.topRight)
-        ) / 2;
-//        auto pixelsPerPoint = std::sqrt(imageArea / pointsCount);
+        double sqSizeW = (
+                 distance2(square.topLeft, square.topRight) +
+                 distance2(square.bottomLeft, square.bottomRight)
+         ) / 2;
+        double sqSizeH = (
+                 distance2(square.topLeft, square.bottomLeft) +
+                 distance2(square.bottomRight, square.topRight)
+         ) / 2;
+        auto pixelsPerPointW = sqSizeW;
+        auto pixelsPerPointH = sqSizeH;
         auto _w = (int)(frameSize.width / pixelsPerPointW);
         auto _h = (int)(frameSize.height / pixelsPerPointH);
         auto ratio = (double)_w / (double)_h;
@@ -253,7 +254,7 @@ namespace ecv {
         }
 
         if (_h <= 3 || _w <= 3) {
-            return 1.0 / 0.0;
+            return 2.0;
         }
 
         _h = std::min((_h - 3) * 2, (int)std::sqrt((double)imageGrid.size() / ratio));
@@ -276,9 +277,6 @@ namespace ecv {
             fillGridRow(_w, cH, cW, j, peaks, imageGrid);
         }
 
-        auto err = (double)0.0;
-        auto pointCount = 0;
-
         for (auto i = 0; i < cH; i++) {
             for (auto s = -1; s <= 1; s += 2) { // двигаемся в обе стороны от центра
                 // заполним 2 столбца сетки вверх и вниз от центрального квадрата
@@ -293,11 +291,6 @@ namespace ecv {
 
                     auto nextApproximated = approximate(current, prev);
                     *next = findNearestPoint(nextApproximated, peaks, searchRadius);
-
-                    if (next->z != -1) {
-                        err += distance2(*next, nextApproximated) / tp;
-                        pointCount++;
-                    }
                 }
                 // заполним остальную сетку аппроксимируя по двум точкам
                 for (auto k = 0; k < cW; k++) {
@@ -312,11 +305,6 @@ namespace ecv {
                         auto searchRadius = tp * 0.2f;
                         auto nextApproximated = approximate2(current, left, top);
                         *next = findNearestPoint(nextApproximated, peaks, searchRadius);
-
-                        if (next->z != -1) {
-                            err += distance2(*next, nextApproximated) / tp;
-                            pointCount++;
-                        }
                     }
                 }
             }
@@ -329,7 +317,26 @@ namespace ecv {
             cropGrid(imageGrid, w, h, findPointsMassCenter(imageGrid));
         } while(*w < pw || *h < ph);
 
-        return err / pointCount;
+        // точка является идеальной если предсказание диагонали к ней совпало с реальностью
+        // считаем что дисторсия ничтожно исказила стороны 1 клетки
+        StatStreaming err;
+        err.addFirstValue(0);
+        for (int y = 0; y < *h - 1; ++y) {
+            for (int x = 0; x < *w - 1; ++x) {
+                auto p = imageGrid[y * *w + x];
+                if (p.z < 0) {
+                    err.addValue(1.);
+                    continue;
+                }
+                auto prediction = approximate2(p, imageGrid[y * *w + x + 1], imageGrid[(y + 1) * *w + x]);
+                prediction.z = p.z;
+                auto real = imageGrid[(y + 1) * *w + x + 1];
+                double norm = distanceSqr3(p, prediction);
+                err.addValue(distanceSqr3(prediction, real) / norm);
+            }
+        }
+
+        return std::sqrt(err.mean() + err.stddev());
     }
 
     /**
@@ -973,6 +980,10 @@ namespace ecv {
 
     double CalibrateMapper::distance2(Point3 p1, Point3 p2) const {
         return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
+    }
+
+    double CalibrateMapper::distanceSqr3(Point3 p1, Point3 p2) const {
+        return std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2) + std::pow(p1.z - p2.z, 2);
     }
 
     double CalibrateMapper::sign(double val) {

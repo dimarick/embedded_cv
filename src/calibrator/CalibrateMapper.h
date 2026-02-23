@@ -25,7 +25,7 @@ namespace ecv {
             }
         };
 
-        size_t patternSize = 64;
+        size_t patternSize = 32;
         float skew = 0;
     private:
         double prevError = 1e10;
@@ -64,6 +64,8 @@ namespace ecv {
 
         void drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, int w, int h, const cv::Scalar& color, int thickness = 5);
         bool isInsideQuadSimple(const Point3 &p, BaseSquare quad);
+
+        double distanceSqr3(Point3 p1, Point3 p2) const;
     };
 } // ecv
 

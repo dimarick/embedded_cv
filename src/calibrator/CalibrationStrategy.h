@@ -12,10 +12,22 @@
 #include "GridPreferredSizeProvider.h"
 
 static const int MAX_FRAMES_QUEUE = 100;
-static const int TRAIN_SAMPLE_SIZE = 50;
-static const int VALIDATE_SAMPLE_SIZE = 100;
+static const int TRAIN_SAMPLE_SIZE = 100;
+static const int VALIDATE_SAMPLE_SIZE = 200;
 namespace ecv {
 
+    /**
+     * Общая концепция: CalibrationStrategy принимает FrameSet - группа синхронизированных кадров с каждой камеры системы
+     * Алгоритм работы:
+     * Полученные кадры наполняют датасет, случайно распределяясь между набором тренировки и валидации
+     * тренировочные кадры + некоторое количество из датасета участвуют в многократном инкрементальном обновлении параметров:
+     * как внутренних (для каждой камеры в отдельности), так и внешних (взаимное расположение камер).
+     * В основе этого обновления лежит алгоритм Левенберга-Марквардта, предоставленный библиотекой OpenCV.
+     * Итеративно запускаем поступившие разделяем на валидацию и тренировку.
+     * Тренировочные запускаем на калибровку. За исключением совсем плохих - добавляем в датасет.
+     * Выполняем валидацию. Если ошибка уменьшилась, то принимаем результаты тренировки, иначе - отбрасываем.
+     * Но в датасет они все равно попадают, если соответствуют критериям отбора.
+     */
     class CalibrationStrategy {
     public:
         typedef std::vector<CalibrateFrameCollector::FrameRef> FrameRefList;
@@ -155,6 +167,20 @@ namespace ecv {
 
         [[nodiscard]] double getProgress(int cameraId) const {
             return frameCollectors[cameraId].getProgress();
+        }
+
+        [[nodiscard]] auto getGridSize() const {
+            return gridPreferredSizeProvider.getGridPreferredSize() != nullptr
+            ? *gridPreferredSizeProvider.getGridPreferredSize()
+            : ecv::GridPreferredSizeProvider::GridStat{0, 0, 0};
+        }
+
+        [[nodiscard]] size_t getFrameCount(int cameraId) const {
+            return frameCollectors[cameraId].getFrameCount();
+        }
+
+        [[nodiscard]] size_t getFrameSetCount(int cameraId) const {
+            return frameCollectors[cameraId].getFrameSetCount();
         }
 
         [[nodiscard]] double getViewCosts(int cameraId) const {

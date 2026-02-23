@@ -105,7 +105,6 @@ add_executable(calib
         src/calibrator/CalibrateMapper.cpp
         src/calibrator/Calibrator.cpp
         src/calibrator/Calibrator.h
-        src/calibrator/BlurFrameFilter.cpp
         MatStorage.cpp
         MatStorage.h
         src/calibrator/GridPreferredSizeProvider.cpp
@@ -135,8 +134,6 @@ add_executable(benchmark
         DisparityEvaluator.h
         src/calibrator/CalibrateFrameCollector.cpp
         src/calibrator/CalibrateFrameCollector.h
-        src/calibrator/BlurFrameFilter.cpp
-        src/calibrator/BlurFrameFilter.h
         src/calibrator/GridPreferredSizeProvider.cpp
         src/calibrator/GridPreferredSizeProvider.h
 )

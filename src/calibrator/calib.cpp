@@ -17,7 +17,6 @@
 #include "CalibrateMapper.h"
 #include "../../MatStorage.h"
 #include "CalibrateFrameCollector.h"
-#include "BlurFrameFilter.h"
 #include "CalibrationStrategy.h"
 
 void noAction(cv::Mat &map)
@@ -153,7 +152,6 @@ int main(int argc, const char **argv) {
     }
 
     std::vector<ecv::CalibrateMapper> calibrateMapper(frames.size()), testCalibrateMapper(frames.size());
-    std::vector<ecv::BlurFrameFilter> blurFrameFilter(frames.size(), ecv::BlurFrameFilter(0.2));
     std::vector<ecv::Calibrator> calibrator(frames.size());
     std::vector<ecv::Calibrator::CalibrationData> calibrationData(frames.size());
 
@@ -161,7 +159,6 @@ int main(int argc, const char **argv) {
         captures[i].read(frames[i]);
     }
 
-    std::vector<double> frameBlur(frames.size());
     std::vector<double> bestQ(frames.size(), 1. / 0.);
     std::vector<double> bestPairQ(frames.size(), 1. / 0.);
     std::vector<double> bestRoiQ(frames.size(), 0.);
@@ -204,13 +201,14 @@ int main(int argc, const char **argv) {
         for (int i = 0; i < frames.size(); ++i) {
             if (frameTs[i] > getFrameTs[i]) {
                 framesMutex[i].lock();
-                readFrames[i].copyTo(frames[i]);
+                if (i == 1) {
+                    cv::rotate(readFrames[i], frames[i], cv::RotateFlags::ROTATE_180);
+                } else {
+                    readFrames[i].copyTo(frames[i]);
+                }
                 getFrameTs[i] = frameTs[i];
                 framesMutex[i].unlock();
                 hasNewFrames = true;
-                if (i == 1) {
-                    cv::rotate(frames[i], frames[i], cv::RotateFlags::ROTATE_180);
-                }
             }
         }
 
@@ -225,20 +223,9 @@ int main(int argc, const char **argv) {
             continue;
         }
 
-        bool abortCalibration[frames.size()];
-        for (int i = 0; i < frames.size(); ++i) {
-            abortCalibration[i] = false;
-        }
-
         std::vector<std::vector<ecv::CalibrateMapper::Point3>> peaks(frames.size(), std::vector<ecv::CalibrateMapper::Point3>(500));
-#pragma omp parallel for default(none) shared(frameBlur, peaks, frames, calibrateMapper, blurFrameFilter, abortCalibration, std::cout)
+#pragma omp parallel for default(none) shared(peaks, frames, calibrateMapper)
         for (int i = 0; i < frames.size(); ++i) {
-            frameBlur[i] = blurFrameFilter[i].getValue(frames[i]);
-            if (!blurFrameFilter[i].streamingPercentile(frameBlur[i])) {
-                abortCalibration[i] = true;
-                continue;
-            }
-
             size_t peaksSize;
 
             calibrateMapper[i].detectPeaks(frames[i], peaks[i], &peaksSize);
@@ -264,37 +251,40 @@ int main(int argc, const char **argv) {
                 frames[i].copyTo(plainFrames[i]);
             }
 
-            if (!abortCalibration[i]) {
-                auto srcGridQ = calibrateMapper[i].detectFrameImagePointsGrid(frames[i], peaks[i], imageGrid, &w, &h, debug);
+            auto frameQuality = calibrateMapper[i].detectFrameImagePointsGrid(frames[i], peaks[i], imageGrid, &w, &h, debug);
 
-                if (w > 0 && h > 0) {
-                    calibrateMapper[i].generateFrameObjectPointsGrid(objectGrid, w, h);
-                    calibrateMapper[i].drawGrid(debug, objectGrid, w, h, cv::Scalar(255, 0, 255), 2);
-                }
+            std::vector<ecv::CalibrateMapper::Point3> calibImageGrid(500), calibObjectGrid(500);
 
-                std::vector<ecv::CalibrateMapper::Point3> calibImageGrid(500), calibObjectGrid(500);
-                cv::Mat map;
-                cv::Mat testFrame;
-
-                if (srcGridQ < 0.03 && w >= 6 && h >= 4) {
-                    imageGrid.resize(w * h);
-                    objectGrid.resize(w * h);
-
-                    frameSet[i] = calibrationStrategy.createFrame(i, imageGrid, objectGrid, (int)w, (int)h, frameBlur[i], getFrameTs[i]);
-                }
-
-                const cv::String &text = std::format(
-                        "sz = {}x{}\nsrcGridQ = {}\nbestQ = {}\nmcBestQ = {}\npatternSize = {}\npatternSkew = {}\nprogress = {}%\nf = {}x{}\nc = {}x{}",
-                        w, h, srcGridQ, calibrationStrategy.getViewCosts(i), calibrationStrategy.getViewMulticamCosts(i),
-                        calibrateMapper[i].patternSize, calibrateMapper[i].skew,
-                        calibrationStrategy.getProgress(i) * 100,
-                        calibrationStrategy.getF(i).x,
-                        calibrationStrategy.getF(i).y,
-                        calibrationStrategy.getC(i).x,
-                        calibrationStrategy.getC(i).y
-                );
-                cv::putText(debug, text, cv::Point2i(30, 30), 1, 2, cv::Scalar(0, 0, 255));
+            if (i == 1) {
+                std::cout << "Grid error is " << frameQuality << std::endl;
             }
+
+            if (frameQuality < 0.5 && w >= 6 && h >= 4) {
+                calibrateMapper[i].generateFrameObjectPointsGrid(objectGrid, w, h);
+                imageGrid.resize(w * h);
+                objectGrid.resize(w * h);
+
+                frameSet[i] = calibrationStrategy.createFrame(i, imageGrid, objectGrid, (int)w, (int)h, frameQuality, getFrameTs[i]);
+            }
+
+            const cv::String &text = std::format(
+                    "sz = {}x{} ({}x{})\nprogress = {}% (f={}, s={})\nq = {}\nbestQ = {}\nmcBestQ = {}\npatternSize = {}\npatternSkew = {}\nf = {}x{}\nc = {}x{}",
+                    w, h, calibrationStrategy.getGridSize().w,
+                    calibrationStrategy.getGridSize().h,
+                    calibrationStrategy.getProgress(i) * 100,
+                    calibrationStrategy.getFrameCount(i),
+                    calibrationStrategy.getFrameSetCount(0),
+                    frameQuality,
+                    calibrationStrategy.getViewCosts(i),
+                    calibrationStrategy.getViewMulticamCosts(i),
+                    calibrateMapper[i].patternSize,
+                    calibrateMapper[i].skew,
+                    std::round(calibrationStrategy.getF(i).x * 1000) / 1000,
+                    std::round(calibrationStrategy.getF(i).y * 1000) / 1000,
+                    std::round(calibrationStrategy.getC(i).x * 1000) / 1000,
+                    std::round(calibrationStrategy.getC(i).y * 1000) / 1000
+            );
+            cv::putText(debug, text, cv::Point2i(30, 30), 1, 2, cv::Scalar(0, 0, 255));
 
 #ifdef HAVE_OPENCV_HIGHGUI
             if (!plainFrames[i].empty()) {
@@ -311,7 +301,7 @@ int main(int argc, const char **argv) {
                 cv::imshow(std::format("Camera {}", i), frames[i]);
             }
 
-            if (!debug.empty() && !abortCalibration[i]) {
+            if (!debug.empty()) {
                 cv::imshow(std::format("Debug {}", i), debug);
             }
 #endif

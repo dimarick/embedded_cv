@@ -12,7 +12,7 @@ std::shared_ptr<CalibrateFrameCollector::Frame> makeFrame(
     for (size_t i = 0; i < w*h; ++i)
         objectGrid[i] = cv::Point3d(i % w, i / w, 0);
     auto frame = std::make_shared<CalibrateFrameCollector::Frame>(
-        CalibrateFrameCollector::Frame{0, imageGrid, objectGrid, w, h, cost, 0.0, false});
+        CalibrateFrameCollector::Frame{{0,0,0}, {0,0,0}, 0, 0, imageGrid, objectGrid, w, h, cost, 0.0, false});
     return frame;
 }
 
@@ -29,12 +29,10 @@ TEST_CASE("Frame classification", "[collector]") {
         }
     }
     auto frame = makeFrame(grid, w, h);
-    int cls = collector.getClass(*frame);
+    int cls = collector.getClass(collector.getRotationClass(*frame), collector.R_DIM_X, collector.R_DIM_Y, collector.R_DIM_Z);
     // Класс должен быть близок к центру куба классов (ориентация нулевая, расстояние среднее)
     // Проверим, что cls в допустимом диапазоне (0 .. CLASSES_CUBE_SIZE^3)
-    int maxClass = collector.getClassesCubeSize() *
-                   collector.getClassesCubeSize() *
-                   collector.getClassesCubeSize();
+    int maxClass = collector.getDatasetVolume();
     REQUIRE(cls >= 0);
     REQUIRE(cls < maxClass);
 }

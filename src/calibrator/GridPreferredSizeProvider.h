@@ -7,7 +7,11 @@
 #include <algorithm>
 
 namespace ecv {
+    /**
+     * Определяет предпочтительный размер сетки на основе голосования: предпочитается самая популярная
+     */
     class GridPreferredSizeProvider {
+    public:
         struct GridStat {
             size_t w;
             size_t h;
@@ -15,7 +19,8 @@ namespace ecv {
 
             GridStat(size_t w, size_t h, int count) : w(w), h(h), count(count) {}
         };
-        std::mutex mutex;
+    private:
+        mutable std::mutex mutex;
         std::unordered_map<int, std::shared_ptr<GridStat>> gridSizeStat;
         std::shared_ptr<GridStat> gridSizeStatTop;
         void _registerFrameStat(size_t w, size_t h) {
@@ -51,6 +56,7 @@ namespace ecv {
         }
     public:
         const std::shared_ptr<GridStat> &getGridPreferredSize() const {
+            std::lock_guard lock(mutex);
             return gridSizeStatTop;
         }
 

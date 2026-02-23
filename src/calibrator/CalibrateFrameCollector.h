@@ -13,7 +13,15 @@ namespace ecv {
     class CalibrateFrameCollector {
     public:
         struct Frame {
-            int cls;
+            // тангенсы углов поворота по X, Y и Z, от 0 (наклона нет) до 1 (сильный наклон)
+            cv::Point3d rotation;
+            // xy - позиция верхнего левого угла габаритного прямоугольника сетки,
+            // измеряемая в долях от размера кадра минус размер прямоугольника, от 0 до 1
+            // z - корень из отношения площадей кадра и этого прямоугольника, от 0 до 1
+            cv::Point3d position;
+            // класс для хештаблицы, x * D1 + y * D1 * D2 + z * D1 * D2 * D3, где D1-3 - размерности куба параметров
+            int rotationClass;
+            int positionClass;
             const std::vector<cv::Point3d> imageGrid;
             const std::vector<cv::Point3d> objectGrid;
             size_t w;
@@ -30,15 +38,31 @@ namespace ecv {
         const int CLASSES_CUBE_DIM = 3;
         const int CLASSES_CUBE_SIZE = (int)std::round(std::pow(NUM_CLASSES, 1. / (double)CLASSES_CUBE_DIM));
 
-        std::unordered_map<int, FrameRef> map;
+        struct Dim {
+            int size;
+            double bias;
+            double scale;
+        };
+
+        std::unordered_map<int, FrameRef> rotationMap;
+        std::unordered_map<int, FrameRef> positionMap;
         std::unordered_map<int, std::vector<FrameRef>> frameSets;
 
-        double maxRotValue[2] = {0,0};
-        double maxDistValue = 0;
-        double minDistValue = 1;
-        void addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, decltype(map) *m, const FrameRef &frameRef);
+        void addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *m, const FrameRef &frameRef);
     public:
-        int getClass(const Frame &frame);
+        const Dim R_DIM_X = {5, 0.5, 0.5};
+        const Dim R_DIM_Y = {5, 0.5, 0.5};
+        const Dim R_DIM_Z = {5, 0.5, 0.5};
+
+        const Dim P_DIM_X = {5, 0.0, 1.0};
+        const Dim P_DIM_Y = {5, 0.0, 1.0};
+        const Dim P_DIM_Z = {5, 0.0, 1.0};
+
+        const int TOTAL_VOLUME = R_DIM_X.size * R_DIM_Y.size * R_DIM_Z.size + P_DIM_X.size * P_DIM_Y.size * P_DIM_Z.size;
+
+        cv::Point3d getRotationClass(const CalibrateFrameCollector::Frame &frame) const;
+        cv::Point3d getPositionClass(const Frame &frame) const;
+        int getClass(cv::Point3d point3, Dim dimX, Dim dimY, Dim dimZ);
         FrameRef createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts);
         explicit CalibrateFrameCollector(cv::Size frameSize) : frameSize(frameSize) {}
         void addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const FrameRef &frameRef);
@@ -51,7 +75,14 @@ namespace ecv {
         FrameRef loadFrame(const cv::FileNode &frame);
         void load(GridPreferredSizeProvider &gridPreferredSizeProvider, const cv::FileStorage &fs);
         void store(cv::FileStorage &fs) const;
-        int getClassesCubeSize() const { return CLASSES_CUBE_SIZE; }
+        int getDatasetVolume() const { return TOTAL_VOLUME; }
+
+        std::vector<CalibrateFrameCollector::FrameRef>
+        getFramesSampleFrom(int n, size_t w, size_t h, bool validate,
+                            const std::unordered_map<int, FrameRef> &map) const;
+
+        size_t getFrameCount() const;
+        size_t getFrameSetCount() const;
     };
 };
 

@@ -17,7 +17,7 @@ double distance(cv::Point2d p1, cv::Point2d p2) {
  * @param frame
  * @return
  */
-int CalibrateFrameCollector::getClass(const CalibrateFrameCollector::Frame &frame) {
+cv::Point3d CalibrateFrameCollector::getRotationClass(const CalibrateFrameCollector::Frame &frame) const {
     int w = frameSize.width;
     int h = frameSize.height;
     int w2 = w / 2;
@@ -76,46 +76,75 @@ int CalibrateFrameCollector::getClass(const CalibrateFrameCollector::Frame &fram
         avgCellSize += std::sqrt(std::pow(side.x - center.x, 2) + std::pow(side.y - center.y, 2)) / (double)sides.size();
     }
 
-    auto maxPossibleCellSize = (double)std::min(w, h) / 6;
-
     cv::solvePnP(objectPoints, imagePoints, cameraMatrix, distCoeffs, rvec, tvec);
 
     cv::Mat rotationMatrix;
     cv::Rodrigues(rvec, rotationMatrix);  // Формула Родригеса
     cv::Vec3d n = rotationMatrix.col(2); // нормаль доски в системе камеры
-    auto dist = avgCellSize / maxPossibleCellSize;
 
-    auto sz = CLASSES_CUBE_SIZE;
-    auto sz2 = ((double)sz - 1) / 2.;
+    auto x = n[0];
+    auto y = n[1];
+    auto z = n[2];
 
+    return {x, y, z};
+}
 
-    auto x = (int)(std::round((n[0] + 1) * sz2));
-    auto y = (int)(std::round((n[1] + 1) * sz2));
-    auto z = (int)(std::round(dist * sz));
+/**
+ * Определяет список классов, которым принадлежит кадр: центр, левый верхний угол, сильный крен и т.п. CalibrateFrameCollector::FrameClass::*
+ *
+ * @param frame
+ * @return
+ */
+cv::Point3d CalibrateFrameCollector::getPositionClass(const CalibrateFrameCollector::Frame &frame) const {
+    int w = frameSize.width;
+    int h = frameSize.height;
+    const auto gw = frame.w;
+    const auto gh = frame.h;
 
-    int offset = x * sz * sz + y * sz + z;
+    const auto &g = frame.imageGrid;
+    cv::Point2d topLeft = {g[0].x, g[0].y};
+    cv::Point2d topRight = {g[gw - 1].x, g[gw - 1].y};
+    cv::Point2d bottomLeft = {g[(gh - 1) * gw + 0].x, g[(gh - 1) * gw + 0].y};
+    cv::Point2d bottomRight = {g[(gh - 1) * gw + gw - 1].x, g[(gh - 1) * gw + gw - 1].y};
 
-    std::cout << "getClass x " << n[0] << " y " << n[1] << " z " << n[2] << " d " << dist << " sin(d) " << dist << "(x,y,z)" << x << "," << y << "," << z << std::endl;
+    const double rect[] = {
+            std::min(topLeft.x, bottomLeft.x),
+            std::min(topLeft.y, topRight.y),
+            std::max(topRight.x, bottomRight.x),
+            std::max(bottomLeft.y, bottomRight.y),
+    };
 
-    maxRotValue[0] = std::max(maxRotValue[0], std::abs(n[0]));
-    maxRotValue[1] = std::max(maxRotValue[1], std::abs(n[1]));
-    maxDistValue = std::max(maxDistValue, dist);
-    minDistValue = std::min(minDistValue, dist);
+    auto rw = rect[2] - rect[0];
+    auto rh = rect[3] - rect[1];
 
-    return offset;
+    auto x = rect[0] / (w - rw);
+    auto y = rect[1] / (h - rh);
+    auto z = 1 - sqrt(rw * rh / (w * h));
+
+    return {x, y, z};
+}
+
+int CalibrateFrameCollector::getClass(cv::Point3d p, Dim dimX, Dim dimY, Dim dimZ) {
+    return (int)(
+          std::floor(std::clamp((p.x * dimX.scale + dimX.bias), 0., 1.) * dimX.size)
+        + std::floor(std::clamp((p.y * dimY.scale + dimY.bias), 0., 1.) * dimX.size * dimY.size)
+        + std::floor(std::clamp((p.z * dimZ.scale + dimZ.bias), 0., 1.) * dimX.size * dimY.size * dimZ.size)
+    );
 }
 
 std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::createFrame(const std::vector<cv::Point3d> &imageGrid,
                                                                                      const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts) {
-    auto frameRef = std::shared_ptr<Frame>(new Frame({0, imageGrid, objectGrid, w, h, cost, ts, std::rand() % 2 == 0}));
-    frameRef->cls = getClass(*frameRef);
+    auto frameRef = std::shared_ptr<Frame>(new Frame({{0, 0, 0}, {0, 0, 0}, 0, 0, imageGrid, objectGrid, w, h, cost, ts, std::rand() % 2 == 0}));
+    frameRef->rotation = getRotationClass(*frameRef);
+    frameRef->position = getPositionClass(*frameRef);
+    frameRef->rotationClass = getClass(frameRef->rotation, R_DIM_X, R_DIM_Y, R_DIM_Z);
+    frameRef->positionClass = getClass(frameRef->position, P_DIM_X, P_DIM_Y, P_DIM_Z);
 
     return frameRef;
 }
 
 
-void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, std::unordered_map<int, FrameRef> *m, const CalibrateFrameCollector::FrameRef &frameRef) {
-    int cls = frameRef->cls;
+void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *m, const CalibrateFrameCollector::FrameRef &frameRef) {
     const auto &it = m->find(cls);
 
     const auto w = frameRef->w;
@@ -128,14 +157,11 @@ void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferre
     const auto ew = it == m->end() ? pw : it->second->w;
     const auto eh = it == m->end() ? ph : it->second->h;
 
-    auto key = (int) w * 255 + (int) h;
-
     if (it == m->end()) {
         gridPreferredSizeProvider.registerFrameStat(w, h);
         m->insert({cls, frameRef});
     // если сетка лучше или соответствует более популярному размеру
     } else if (frameRef->cost < it->second->cost || (pw == w && ph == h && (ew != w || eh != h))) {
-        auto key2 = (int) ew * 255 + (int) eh;
         gridPreferredSizeProvider.replaceFrameStat(w, h, ew, eh);
         m->emplace(cls, frameRef);
     }
@@ -154,7 +180,8 @@ void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferre
  * @param cost
  */
 void CalibrateFrameCollector::addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const std::shared_ptr<Frame> &frameRef) {
-    addFrameTo(gridPreferredSizeProvider, &map, frameRef);
+    addFrameTo(gridPreferredSizeProvider, frameRef->rotationClass, &rotationMap, frameRef);
+    addFrameTo(gridPreferredSizeProvider, frameRef->positionClass, &positionMap, frameRef);
 }
 
 void CalibrateFrameCollector::addMulticamFrames(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &_frameSets) {
@@ -162,7 +189,7 @@ void CalibrateFrameCollector::addMulticamFrames(const std::vector<std::vector<Ca
         if (f[0] == nullptr) {
             continue;
         }
-        int cls = f[0]->cls;
+        int cls = f[0]->rotationClass;
         double cost = f[0]->cost;
         const auto &it = this->frameSets.find(cls);
 
@@ -174,7 +201,7 @@ void CalibrateFrameCollector::addMulticamFrames(const std::vector<std::vector<Ca
     }
 }
 
-std::vector<CalibrateFrameCollector::FrameRef> CalibrateFrameCollector::getFramesSample(int n, size_t w, size_t h, bool validate) const {
+std::vector<CalibrateFrameCollector::FrameRef> CalibrateFrameCollector::getFramesSampleFrom(int n, size_t w, size_t h, bool validate, const std::unordered_map<int, FrameRef> &map) const {
     std::vector<FrameRef> f(n);
 
     std::uniform_int_distribution rng(0, n - 1);
@@ -199,6 +226,31 @@ std::vector<CalibrateFrameCollector::FrameRef> CalibrateFrameCollector::getFrame
     return f;
 }
 
+std::vector<CalibrateFrameCollector::FrameRef> CalibrateFrameCollector::getFramesSample(int n, size_t w, size_t h, bool validate) const {
+    if (rotationMap.empty() && positionMap.empty()) {
+        return {};
+    }
+    if (rotationMap.empty()) {
+        return getFramesSampleFrom(n, w, h, validate, positionMap);
+    }
+    if (positionMap.empty()) {
+        return getFramesSampleFrom(n, w, h, validate, rotationMap);
+    }
+
+    int nR = n * (int)positionMap.size() / (int)(positionMap.size() + rotationMap.size());
+    int nP = n - nR;
+    std::vector<FrameRef> fR, fP;
+    fR.reserve(n);
+    fP.reserve(nP);
+
+    fR = getFramesSampleFrom(nR, w, h, validate, rotationMap);
+    fP = getFramesSampleFrom(nP, w, h, validate, positionMap);
+
+    fR.insert(fR.end(), fP.begin(), fP.end());
+
+    return fR;
+}
+
 std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrateFrameCollector::getFrameSetsSample(int n, size_t w, size_t h, bool validate) const {
     std::vector<std::vector<FrameRef>> f(n);
 
@@ -211,7 +263,7 @@ std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrateFrameCollec
             if (w > 0) {
                 auto valid = true;
                 for (const auto &frame: frameSet.second) {
-                    if (frame->w != w || frame->h != h) {
+                    if (frame == nullptr || frame->w != w || frame->h != h) {
                         valid = false;
                     }
                 }
@@ -237,29 +289,29 @@ std::vector<std::vector<CalibrateFrameCollector::FrameRef>> CalibrateFrameCollec
 }
 
 double CalibrateFrameCollector::getProgress() const {
-    auto sz = CLASSES_CUBE_SIZE;
-    auto sz2 = sz / 2;
-    auto dim1 = (int)std::ceil(std::max(0.6, maxRotValue[0]) * 2 * sz2);
-    auto dim2 = (int)std::ceil(std::max(0.6, maxRotValue[1]) * 2 * sz2);
-    auto dim3 = (int)std::ceil(std::max(1., (maxDistValue - minDistValue)) * sz);
-
-    cv::Mat progressView = cv::Mat::zeros(dim2 + 1, dim1 + 1, CV_8U);
-
-    auto zStep = (unsigned char)(255 / dim3);
-
-    for (const auto &item : map) {
-        auto i = item.first;
-        auto xy = i / sz;
-        auto x = std::clamp(xy / sz - sz2 + (int)std::round((double)dim1 / 2), 0, dim1);
-        auto y = std::clamp(xy % sz - sz2 + (int)std::round((double)dim2 / 2), 0, dim2);
-
-        progressView.at<unsigned char>(y, x) += zStep;
-    }
-
-    cv::resize(progressView, progressView, cv::Size(640, (int)(640 * dim1 / dim2)), cv::INTER_NEAREST);
-    cv::imshow("progress", progressView);
-
-    return (double)map.size() / (double)(3.14 / 4 * dim1 * dim2 * dim3);
+//#ifdef HAVE_OPENCV_HIGHGUI
+//    cv::Mat RView = cv::Mat::zeros(P_DIM_Y.size, P_DIM_X.size, CV_8U);
+//    cv::Mat PView = cv::Mat::zeros(P_DIM_Y.size, P_DIM_X.size, CV_8U);
+//
+//    auto zStep = (unsigned char)(255 / P_DIM_Z.size);
+//
+//    for (const auto &item : positionMap) {
+//        PView.at<unsigned char>((int)item.second->position.x, (int)item.second->position.y) += zStep;
+//    }
+//
+//    cv::imshow("progress P", PView);
+//
+//    zStep = (unsigned char)(255 / R_DIM_Z.size);
+//
+//    for (const auto &item : rotationMap) {
+//        RView.at<unsigned char>((int)item.second->position.x, (int)item.second->position.y) += zStep;
+//    }
+//
+//    cv::resize(RView, RView, cv::Size(640, (int)(640 * P_DIM_X.size / P_DIM_Y.size)), cv::INTER_NEAREST);
+//    cv::resize(PView, PView, cv::Size(640, (int)(640 * P_DIM_X.size / P_DIM_Y.size)), cv::INTER_NEAREST);
+//    cv::imshow("progress R", RView);
+//#endif
+    return (double)(positionMap.size() + rotationMap.size()) / (double)TOTAL_VOLUME;
 }
 
 std::vector<std::vector<cv::Point3d>> CalibrateFrameCollector::getCollectedImageGridsSample(const std::vector<CalibrateFrameCollector::FrameRef> &sample) const {
@@ -354,12 +406,18 @@ cv::FileStorage& operator << (cv::FileStorage& fs, const std::shared_ptr<Calibra
 }
 
 void CalibrateFrameCollector::store(cv::FileStorage &fs) const {
-//    fs << "frames" << "[";
-//    for (const auto &item: map) {
-//        fs << item.second;
-//    }
-//
-//    fs << "]";
+    std::set<double> processed;
+    fs << "frames" << "[";
+    for (const auto &item: rotationMap) {
+        processed.insert(item.second->ts);
+        fs << item.second;
+    }
+    for (const auto &item: positionMap) {
+        if (processed.find(item.second->ts) == processed.end()) {
+            fs << item.second;
+        }
+    }
+    fs << "]";
     fs << "multicam" << "[";
     for (const auto &frameSet: frameSets) {
         fs << "[";
@@ -370,4 +428,12 @@ void CalibrateFrameCollector::store(cv::FileStorage &fs) const {
     }
 
     fs << "]";
+}
+
+size_t CalibrateFrameCollector::getFrameCount() const {
+    return rotationMap.size() + positionMap.size();
+}
+
+size_t CalibrateFrameCollector::getFrameSetCount() const {
+    return frameSets.size();
 }
