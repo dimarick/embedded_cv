@@ -132,13 +132,15 @@ int CalibrateFrameCollector::getClass(cv::Point3d p, Dim dimX, Dim dimY, Dim dim
     );
 }
 
-std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::createFrame(const std::vector<cv::Point3d> &imageGrid,
-                                                                                     const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts) {
-    auto frameRef = std::shared_ptr<Frame>(new Frame({{0, 0, 0}, {0, 0, 0}, 0, 0, imageGrid, objectGrid, w, h, cost, ts, std::rand() % 2 == 0}));
-    frameRef->rotation = getRotationClass(*frameRef);
-    frameRef->position = getPositionClass(*frameRef);
-    frameRef->rotationClass = getClass(frameRef->rotation, R_DIM_X, R_DIM_Y, R_DIM_Z);
-    frameRef->positionClass = getClass(frameRef->position, P_DIM_X, P_DIM_Y, P_DIM_Z);
+CalibrateFrameCollector::FrameRef CalibrateFrameCollector::createFrame(const std::vector<cv::Point3d> &imageGrid,
+                                                                                     const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts, bool validate) {
+    auto pFrame = new Frame({{0, 0, 0}, {0, 0, 0}, 0, 0, imageGrid, objectGrid, w, h, cost, ts, validate});
+    pFrame->rotation = getRotationClass(*pFrame);
+    pFrame->position = getPositionClass(*pFrame);
+    pFrame->rotationClass = getClass(pFrame->rotation, R_DIM_X, R_DIM_Y, R_DIM_Z);
+    pFrame->positionClass = getClass(pFrame->position, P_DIM_X, P_DIM_Y, P_DIM_Z);
+
+    auto frameRef = FrameRef(pFrame);
 
     return frameRef;
 }
@@ -179,7 +181,7 @@ void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferre
  * @param h
  * @param cost
  */
-void CalibrateFrameCollector::addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const std::shared_ptr<Frame> &frameRef) {
+void CalibrateFrameCollector::addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const FrameRef &frameRef) {
     addFrameTo(gridPreferredSizeProvider, frameRef->rotationClass, &rotationMap, frameRef);
     addFrameTo(gridPreferredSizeProvider, frameRef->positionClass, &positionMap, frameRef);
 }
@@ -365,7 +367,7 @@ void CalibrateFrameCollector::load(GridPreferredSizeProvider &gridPreferredSizeP
     }
 }
 
-std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::loadFrame(const cv::FileNode &frame) {
+CalibrateFrameCollector::FrameRef CalibrateFrameCollector::loadFrame(const cv::FileNode &frame) {
     std::vector<cv::Point3d> imagePoints, objectPoints;
     if (frame["imagePoints"].size() != frame["objectPoints"].size()) {
         return nullptr;
@@ -383,13 +385,12 @@ std::shared_ptr<CalibrateFrameCollector::Frame> CalibrateFrameCollector::loadFra
 
     const FrameRef &frameRef = createFrame(imagePoints, objectPoints, (int) frame["w"], (int) frame["h"],
                                            (double) frame["cost"],
-                                           (double) frame["ts"]);
-    frameRef->validate = (bool)((int)frame["validate"]);
-
+                                           (double) frame["ts"],
+                                           (bool)((int)frame["validate"]));
     return frameRef;
 }
 
-cv::FileStorage& operator << (cv::FileStorage& fs, const std::shared_ptr<CalibrateFrameCollector::Frame> &frame) {
+cv::FileStorage& operator << (cv::FileStorage& fs, const CalibrateFrameCollector::FrameRef &frame) {
     fs << "{" << "w" << (int) frame->w << "h" << (int) frame->h << "cost" << frame->cost << "ts" << frame->ts << "validate" << frame->validate;
     fs << "imagePoints" << "[";
     for (const auto &point: frame->imageGrid) {

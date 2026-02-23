@@ -89,7 +89,6 @@ void CalibrationStrategy::addFrameSet(const FrameRefList &frameSet) {
         std::unique_lock<std::mutex> lock(pendingFramesMutex);
         for (int i = 0; i < numCameras; ++i) {
             if (frameSet[i] != nullptr) {
-                frameSet[i]->validate = validate;
                 pendingFrames[i].insert(frameSet[i]);
                 if (pendingFrames[i].size() > MAX_FRAMES_QUEUE) {
                     pendingFrames[i].erase(pendingFrames[i].begin());
@@ -163,6 +162,8 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
 }
 
 void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList> &frameSets) {
+    return;
+
     std::vector<FrameRefList> validFrameSets;
     std::vector<FrameRefList> trainFrameSets;
 
@@ -200,6 +201,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
     if (trainFrameSets.empty()) {
         return;
     }
+
 
     std::vector<cv::Size> imageSize;
     std::vector<unsigned char> models;
@@ -275,8 +277,6 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
             break;
         }
     }
-
-    frameCollectors[0].addMulticamFrames(trainFrameSets);
 
     preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
     w = preferredSize != nullptr ? preferredSize->w : 0;
@@ -375,21 +375,21 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
             cv::initUndistortRectifyMap(Ks[i], distortions[i], R2, P2, frameSize, CV_32FC2, map[i], tmp);
         }
 
-        for (int i = 0; i < numCameras; ++i) {
-            frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::WRITE);
+//        for (int i = 0; i < numCameras; ++i) {
+//            frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::WRITE);
+//
+//            if (!frameDataStorage[i].isOpened()) {
+//                continue;
+//            }
+//
+//            frameCollectors[i].store(frameDataStorage[i]);
+//
+//            frameDataStorage[i].release();
+//        }
 
-            if (!frameDataStorage[i].isOpened()) {
-                continue;
-            }
-
-            frameCollectors[i].store(frameDataStorage[i]);
-
-            frameDataStorage[i].release();
-        }
-
-        for (int i = 0; i < numCameras; ++i) {
-            onUpdateCallback(i, *this);
-        }
+//        for (int i = 0; i < numCameras; ++i) {
+//            onUpdateCallback(i, *this);
+//        }
     }
 }
 
