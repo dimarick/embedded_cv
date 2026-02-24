@@ -55,6 +55,9 @@ void CalibrationStrategy::runCalibration() {
 }
 
 void CalibrationStrategy::stopCalibration() noexcept {
+    if (!running) {
+        return;
+    }
     running = false;
 
     camThreadsWait.notify_all();
@@ -81,7 +84,6 @@ void CalibrationStrategy::addFrameSet(const FrameRefList &frameSet) {
     if (frameSet[0] == nullptr) {
         return;
     }
-    auto validate = frameSet[0]->validate;
 
     CV_Assert(frameSet.size() == numCameras);
     {
@@ -107,7 +109,7 @@ void CalibrationStrategy::addFrameSet(const FrameRefList &frameSet) {
 }
 
 void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int cameraId) {
-    int i = cameraId;
+    const int i = cameraId;
 
     auto preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
     auto w = preferredSize != nullptr ? preferredSize->w : 0;
@@ -582,13 +584,13 @@ void CalibrationStrategy::printMulticamCalibrationStats(
 
     // --- 4. Общая статистика по внутренним параметрам ---
     auto meanStd = [](const std::vector<double>& v) -> std::pair<double, double> {
-        double sum = 0.0, sqsum = 0.0;
+        double sum = 0.0, sqSum = 0.0;
         for (double x : v) {
             sum += x;
-            sqsum += x * x;
+            sqSum += x * x;
         }
-        double mean = sum / v.size();
-        double stddev = std::sqrt(sqsum / v.size() - mean * mean);
+        double mean = sum / (double)v.size();
+        double stddev = std::sqrt(sqSum / (double)v.size() - mean * mean);
         return {mean, stddev};
     };
 
@@ -598,7 +600,7 @@ void CalibrationStrategy::printMulticamCalibrationStats(
     auto [cy_mean, cy_std] = meanStd(cy_all);
 
     std::cout << "\n--- Сводная статистика внутренних параметров по всем камерам ---\n";
-    std::cout << "         Среднее   Стд.откл.   Отклонение от среднего (%)\n";
+    std::cout << "         Среднее   Стд. откл.   Отклонение от среднего (%)\n";
     std::cout << "fx     : " << std::setw(8) << fx_mean << "   " << std::setw(8) << fx_std
               << "   " << std::setw(8) << (fx_std / fx_mean * 100) << "\n";
     std::cout << "fy     : " << std::setw(8) << fy_mean << "   " << std::setw(8) << fy_std

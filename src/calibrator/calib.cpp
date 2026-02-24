@@ -133,20 +133,22 @@ int main(int argc, const char **argv) {
     std::vector<double> frameTs(frames.size());
     std::vector<double> getFrameTs(frames.size());
     std::vector<std::thread> readerThreads(frames.size());
-    volatile bool threadRunning[frames.size()];
+    volatile bool captureRunning = true;
 
-    auto captureThreadCallback = [&captures, &framesMutex, &readingFrames, &frameTs, &readFrames, &threadRunning](int i) {
-        while (threadRunning[i]) {
+    for (int i = 0; i < frames.size(); ++i) {
+        captures[i].read(frames[i]);
+    }
+
+    auto captureThreadCallback = [&captures, &framesMutex, &readingFrames, &frameTs, &readFrames, &captureRunning](int i) {
+        while (captureRunning) {
             captures[i].read(readingFrames[i]);
-            framesMutex[i].lock();
+            std::lock_guard lock(framesMutex[i]);
             readingFrames[i].copyTo(readFrames[i]);
             frameTs[i] = std::chrono::duration<double>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-            framesMutex[i].unlock();
         }
     };
 
     for (int i = 0; i < readerThreads.size(); ++i) {
-        threadRunning[i] = true;
         getFrameTs[i] = 0;
         readerThreads[i] = std::thread(captureThreadCallback, i);
     }
@@ -154,10 +156,6 @@ int main(int argc, const char **argv) {
     std::vector<ecv::CalibrateMapper> calibrateMapper(frames.size()), testCalibrateMapper(frames.size());
     std::vector<ecv::Calibrator> calibrator(frames.size());
     std::vector<ecv::Calibrator::CalibrationData> calibrationData(frames.size());
-
-    for (int i = 0; i < frames.size(); ++i) {
-        captures[i].read(frames[i]);
-    }
 
     std::vector<double> bestQ(frames.size(), 1. / 0.);
     std::vector<double> bestPairQ(frames.size(), 1. / 0.);
@@ -316,15 +314,15 @@ int main(int argc, const char **argv) {
 #endif
     }
 
-    for (int i = 0; i < readerThreads.size(); ++i) {
-        threadRunning[i] = false;
-    }
+    captureRunning = false;
 
     for (auto &thread : readerThreads) {
         if (thread.joinable()) {
             thread.join();
         }
     }
+
+    calibrationStrategy.stopCalibration();
 
     return 0;
 }

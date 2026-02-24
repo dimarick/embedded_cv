@@ -100,11 +100,11 @@ namespace ecv {
         ) : frameSize(frameSize), numCameras(numCameras), configPath(std::move(configPath)), onUpdateCallback(std::move(onUpdateCallback)) {
 
             // Предварительно выделяем память, но не вызываем конструкторы объектов.
-            // Это важно так как  при добавлении второй камеры через emplace_back
+            // Это важно так как при добавлении второй камеры через emplace_back
             // происходит реаллокация и перемещение вектора.
             // Как правило, это происходит прозрачно и несет только накладные расходы на лишний вызов аллокатора,
             // но в частности FileStorage, (точнее порождаемые им FileNode)
-            // содержат небезопасные ссылки (char * и т.п.), в результате FileStorage сваливаается в SIGSEGV
+            // содержат небезопасные ссылки (char * и т.п.), в результате FileStorage сваливается в SIGSEGV
             // на некоторых абсолютно корректных файлах
             frameCollectors.reserve(numCameras);
             frameDataStorage.reserve(numCameras);
@@ -158,7 +158,7 @@ namespace ecv {
 
         void setCalibrationData(int cameraId, const Calibrator::CalibrationData &updatedData) {
             std::unique_lock lock(dataMutex);
-            data[cameraId] = updatedData;
+            data.at(cameraId) = updatedData;
         }
 
         [[nodiscard]] cv::Mat getMap(int cameraId) const {

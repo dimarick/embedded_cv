@@ -60,13 +60,9 @@ namespace ecv {
             return gridSizeStatTop;
         }
 
-        void registerFrameStat(size_t w, size_t h) {
+        void insertFrameStat(size_t w, size_t h) {
             std::lock_guard lock(mutex);
             _registerFrameStat(w, h);
-        }
-        void unregisterFrameStat(size_t w, size_t h) {
-            std::lock_guard lock(mutex);
-            _unregisterFrameStat(w, h);
         }
         void replaceFrameStat(size_t w1, size_t h1, size_t w0, size_t h0) {
             if (w1 == w0 && h1 == h0) {

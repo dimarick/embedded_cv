@@ -92,13 +92,13 @@ namespace ecv {
 
     void Calibrator::convertTo2dPoints(const std::vector<cv::Point3d> &points3d, std::vector<cv::Point2f> &points2d) {
         for (int j = 0; j < points2d.size(); ++j) {
-            points2d[j] = cv::Point2f(points3d[j].x, points3d[j].y);
+            points2d[j] = cv::Point2f((float)points3d[j].x, (float)points3d[j].y);
         }
     }
 
     void Calibrator::convertToPlain3dPoints(const std::vector<cv::Point3d> &points1, std::vector<cv::Point3f> &points2) {
         for (int j = 0; j < points2.size(); ++j) {
-            points2[j] = cv::Point3f(points1[j].x, points1[j].y, 0);
+            points2[j] = cv::Point3f((float)points1[j].x, (float)points1[j].y, 0);
         }
     }
 
