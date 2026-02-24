@@ -32,11 +32,8 @@ namespace ecv {
         };
         typedef std::shared_ptr<const Frame> FrameRef;
     private:
+        mutable std::unique_ptr<std::mutex> m;
         cv::Size frameSize;
-
-        const int NUM_CLASSES = 10*10*10;
-        const int CLASSES_CUBE_DIM = 3;
-        const int CLASSES_CUBE_SIZE = (int)std::round(std::pow(NUM_CLASSES, 1. / (double)CLASSES_CUBE_DIM));
 
         struct Dim {
             int size;
@@ -50,13 +47,16 @@ namespace ecv {
 
         void addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *m, const FrameRef &frameRef);
     public:
-        const Dim R_DIM_X = {5, 0.5, 0.5};
-        const Dim R_DIM_Y = {5, 0.5, 0.5};
-        const Dim R_DIM_Z = {5, 0.5, 0.5};
+        explicit CalibrateFrameCollector(cv::Size frameSize) : frameSize(frameSize) {
+            m = std::make_unique<std::mutex>();
+        }
+        const Dim R_DIM_X = {10, 0.5, 0.5};
+        const Dim R_DIM_Y = {10, 0.5, 0.5};
+        const Dim R_DIM_Z = {10, 0.5, 0.5};
 
-        const Dim P_DIM_X = {5, 0.0, 1.0};
-        const Dim P_DIM_Y = {5, 0.0, 1.0};
-        const Dim P_DIM_Z = {5, 0.0, 1.0};
+        const Dim P_DIM_X = {10, 0.0, 1.0};
+        const Dim P_DIM_Y = {10, 0.0, 1.0};
+        const Dim P_DIM_Z = {10, 0.0, 1.0};
 
         const int TOTAL_VOLUME = R_DIM_X.size * R_DIM_Y.size * R_DIM_Z.size + P_DIM_X.size * P_DIM_Y.size * P_DIM_Z.size;
 
@@ -64,7 +64,6 @@ namespace ecv {
         cv::Point3d getPositionClass(const Frame &frame) const;
         int getClass(cv::Point3d point3, Dim dimX, Dim dimY, Dim dimZ);
         FrameRef createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts, bool validate = std::rand() % 2 == 0);
-        explicit CalibrateFrameCollector(cv::Size frameSize) : frameSize(frameSize) {}
         void addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const FrameRef &frameRef);
         void addMulticamFrames(const std::vector<std::vector<FrameRef>>& _frameSets);
         double getProgress() const;

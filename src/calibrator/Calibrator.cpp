@@ -92,7 +92,7 @@ namespace ecv {
 
     void Calibrator::convertTo2dPoints(const std::vector<cv::Point3d> &points3d, std::vector<cv::Point2f> &points2d) {
         for (int j = 0; j < points2d.size(); ++j) {
-            points2d[j] = cv::Point(points3d[j].x, points3d[j].y);
+            points2d[j] = cv::Point2f(points3d[j].x, points3d[j].y);
         }
     }
 

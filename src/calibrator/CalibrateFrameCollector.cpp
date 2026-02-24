@@ -165,7 +165,7 @@ void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferre
     // если сетка лучше или соответствует более популярному размеру
     } else if (frameRef->cost < it->second->cost || (pw == w && ph == h && (ew != w || eh != h))) {
         gridPreferredSizeProvider.replaceFrameStat(w, h, ew, eh);
-        m->emplace(cls, frameRef);
+        m->insert_or_assign(cls, frameRef);
     }
 }
 

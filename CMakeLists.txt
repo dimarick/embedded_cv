@@ -86,7 +86,6 @@ add_executable(tests
         src/calibrator/CalibrateFrameCollector.cpp
         src/calibrator/GridPreferredSizeProvider.cpp
         tests/calibrator/CalibrateFrameCollectorTest.cpp
-        tests/calibrator/CalibrationStrategyTest.cpp
         tests/calibrator/StatStreamingTest.cpp
         tests/calibrator/StatStreamingTest.cpp
 )

@@ -35,7 +35,7 @@ namespace ecv {
                 cameraMatrix = cv::Mat::zeros(3, 3, CV_64F);
                 rvecs = cv::Mat::zeros(3, 3, CV_64F);
                 tvecs = cv::Mat::zeros(3, 3, CV_64F);
-                distCoeff = std::vector<double>(12);
+                distCoeff = std::vector<double>(14);
             }
 
             CalibrationData(const CalibrationData& other) {

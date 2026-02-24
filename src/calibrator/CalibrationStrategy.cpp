@@ -20,9 +20,12 @@ void CalibrationStrategy::runCalibration() {
                         std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
                         std::copy(that->pendingFrames[i].begin(), that->pendingFrames[i].end(), pendingFrames.begin());
                         pendingFrames.resize(that->pendingFrames[i].size());
-                        that->pendingFrames[i].clear();
                     }
                     that->camThreadCallback(pendingFrames, i);
+                    {
+                        std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
+                        that->pendingFrames[i].clear();
+                    }
                 }
             }
         }, this, i);
@@ -35,14 +38,17 @@ void CalibrationStrategy::runCalibration() {
                 std::unique_lock<std::mutex> lock(that->pendingFramesMutex);
                 that->multicamThreadWait.wait(lock);
             }
-            if (that->running && !that->pendingFrameSets.empty()) {
+            if (that->running) {
                 {
                     std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
                     frames.resize(that->pendingFrameSets.size());
                     std::copy(that->pendingFrameSets.begin(), that->pendingFrameSets.end(), frames.begin());
-                    that->pendingFrameSets.clear();
                 }
                 that->multicamThreadCallback(frames);
+                {
+                    std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
+                    that->pendingFrameSets.clear();
+                }
             }
         }
     }, this);
@@ -156,14 +162,13 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
         costs[i] = std::min(cost, costs[i]);
         viewCosts[i] = cost;
         multicamCosts = cost * 2;
+        multicamThreadWait.notify_all();
 
         std::cout << "Calib " << cameraId << ", c = " << cost << std::endl;
     }
 }
 
 void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList> &frameSets) {
-    return;
-
     std::vector<FrameRefList> validFrameSets;
     std::vector<FrameRefList> trainFrameSets;
 
@@ -186,10 +191,6 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         }
     }
 
-    if (validFrameSets.empty()) {
-        return;
-    }
-
     frameCollectors[0].addMulticamFrames(validFrameSets);
 
     auto sample = frameCollectors[0].getFrameSetsSample(TRAIN_SAMPLE_SIZE, w, h, false);
@@ -201,7 +202,6 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
     if (trainFrameSets.empty()) {
         return;
     }
-
 
     std::vector<cv::Size> imageSize;
     std::vector<unsigned char> models;
@@ -362,7 +362,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
                     Ks[0], distortions[0],
                     Ks[i], distortions[i],
                     frameSize,
-                    Rs[i], Ts[i],
+                    R, Ts[i],
                     R1, R2, P1, P2, Q,
                     cv::CALIB_ZERO_DISPARITY,
                     0.0, // alpha
@@ -375,21 +375,21 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
             cv::initUndistortRectifyMap(Ks[i], distortions[i], R2, P2, frameSize, CV_32FC2, map[i], tmp);
         }
 
-//        for (int i = 0; i < numCameras; ++i) {
-//            frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::WRITE);
-//
-//            if (!frameDataStorage[i].isOpened()) {
-//                continue;
-//            }
-//
-//            frameCollectors[i].store(frameDataStorage[i]);
-//
-//            frameDataStorage[i].release();
-//        }
+        for (int i = 0; i < numCameras; ++i) {
+            frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::WRITE);
 
-//        for (int i = 0; i < numCameras; ++i) {
-//            onUpdateCallback(i, *this);
-//        }
+            if (!frameDataStorage[i].isOpened()) {
+                continue;
+            }
+
+            frameCollectors[i].store(frameDataStorage[i]);
+
+            frameDataStorage[i].release();
+        }
+
+        for (int i = 0; i < numCameras; ++i) {
+            onUpdateCallback(i, *this);
+        }
     }
 }
 
