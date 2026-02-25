@@ -45,7 +45,7 @@ namespace ecv {
         std::unordered_map<int, FrameRef> positionMap;
         std::unordered_map<int, std::vector<FrameRef>> frameSets;
 
-        void addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *m, const FrameRef &frameRef);
+        void addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *map, const FrameRef &frameRef);
     public:
         explicit CalibrateFrameCollector(cv::Size frameSize) : frameSize(frameSize) {
             m = std::make_unique<std::mutex>();

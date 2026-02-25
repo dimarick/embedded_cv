@@ -61,7 +61,7 @@ namespace ecv {
 
         int numCameras = 0;
         cv::Size frameSize;
-        volatile bool running = false;
+        std::atomic<bool> running = false;
         GridPreferredSizeProvider gridPreferredSizeProvider;
         std::vector<CalibrateFrameCollector> frameCollectors;
         std::vector<ecv::Calibrator> calibrators;
@@ -170,9 +170,7 @@ namespace ecv {
         }
 
         [[nodiscard]] auto getGridSize() const {
-            return gridPreferredSizeProvider.getGridPreferredSize() != nullptr
-            ? *gridPreferredSizeProvider.getGridPreferredSize()
-            : ecv::GridPreferredSizeProvider::GridStat{0, 0, 0};
+            return gridPreferredSizeProvider.getGridPreferredSize();
         }
 
         [[nodiscard]] size_t getFrameCount(int cameraId) const {

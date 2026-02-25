@@ -35,29 +35,34 @@ namespace ecv {
                 }
             } else {
                 statIt->second->count++;
-                if (statIt->second->count > gridSizeStatTop->count) {
-                    gridSizeStatTop = statIt->second;
-                }
+                gridSizeStatTop = findGridSizeStatTop();
             }
         }
 
         void _unregisterFrameStat(size_t w, size_t h) {
             auto key = (int) w * 1000 + (int) h;
+
+            auto statIt = gridSizeStat.find(key);
+            if (statIt != gridSizeStat.end()) {
+                statIt->second->count--;
+                gridSizeStatTop = findGridSizeStatTop();
+            }
+        }
+
+        const std::shared_ptr<GridStat> &findGridSizeStatTop() {
             const auto &compare = [](const std::pair<int, std::shared_ptr<GridStat>> &a,
                                      const std::pair<int, std::shared_ptr<GridStat>> &b) {
                 return a.second->count > b.second->count;
             };
 
-            auto statIt = gridSizeStat.find(key);
-            if (statIt != gridSizeStat.end()) {
-                statIt->second->count--;
-                gridSizeStatTop = std::max_element(gridSizeStat.begin(), gridSizeStat.end(), compare)->second;
-            }
-        }
+            return std::max_element(gridSizeStat.begin(), gridSizeStat.end(), compare)->second; }
+
     public:
-        const std::shared_ptr<GridStat> &getGridPreferredSize() const {
+        std::pair<size_t, size_t> getGridPreferredSize() const {
             std::lock_guard lock(mutex);
-            return gridSizeStatTop;
+            return gridSizeStatTop != nullptr
+                ? std::pair(gridSizeStatTop->w, gridSizeStatTop->h)
+                : std::pair(size_t(0), size_t(0));
         }
 
         void insertFrameStat(size_t w, size_t h) {

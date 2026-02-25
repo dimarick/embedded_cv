@@ -2,7 +2,6 @@
 #include "CalibrateFrameCollector.h"
 #include <ranges>
 #include <random>
-#include <highgui.hpp>
 #include <imgproc.hpp>
 
 using namespace ecv;
@@ -146,26 +145,25 @@ CalibrateFrameCollector::FrameRef CalibrateFrameCollector::createFrame(const std
 }
 
 
-void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *m, const CalibrateFrameCollector::FrameRef &frameRef) {
-    const auto &it = m->find(cls);
+void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *map, const CalibrateFrameCollector::FrameRef &frameRef) {
+    const auto &it = map->find(cls);
 
     const auto w = frameRef->w;
     const auto h = frameRef->h;
 
-    auto preferGridSize = gridPreferredSizeProvider.getGridPreferredSize();
+    auto [pw, ph] = gridPreferredSizeProvider.getGridPreferredSize();
+    pw = pw == 0 ? w : pw;
+    ph = ph == 0 ? h : ph;
+    const auto ew = it == map->end() ? pw : it->second->w;
+    const auto eh = it == map->end() ? ph : it->second->h;
 
-    const auto pw = preferGridSize == nullptr ? w : preferGridSize->w;
-    const auto ph = preferGridSize == nullptr ? h : preferGridSize->h;
-    const auto ew = it == m->end() ? pw : it->second->w;
-    const auto eh = it == m->end() ? ph : it->second->h;
-
-    if (it == m->end()) {
+    if (it == map->end()) {
         gridPreferredSizeProvider.insertFrameStat(w, h);
-        m->insert({cls, frameRef});
+        map->insert({cls, frameRef});
     // если сетка лучше или соответствует более популярному размеру
     } else if (frameRef->cost < it->second->cost || (pw == w && ph == h && (ew != w || eh != h))) {
         gridPreferredSizeProvider.replaceFrameStat(w, h, ew, eh);
-        m->insert_or_assign(cls, frameRef);
+        map->insert_or_assign(cls, frameRef);
     }
 }
 

@@ -72,7 +72,7 @@ namespace ecv {
             return 1. / 0.;
         }
 
-        double ema = data.callCount > 0 ? 2. / (result * 20 + 1.) : 1;
+        double ema = data.callCount > 0 ? 2. / (result * 20. + 1.) : 1;
 
         if ((flags & cv::CALIB_FIX_INTRINSIC) == 0) {
             fx = ema * cameraData[0] + (1 - ema) * fx;

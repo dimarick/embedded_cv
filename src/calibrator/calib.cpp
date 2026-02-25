@@ -133,7 +133,7 @@ int main(int argc, const char **argv) {
     std::vector<double> frameTs(frames.size());
     std::vector<double> getFrameTs(frames.size());
     std::vector<std::thread> readerThreads(frames.size());
-    volatile bool captureRunning = true;
+    std::atomic<bool> captureRunning = true;
 
     for (int i = 0; i < frames.size(); ++i) {
         captures[i].read(frames[i]);
@@ -267,8 +267,8 @@ int main(int argc, const char **argv) {
 
             const cv::String &text = std::format(
                     "sz = {}x{} ({}x{})\nprogress = {}% (f={}, s={})\nq = {}\nbestQ = {}\nmcBestQ = {}\npatternSize = {}\npatternSkew = {}\nf = {}x{}\nc = {}x{}",
-                    w, h, calibrationStrategy.getGridSize().w,
-                    calibrationStrategy.getGridSize().h,
+                    w, h, calibrationStrategy.getGridSize().first,
+                    calibrationStrategy.getGridSize().second,
                     calibrationStrategy.getProgress(i) * 100,
                     calibrationStrategy.getFrameCount(i),
                     calibrationStrategy.getFrameSetCount(0),

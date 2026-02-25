@@ -39,6 +39,7 @@ namespace ecv {
             }
 
             CalibrationData(const CalibrationData& other) {
+                callCount = other.callCount;
                 cameraMatrix = other.cameraMatrix.clone();
                 distCoeff = other.distCoeff;
                 rvecs = other.rvecs.clone();
@@ -51,6 +52,7 @@ namespace ecv {
 
             CalibrationData& operator=(const CalibrationData& other) {
                 if (this != &other) {
+                    callCount = other.callCount;
                     cameraMatrix = other.cameraMatrix.clone();
                     distCoeff = other.distCoeff;               // std::vector копируется глубоко
                     rvecs = other.rvecs.clone();

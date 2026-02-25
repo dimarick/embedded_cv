@@ -39,12 +39,15 @@ namespace ecv {
         }
     }
 
-    double CalibrateMapper::detectFrameImagePointsGrid(const cv::UMat &frame, const std::vector<Point3> &peaks, std::vector<Point3> &imageGrid,
+    double CalibrateMapper::detectFrameImagePointsGrid(const cv::UMat &frame, const std::vector<Point3> &peaks,
+                                                       std::vector<Point3> &imageGrid,
                                                        int *w, int *h, cv::Mat &debugFrame) {
         BaseSquare square;
         size_t size = peaks.size();
         drawPeaks(debugFrame, peaks, size, cv::Scalar(0, 255, 0));
         auto squareRmse = detectBaseSquare(frame.size(), peaks , square);
+
+        drawBaseSquare(debugFrame, square, squareRmse < 0.2f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255));
 
         auto result = detectFrameImagePointsGrid(frame.size(), peaks, square, imageGrid, w, h);
 
@@ -70,8 +73,8 @@ namespace ecv {
     void CalibrateMapper::detectPeaks(const cv::UMat &frame, std::vector<Point3> &peaks, size_t *size) {
         cv::UMat gray, grayF;
         cv::cvtColor(frame, gray, cv::ColorConversionCodes::COLOR_BGR2GRAY);
-//        auto clahe = cv::createCLAHE(1, cv::Size(3,3));
-//        clahe->apply(gray, gray);
+        auto clahe = cv::createCLAHE(1, cv::Size(3,3));
+        clahe->apply(gray, gray);
         gray.convertTo(grayF, CV_32F);
         auto matches = cv::UMat(gray.size(), CV_32F);
 
@@ -195,7 +198,7 @@ namespace ecv {
             }
         }
 
-        auto dSize = (m * 0.8f);
+        auto dSize = (m * 0.85f);
 
         auto ema = 2. / (3. + 1.);
         dSize = ema * dSize + (1 - ema) * (double)patternSize;
@@ -309,34 +312,9 @@ namespace ecv {
                 }
             }
         }
-        size_t pw;
-        size_t ph;
-        do {
-            pw = *w;
-            ph = *h;
-            cropGrid(imageGrid, w, h, findPointsMassCenter(imageGrid));
-        } while(*w < pw || *h < ph);
+        imageGrid.resize(*w * *h);
 
-        // точка является идеальной если предсказание диагонали к ней совпало с реальностью
-        // считаем что дисторсия ничтожно исказила стороны 1 клетки
-        StatStreaming err;
-        err.addFirstValue(0);
-        for (int y = 0; y < *h - 1; ++y) {
-            for (int x = 0; x < *w - 1; ++x) {
-                auto p = imageGrid[y * *w + x];
-                if (p.z < 0) {
-                    err.addValue(1.);
-                    continue;
-                }
-                auto prediction = approximate2(p, imageGrid[y * *w + x + 1], imageGrid[(y + 1) * *w + x]);
-                prediction.z = p.z;
-                auto real = imageGrid[(y + 1) * *w + x + 1];
-                double norm = distanceSqr3(p, prediction);
-                err.addValue(distanceSqr3(prediction, real) / norm);
-            }
-        }
-
-        return std::sqrt(err.mean() + err.stddev());
+        return cropGrid(imageGrid, w, h, findPointsMassCenter(imageGrid));
     }
 
     /**
@@ -401,7 +379,6 @@ namespace ecv {
     }
 
     void CalibrateMapper::drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, int w, int h, const cv::Scalar& color, int thickness) {
-
         for (int x = 0; x < w; ++x) {
             for (int y = 0; y < h; ++y) {
                 auto p = grid[y * w + x];
@@ -548,7 +525,7 @@ namespace ecv {
             auto i = stat.n();
 
             if (i > 5) {
-                if (stat.sigmaValue(z) > 3) {
+                if (stat.sigmaValue(z) > 5) {
                     continue;
                 }
             }
@@ -772,7 +749,7 @@ namespace ecv {
      * @param prevVertical
      * @return
      */
-    typename CalibrateMapper::Point3 CalibrateMapper::approximate2(Point3 current, Point3 left, Point3 top) {
+    typename CalibrateMapper::Point3 CalibrateMapper::approximate2(Point3 current, Point3 left, Point3 top) const {
 //        auto x = current.x + (left.x - current.x) + (top.x - current.x);
 //        auto y = current.y + (left.y - current.y) + (top.y - current.y);
         auto x = top.x + (left.x - current.x);
@@ -781,150 +758,126 @@ namespace ecv {
         return {x, y, -1};
     }
 
-    void CalibrateMapper::cropGrid(std::vector<Point3> &grid, int *w, int *h, Point3 center) const {
+    /**
+     * Ищет прямоугольник стремясь забрать максимум площади за наименьшую стоимость
+     * @param grid
+     * @param w
+     * @param h
+     * @param center
+     */
+    double CalibrateMapper::cropGrid(std::vector<Point3> &grid, int *w, int *h, Point3 center) const {
         auto centerId = findNearestPointId(center, grid, 100);
 
         if (centerId < 0) {
-            return;
+            return 1.;
         }
-
-        int top = 0, left = 0, right = 0, bottom = 0;
-        int cW = centerId % *w;
-        int cH = centerId / *w;
-        int wpad;
-        int hpad;
 
         if (*w < 4 || *h < 4) {
-            return;
+            return 1.;
         }
 
-        auto wScore = 0., hScore = 0.;
+        int top = 1, left = 1, right = 1, bottom = 1;
+        int cW = centerId % *w;
+        int cH = centerId / *w;
 
-        auto maxWpad = std::min(cW, *w - cW) - 2;
-        auto maxHpad = std::min(cH, *h - cH) - 2;
+        auto cost = [cH, cW, &grid, w, h, this](int top, int left, int right, int bottom) {
+            StatStreaming err;
 
-        if (maxWpad < 0 || maxHpad < 0) {
-            return;
-        }
-
-        for (wpad = 0; wpad < maxWpad && wScore <= 0; ++wpad) {
-            wScore = 0.;
-            for (int x = wpad; x < *w - wpad - 1; ++x) {
-                wScore += grid[cH * *w + x].z;
+            err.addFirstValue(0);
+            for (int y = cH - top; y <= cH + bottom; ++y) {
+                for (int x = cW - left; x <= cW + right; ++x) {
+                    if (x >= 0 && x < *w && y >= 0 && y < *h) {
+                        auto p = grid[y * *w + x];
+                        int sy = y < *h - 1 ? 1 : -1;
+                        int sx = x < *w - 1 ? 1 : -1;
+                        if (p.z < 0) {
+                            err.addValue(1.);
+                            continue;
+                        }
+                        auto prediction = approximate2(p, grid[y * *w + x + sx], grid[(y + sy) * *w + x]);
+                        prediction.z = p.z;
+                        auto real = grid[(y + sy) * *w + x + sx];
+                        double norm = distanceSqr3(p, prediction);
+                        err.addValue(distanceSqr3(prediction, real) / norm);
+                    } else {
+                        err.addValue(1.);
+                    }
+                }
             }
-        }
 
-        for (hpad = 0; hpad < maxHpad && hScore <= 0; ++hpad) {
-            hScore = 0.;
-            for (int y = hpad; y < *h - hpad - 1; ++y) {
-                hScore += grid[y * *w + cW].z;
-            }
-        }
+            return err.stddev();
+        };
 
-        wpad = std::min(wpad + 2, maxWpad);
-        hpad = std::min(hpad + 2, maxHpad);
-
-        wScore = 0.;
-        for (int x = wpad; x < *w - wpad - 1; ++x) {
-            wScore += grid[cH * *w + x].z;
-        }
-        hScore = 0.;
-        for (int y = hpad; y < *h - hpad - 1; ++y) {
-            hScore += grid[y * *w + cW].z;
-        }
-
-        int i;
-
+        auto threshold = 2.;
+        auto Q = 1.;
         StatStreaming stat;
-        stat.addFirstValue(wScore);
-        // от центра идем вверх до первого "провала" в значениях
-        i = 0;
-        for (int y = cH + 1; y >= 0; --y, ++i) {
-            top = y;
-            auto rowScore = 0.;
-            for (int x = wpad; x < *w - wpad - 1; ++x) {
-                rowScore += grid[y * *w + x].z;
+
+        stat.addFirstDValue(0);
+
+        auto q = cost(top, left, right, bottom);
+        while (top + bottom < *h && left + right < *w) {
+            auto qt = cost(top + 1, left, right, bottom);
+
+            int i = 0;
+            if ((qt - q) / q < threshold) {
+                top++;
+                i++;
+                q = std::max(q, qt);
             }
 
-            if (stat.stddev() > 0 && stat.sigmaValue(rowScore) > 2) {
-                if (i > 3) {
-                    top++;
-                    break;
-                }
-                continue;
-            }
-            stat.addValue(rowScore);
-        }
 
-        stat.addFirstValue(wScore);
-        // от центра идем вниз до первого "провала" в значениях
-        i = 0;
-        for (int y = cH - 2; y < *h; ++y, ++i) {
-            bottom = y + 1;
-            auto rowScore = 0.;
-            for (int x = wpad; x < *w - wpad - 1; ++x) {
-                rowScore += grid[y * *w + x].z;
+            auto ql = cost(top, left + 1, right, bottom);
+
+            if ((ql - q) / q < threshold) {
+                left++;
+                i++;
+                q = std::max(q, ql);
             }
 
-            if (stat.stddev() > 0 && stat.sigmaValue(rowScore) > 2) {
-                if (i > 3) {
-                    bottom--;
-                    break;
-                }
-                continue;
-            }
-            stat.addValue(rowScore);
-        }
 
-        stat.addFirstValue(hScore);
-        // от центра идем влево до первого "провала" в значениях
-        i = 0;
-        for (int x = cW + 1; x >= 0; --x, ++i) {
-            left = x;
-            auto colScore = 0.;
-            for (int y = hpad; y < *h - hpad - 1; ++y) {
-                colScore += grid[y * *w + x].z;
+            auto qr = cost(top, left, right + 1, bottom);
+
+            if ((qr - q) / q < threshold) {
+                right++;
+                i++;
+                q = std::max(q, qr);
             }
 
-            if (stat.stddev() > 0 && stat.sigmaValue(colScore) > 2) {
-                if (i > 3) {
-                    left++;
-                    break;
-                }
-                continue;
-            }
-            stat.addValue(colScore);
-        }
 
-        stat.addFirstValue(hScore);
-        // от центра идем вправо до первого "провала" в значениях
-        i = 0;
-        for (int x = cW - 2; x < *w; ++x, ++i) {
-            right = x + 1;
-            auto colScore = 0.;
-            for (int y = hpad; y < *h - hpad - 1; ++y) {
-                colScore += grid[y * *w + x].z;
+            auto qb = cost(top, left, right, bottom + 1);
+
+            if ((qb - q) / q < threshold) {
+                bottom++;
+                i++;
+                q = std::max(q, qb);
             }
 
-            if (stat.stddev() > 0 && stat.sigmaValue(colScore) > 2) {
-                if (i > 3) {
-                    right--;
-                    break;
-                }
-                continue;
+            if (i == 0 || q > 0.1) {
+                break;
             }
-            stat.addValue(colScore);
-        }
+            Q = q;
+        };
 
         auto w0 = *w;
-        *w = right - left;
-        *h = bottom - top;
+
+        top = std::clamp(top, 0, cH);
+        bottom = std::clamp(bottom, 0, *h - cH - 1);
+        left = std::clamp(left, 0, cW);
+        right = std::clamp(right, 0, *w - cW - 1);
+
+        *w = right + left + 1;
+        *h = bottom + top + 1;
+
+        top = cH - top;
+        left = cW - left;
 
         for (int y = 0; y < *h; ++y) {
             for (int x = 0; x < *w; ++x) {
                 grid[y * *w + x] = grid[(y + top) * w0 + x + left];
             }
         }
+
+        return Q;
     }
 
     void CalibrateMapper::fillGridRow(size_t w, size_t cH, size_t cW, int j, const std::vector<Point3> &peaks, std::vector<Point3> &grid) {
@@ -986,7 +939,7 @@ namespace ecv {
         return std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2) + std::pow(p1.z - p2.z, 2);
     }
 
-    double CalibrateMapper::sign(double val) {
+    double CalibrateMapper::sign(double val) const {
         return double((double(0) < val) - (val < double(0)));
     }
 } // ecv

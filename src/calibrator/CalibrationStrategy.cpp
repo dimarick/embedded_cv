@@ -111,9 +111,13 @@ void CalibrationStrategy::addFrameSet(const FrameRefList &frameSet) {
 void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int cameraId) {
     const int i = cameraId;
 
-    auto preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
-    auto w = preferredSize != nullptr ? preferredSize->w : 0;
-    auto h = preferredSize != nullptr ? preferredSize->h : 0;
+    size_t w, h;
+    if (frames.empty()) {
+        std::tie(w, h) = gridPreferredSizeProvider.getGridPreferredSize();
+    } else {
+        w = frames.begin()->get()->w;
+        h = frames.begin()->get()->h;
+    }
 
     auto sample = frameCollectors[i].getFramesSample(TRAIN_SAMPLE_SIZE, w, h, false);
 
@@ -138,15 +142,10 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
             frameCollectors[i].getCollectedImageGridsSample(sample),
             trainData,
             0,
-            cv::TermCriteria(100, 1e-7)
+            cv::TermCriteria(100, 1e-8)
     );
 
     auto testData = trainData;
-
-    preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
-    w = preferredSize != nullptr ? preferredSize->w : 0;
-    h = preferredSize != nullptr ? preferredSize->h : 0;
-
     auto sampleValidate = frameCollectors[i].getFramesSample(VALIDATE_SAMPLE_SIZE, w, h, true);
 
     if (sampleValidate.empty()) {
@@ -180,9 +179,13 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         }
     }
 
-    auto preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
-    auto w = preferredSize != nullptr ? preferredSize->w : 0;
-    auto h = preferredSize != nullptr ? preferredSize->h : 0;
+    size_t w, h;
+    if (frameSets.empty()) {
+        std::tie(w, h) = gridPreferredSizeProvider.getGridPreferredSize();
+    } else {
+        w = frameSets.begin()->begin()->get()->w;
+        h = frameSets.begin()->begin()->get()->h;
+    }
 
     for (const auto &frameSet : frameSets) {
         if (isValid(frameSet)) {
@@ -260,7 +263,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
                     perFrameErrors,
                     flagsForIntrinsics,
                     cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC,
-                    cv::TermCriteria(50, 1e-7)
+                    cv::TermCriteria(1000, 1e-8)
             );
         } catch (const std::exception &e) {
             std::cerr << e.what() << std::endl;
@@ -280,10 +283,6 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         }
     }
 
-    preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
-    w = preferredSize != nullptr ? preferredSize->w : 0;
-    h = preferredSize != nullptr ? preferredSize->h : 0;
-
     const auto &sampleValidate = frameCollectors[0].getFrameSetsSample(VALIDATE_SAMPLE_SIZE, w, h, true);
 
     std::vector<cv::Mat> objectPoints2;
@@ -299,7 +298,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
     auto mask2 = cv::Mat(numCameras, (int)sampleValidate.size(), CV_8U);
     for (int frameId = 0; frameId < sampleValidate.size(); frameId++) {
         for (int camId = 0; camId < sampleValidate[frameId].size(); camId++) {
-            mask2.at<unsigned char >(camId, frameId) = sampleValidate[frameId][camId] == nullptr ? 0 : 255;
+            mask2.at<unsigned char>(camId, frameId) = sampleValidate[frameId][camId] == nullptr ? 0 : 255;
         }
     }
 
@@ -670,25 +669,17 @@ void CalibrationStrategy::loadConfig() {
         frameDataStorage[i].release();
     }
 
-    auto preferredSize = gridPreferredSizeProvider.getGridPreferredSize();
-    auto w = preferredSize != nullptr ? preferredSize->w : 0;
-    auto h = preferredSize != nullptr ? preferredSize->h : 0;
-    const auto &sample = frameCollectors[0].getFrameSetsSample(1000, w, h, false);
-    for (const auto &item : sample) {
-        addFrameSet(item);
-    }
+    auto [w, h] = gridPreferredSizeProvider.getGridPreferredSize();
 
-    auto size = gridPreferredSizeProvider.getGridPreferredSize();
-
-    if (size == nullptr) {
+    if (w == 0) {
         return;
     }
 
     for (int i = 0; i < numCameras; ++i) {
-        const auto &framesSample = frameCollectors[i].getFramesSample(100, size->w, size->h, false);
+        const auto &framesSample = frameCollectors[i].getFramesSample(100, w, h, false);
         camThreadCallback(framesSample, i);
     }
 
-    const auto &framesSample = frameCollectors[0].getFrameSetsSample(100, size->w, size->h, false);
+    const auto &framesSample = frameCollectors[0].getFrameSetsSample(100, w, h, false);
     multicamThreadCallback(framesSample);
 }
