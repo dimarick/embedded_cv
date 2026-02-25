@@ -50,13 +50,13 @@ namespace ecv {
         explicit CalibrateFrameCollector(cv::Size frameSize) : frameSize(frameSize) {
             m = std::make_unique<std::mutex>();
         }
-        const Dim R_DIM_X = {10, 0.5, 0.5};
-        const Dim R_DIM_Y = {10, 0.5, 0.5};
-        const Dim R_DIM_Z = {10, 0.5, 0.5};
+        const Dim R_DIM_X = {5, 0.5, 0.5};
+        const Dim R_DIM_Y = {5, 0.5, 0.5};
+        const Dim R_DIM_Z = {5, 0.5, 0.5};
 
-        const Dim P_DIM_X = {10, 0.0, 1.0};
-        const Dim P_DIM_Y = {10, 0.0, 1.0};
-        const Dim P_DIM_Z = {10, 0.0, 1.0};
+        const Dim P_DIM_X = {5, 0.0, 1.0};
+        const Dim P_DIM_Y = {5, 0.0, 1.0};
+        const Dim P_DIM_Z = {5, 0.0, 1.0};
 
         const int TOTAL_VOLUME = R_DIM_X.size * R_DIM_Y.size * R_DIM_Z.size + P_DIM_X.size * P_DIM_Y.size * P_DIM_Z.size;
 

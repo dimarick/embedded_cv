@@ -22,20 +22,17 @@ namespace ecv {
     private:
         mutable std::mutex mutex;
         std::unordered_map<int, std::shared_ptr<GridStat>> gridSizeStat;
-        std::shared_ptr<GridStat> gridSizeStatTop;
         void _registerFrameStat(size_t w, size_t h) {
             auto key = (int) w * 1000 + (int) h;
             auto statIt = gridSizeStat.find(key);
             if (statIt == gridSizeStat.end()) {
                 if (gridSizeStat.empty()) {
-                    gridSizeStatTop = std::shared_ptr<GridStat>(new GridStat(w, h, 1));
-                    gridSizeStat.insert({key, gridSizeStatTop});
+                    gridSizeStat.insert({key, std::shared_ptr<GridStat>(new GridStat(w, h, 1))});
                 } else {
                     gridSizeStat.insert({key, std::shared_ptr<GridStat>(new GridStat(w, h, 1))});
                 }
             } else {
                 statIt->second->count++;
-                gridSizeStatTop = findGridSizeStatTop();
             }
         }
 
@@ -45,23 +42,30 @@ namespace ecv {
             auto statIt = gridSizeStat.find(key);
             if (statIt != gridSizeStat.end()) {
                 statIt->second->count--;
-                gridSizeStatTop = findGridSizeStatTop();
             }
         }
 
-        const std::shared_ptr<GridStat> &findGridSizeStatTop() {
+        std::shared_ptr<GridStat> findGridSizeStatTop() const {
             const auto &compare = [](const std::pair<int, std::shared_ptr<GridStat>> &a,
                                      const std::pair<int, std::shared_ptr<GridStat>> &b) {
-                return a.second->count > b.second->count;
+                return a.second->count < b.second->count;
             };
 
-            return std::max_element(gridSizeStat.begin(), gridSizeStat.end(), compare)->second; }
+            const auto it = std::max_element(gridSizeStat.begin(), gridSizeStat.end(), compare);
+
+            if (it == gridSizeStat.end()) {
+                return nullptr;
+            }
+
+            return it->second;
+        }
 
     public:
         std::pair<size_t, size_t> getGridPreferredSize() const {
             std::lock_guard lock(mutex);
-            return gridSizeStatTop != nullptr
-                ? std::pair(gridSizeStatTop->w, gridSizeStatTop->h)
+            const auto &stat = findGridSizeStatTop();
+            return stat != nullptr
+                ? std::pair(stat->w, stat->h)
                 : std::pair(size_t(0), size_t(0));
         }
 

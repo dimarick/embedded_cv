@@ -158,11 +158,11 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
             frameCollectors[i].getCollectedImageGridsSample(sampleValidate),
             testData);
 
-    if (cost < costs[i] * 1.3 && cost < 10) {
+    if (cost < costs[i] * 2 && cost < 10) {
         setCalibrationData(i, trainData);
         costs[i] = std::min(cost, costs[i]);
         viewCosts[i] = cost;
-        multicamCosts = cost * 2;
+        multicamCosts = cost * 4;
         multicamThreadWait.notify_all();
 
         std::cout << "Calib " << cameraId << ", c = " << cost << std::endl;
