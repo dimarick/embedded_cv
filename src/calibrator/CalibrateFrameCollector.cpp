@@ -189,14 +189,15 @@ void CalibrateFrameCollector::addMulticamFrames(const std::vector<std::vector<Ca
         if (f[0] == nullptr) {
             continue;
         }
-        int cls = f[0]->rotationClass;
+        int rotationClasses = R_DIM_X.size * R_DIM_Y.size * R_DIM_Z.size;
+        int cls = f[0]->rotationClass + f[0]->positionClass * rotationClasses;
         double cost = f[0]->cost;
         const auto &it = this->frameSets.find(cls);
 
         if (it == this->frameSets.end()) {
             this->frameSets.insert({cls, f});
         } else if (cost < it->second[0]->cost) {
-            this->frameSets.emplace(cls, f);
+            this->frameSets.insert_or_assign(cls, f);
         }
     }
 }

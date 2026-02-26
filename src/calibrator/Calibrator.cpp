@@ -6,6 +6,8 @@ namespace ecv {
     double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
                                              const std::vector<std::vector<cv::Point2f>> &imagePoints,
                                              CalibrationData &data,
+                                             const std::vector<double> &stdDeviationsIntrinsics,
+                                             const std::vector<double> &perViewErrors,
                                              int flags,
                                              cv::TermCriteria term) {
         size_t objectSize = 0;
@@ -64,8 +66,10 @@ namespace ecv {
         std::vector<double> distCoeff = data.distCoeff;
 
         try {
+            cv::Mat stdDeviationsExtrinsics;
             result = cv::calibrateCamera(objectPointsSlice, imagePointsSlice, frameSize, data.cameraMatrix,
-                                data.distCoeff, data.rvecs, data.tvecs, baseFlags | flags, term);
+                                         data.distCoeff, data.rvecs, data.tvecs, stdDeviationsIntrinsics,
+                                         stdDeviationsExtrinsics, perViewErrors, baseFlags | flags, term);
         } catch (const std::exception &e) {
             std::cerr << "cv::calibrateCamera failed" << std::endl;
 
@@ -105,6 +109,8 @@ namespace ecv {
     double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3d>> &objectPoints,
                                              const std::vector<std::vector<cv::Point3d>> &imagePoints,
                                              CalibrationData &data,
+                                             const std::vector<double> &stdDeviationsIntrinsics,
+                                             const std::vector<double> &perViewErrors,
                                              int flags,
                                              cv::TermCriteria term) {
         std::vector<std::vector<cv::Point3f>> objectPoints2(objectPoints.size());
@@ -120,7 +126,7 @@ namespace ecv {
             convertToPlain3dPoints(objectPoints[i], objectPoints2[i]);
         }
 
-        return calibrateSingleCamera(frameSize, objectPoints2, imagePoints2, data, flags, term);
+        return calibrateSingleCamera(frameSize, objectPoints2, imagePoints2, data, stdDeviationsIntrinsics, perViewErrors, flags, term);
     }
 
     double Calibrator::validateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3d>> &objectPoints,
@@ -135,6 +141,6 @@ namespace ecv {
 
         auto testData = data;
 
-        return calibrateSingleCamera(frameSize, objectPoints, imagePoints, testData, flags, cv::TermCriteria(1, 1e-7));
+        return calibrateSingleCamera(frameSize, objectPoints, imagePoints, testData, std::vector<double>(CALIB_NINTRINSIC), std::vector<double>(objectPoints.size()), flags, cv::TermCriteria(1, 1e-7));
     }
 } // ecv

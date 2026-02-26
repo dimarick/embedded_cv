@@ -816,9 +816,9 @@ namespace ecv {
 
         auto q = cost(top, left, right, bottom);
         while (top + bottom < *h && left + right < *w) {
-            auto qt = cost(top + 1, left, right, bottom);
-
             int i = 0;
+
+            auto qt = cost(top + 1, left, right, bottom);
             if ((qt - q) / q < threshold) {
                 top++;
                 i++;

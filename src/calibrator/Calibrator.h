@@ -30,6 +30,10 @@ namespace ecv {
             cv::Mat T;
             cv::Mat E;
             cv::Mat F;
+            cv::Mat Ts;
+            cv::Mat Rs;
+            cv::Mat Ri;
+            cv::Mat Pi;
 
             CalibrationData() {
                 cameraMatrix = cv::Mat::zeros(3, 3, CV_64F);
@@ -48,6 +52,10 @@ namespace ecv {
                 T = other.T.clone();
                 E = other.E.clone();
                 F = other.F.clone();
+                Rs = other.Rs.clone();
+                Ts = other.Ts.clone();
+                Ri = other.Ri.clone();
+                Pi = other.Pi.clone();
             }
 
             CalibrationData& operator=(const CalibrationData& other) {
@@ -61,6 +69,10 @@ namespace ecv {
                     T = other.T.clone();
                     E = other.E.clone();
                     F = other.F.clone();
+                    Rs = other.Rs.clone();
+                    Ts = other.Ts.clone();
+                    Ri = other.Ri.clone();
+                    Pi = other.Pi.clone();
                 }
                 return *this;
             }
@@ -71,6 +83,8 @@ namespace ecv {
                 const std::vector<std::vector<cv::Point3d>> &objectPoints,
                 const std::vector<std::vector<cv::Point3d>> &imagePoints,
                 CalibrationData &data,
+                const std::vector<double> &stdDeviationsIntrinsics,
+                const std::vector<double> &perViewErrors,
                 int flags,
                 cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );
@@ -79,6 +93,8 @@ namespace ecv {
                 const std::vector<std::vector<cv::Point3f>> &objectPoints,
                 const std::vector<std::vector<cv::Point2f>> &imagePoints,
                 CalibrationData &data,
+                const std::vector<double> &stdDeviationsIntrinsics,
+                const std::vector<double> &perViewErrors,
                 int flags,
                 cv::TermCriteria term = cv::TermCriteria(10, 1e-7)
         );

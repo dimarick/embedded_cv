@@ -63,7 +63,7 @@ namespace ecv {
         void drawPeaks(cv::Mat &target, const std::vector<Point3> &peaks, size_t size, const cv::Scalar& color);
         void drawBaseSquare(cv::Mat &target, const BaseSquare &square, const cv::Scalar& color);
 
-        void drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, int w, int h, const cv::Scalar& color, int thickness = 5);
+        void drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, int w, int h, const cv::Scalar& color, int thickness = 3);
         bool isInsideQuadSimple(const Point3 &p, BaseSquare quad);
     };
 } // ecv

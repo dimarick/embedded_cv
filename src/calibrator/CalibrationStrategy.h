@@ -10,6 +10,7 @@
 #include "CalibrateFrameCollector.h"
 #include "Calibrator.h"
 #include "GridPreferredSizeProvider.h"
+#include "CalibrateMapper.h"
 
 static const int MAX_FRAMES_QUEUE = 100;
 static const int TRAIN_SAMPLE_SIZE = 100;
@@ -67,9 +68,12 @@ namespace ecv {
         std::vector<ecv::Calibrator> calibrators;
         mutable std::shared_mutex dataMutex;
         std::vector<Calibrator::CalibrationData> data;
+        std::vector<Calibrator::CalibrationData> rectificationData;
         std::vector<cv::Mat> map;
+        std::vector<cv::Mat> rectifiedMap;
         std::vector<double> costs;
         double multicamCosts = 1. / 0.;
+        std::vector<double> gridDistanceCosts;
         double multicamRoiSize = 0.;
         std::mutex pendingFramesMutex;
         std::vector<std::set<CalibrateFrameCollector::FrameRef, FrameCompare>> pendingFrames;
@@ -91,7 +95,7 @@ namespace ecv {
         void printMulticamCalibrationStats(const std::vector<cv::Mat> &camMatrices, const std::vector<cv::Mat> &Rs,
                                            const std::vector<cv::Mat> &Ts, const std::string &unit);
         std::vector<bool> findOutliersPerFrameError(const cv::Mat &errors, double k = 2.0);
-        int filterOutliers(std::vector<FrameRefList> &frameSets, const std::vector<bool> &outliers) const;
+        template<typename T> int filterOutliers(std::vector<T> &frameSets, const std::vector<bool> &outliers) const;
     public:
         explicit CalibrationStrategy(
                 cv::Size frameSize, int numCameras,
@@ -110,7 +114,9 @@ namespace ecv {
             frameDataStorage.reserve(numCameras);
             calibrators.reserve(numCameras);
             data.reserve(numCameras);
+            rectificationData.reserve(numCameras);
             map.reserve(numCameras);
+            rectifiedMap.reserve(numCameras);
             costs.reserve(numCameras);
             camThreads.reserve(numCameras);
             viewCosts.reserve(numCameras);
@@ -121,8 +127,11 @@ namespace ecv {
                 frameDataStorage.emplace_back();
                 calibrators.emplace_back();
                 data.emplace_back();
+                rectificationData.emplace_back();
                 map.emplace_back();
+                rectifiedMap.emplace_back();
                 costs.emplace_back(1. / 0.);
+                gridDistanceCosts.emplace_back(1. / 0.);
                 camThreads.emplace_back();
                 viewCosts.emplace_back();
                 viewMulticamCosts.emplace_back();
@@ -137,6 +146,16 @@ namespace ecv {
             {
                 std::shared_lock lock(dataMutex);
                 result = data[cameraId];
+            }
+
+            return result;
+        }
+
+        [[nodiscard]] Calibrator::CalibrationData getRectificationData(int cameraId) const {
+            Calibrator::CalibrationData result;
+            {
+                std::shared_lock lock(dataMutex);
+                result = rectificationData[cameraId];
             }
 
             return result;
@@ -161,8 +180,17 @@ namespace ecv {
             data.at(cameraId) = updatedData;
         }
 
+        void setRectificationData(int cameraId, const Calibrator::CalibrationData &updatedData) {
+            std::unique_lock lock(dataMutex);
+            rectificationData.at(cameraId) = updatedData;
+        }
+
         [[nodiscard]] cv::Mat getMap(int cameraId) const {
             return map[cameraId];
+        }
+
+        [[nodiscard]] cv::Mat getRectifiedMap(int cameraId) const {
+            return rectifiedMap[cameraId];
         }
 
         [[nodiscard]] double getProgress(int cameraId) const {
@@ -208,6 +236,28 @@ namespace ecv {
         getImagePointsFromFrameSets(const std::vector<FrameRefList> &frameSets) const;
 
         bool isValid(const FrameRefList &frameSet) const;
+
+        double
+        verifyParamsUsingGridMatch(const std::vector<cv::Mat> &imagePoints,
+                                   const Calibrator::CalibrationData &calibrationData) const;
+
+        void undistortImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints,
+                                  const Calibrator::CalibrationData &calibrationData) const;
+
+        void rectifyImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints,
+                                const Calibrator::CalibrationData &calibrationData) const;
+
+        void rectifyImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints,
+                                std::vector<ecv::CalibrateMapper::Point3> &plainPoints,
+                                const Calibrator::CalibrationData &calibrationData) const;
+
+        void undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints,
+                                  std::vector<ecv::CalibrateMapper::Point3> &plainPoints,
+                                  const Calibrator::CalibrationData &calibrationData) const;
+
+        void converPoints(const cv::Mat &pp, std::vector<ecv::CalibrateMapper::Point3> &points) const;
+
+        void converPoints(const std::vector<ecv::CalibrateMapper::Point3> &points, cv::Mat &pp) const;
     };
 }
 #endif //EMBEDDED_CV_CALIBRATIONSTRATEGY_H
