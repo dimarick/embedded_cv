@@ -172,7 +172,6 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
         setCalibrationData(i, trainData);
         costs[i] = std::min(cost, costs[i]);
         viewCosts[i] = cost;
-        multicamCosts = cost * 4;
         multicamThreadWait.notify_all();
 
         cv::Mat tmp;
@@ -381,6 +380,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         auto gridCost = verifyParamsUsingGridMatch(imagePoints[i], calibrationData);
         auto gridCost0 = verifyParamsUsingGridMatch(imagePoints[i], calibrationData0);
 
+        // оптимизация методом адаптивных ограничений
         if (gridCost < gridDistanceCosts[i] * 1.2 && gridCost0 < gridDistanceCosts[0] * 1.2 && cost < multicamCosts * 2) {
             printMulticamCalibrationStats(Ks, Rs, Ts, "c");
             gridDistanceCosts[i] = std::min(gridCost, gridDistanceCosts[i]);

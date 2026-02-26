@@ -49,11 +49,15 @@ namespace ecv {
         cameraData[5] = cy;
         cameraData[8] = 1.;
 
+        auto random = std::rand() % 16;
+
         int baseFlags =
                 cv::CALIB_USE_LU|
-                cv::CALIB_RATIONAL_MODEL|
-                cv::CALIB_TILTED_MODEL|
-                cv::CALIB_THIN_PRISM_MODEL|
+                (cv::CALIB_RATIONAL_MODEL && random & 1)|
+                (cv::CALIB_TILTED_MODEL && random & 2)|
+                (cv::CALIB_THIN_PRISM_MODEL && random & 4)|
+                (cv::CALIB_FIX_PRINCIPAL_POINT && random & 8)|
+                (cv::CALIB_FIX_FOCAL_LENGTH && random & 8)|
                 cv::CALIB_FIX_ASPECT_RATIO;
 
         if (data.callCount > 0) {
@@ -85,7 +89,7 @@ namespace ecv {
             cy = ema * cameraData[5] + (1 - ema) * cy;
         }
 
-        for (int i = 0; i < distCoeff.size(); ++i) {
+        for (int i = 0; i < std::min(distCoeff.size(), data.distCoeff.size()); ++i) {
             data.distCoeff[i] = ema * data.distCoeff[i] + (1 - ema) * distCoeff[i];
         }
 
