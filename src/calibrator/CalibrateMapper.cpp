@@ -798,7 +798,7 @@ namespace ecv {
                         prediction.z = p.z;
                         auto real = grid[(y + sy) * *w + x + sx];
                         double norm = distanceSqr3(p, prediction);
-                        err.addValue(distanceSqr3(prediction, real) / norm);
+                        err.addValue(distanceSqr3(prediction, real) / norm * 0.5 + (1 - p.z) * 0.5);
                     } else {
                         err.addValue(1.);
                     }
@@ -808,7 +808,7 @@ namespace ecv {
             return err.stddev();
         };
 
-        auto threshold = 2.;
+        auto threshold = 1.;
         auto Q = 1.;
         StatStreaming stat;
 
