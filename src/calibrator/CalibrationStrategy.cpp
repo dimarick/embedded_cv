@@ -399,6 +399,13 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
                 frameDataStorage[i].release();
             }
 
+            frameDataStorage[0].open(std::format("frameData{}.yaml", 0), cv::FileStorage::WRITE);
+
+            if (frameDataStorage[0].isOpened()) {
+                frameCollectors[0].store(frameDataStorage[0]);
+                frameDataStorage[0].release();
+            }
+
             onUpdateCallback(0, *this);
             onUpdateCallback(i, *this);
         }
