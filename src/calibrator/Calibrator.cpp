@@ -1,6 +1,7 @@
 #include "Calibrator.h"
 #include <opencv2/calib3d.hpp>
 #include <iomanip>
+#include <random>
 
 namespace ecv {
     double Calibrator::calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Point3f>> &objectPoints,
@@ -35,21 +36,7 @@ namespace ecv {
             imagePointsSlice = std::vector(imagePoints.begin(), imagePoints.begin() + (int)inputSize);
         }
 
-        auto cameraData = (double *)data.cameraMatrix.data;
-
-        fx = cameraData[0] == 0 ? 1000 : cameraData[0];
-        fy = cameraData[4] == 0 ? 1000 : cameraData[4];
-
-        cx = cameraData[2] == 0 ? (float)frameSize.width / 2 : cameraData[2];
-        cy = cameraData[5] == 0 ? (float)frameSize.height / 2 : cameraData[5];
-
-        cameraData[0] = fx;
-        cameraData[4] = fy;
-        cameraData[2] = cx;
-        cameraData[5] = cy;
-        cameraData[8] = 1.;
-
-        auto random = std::rand() % 16;
+        auto random = std::rand() % 32;
 
         int baseFlags =
                 cv::CALIB_USE_LU|
@@ -57,7 +44,7 @@ namespace ecv {
                 (cv::CALIB_TILTED_MODEL && random & 2)|
                 (cv::CALIB_THIN_PRISM_MODEL && random & 4)|
                 (cv::CALIB_FIX_PRINCIPAL_POINT && random & 8)|
-                (cv::CALIB_FIX_FOCAL_LENGTH && random & 8)|
+                (cv::CALIB_FIX_FOCAL_LENGTH && random & 16)|
                 cv::CALIB_FIX_ASPECT_RATIO;
 
         if (data.callCount > 0) {
@@ -66,8 +53,6 @@ namespace ecv {
 
 
         double result = 0;
-
-        std::vector<double> distCoeff = data.distCoeff;
 
         try {
             cv::Mat stdDeviationsExtrinsics;
@@ -80,22 +65,34 @@ namespace ecv {
             return 1. / 0.;
         }
 
-        double ema = data.callCount > 0 ? 2. / (result * 20. + 1.) : 1;
-
-        if ((flags & cv::CALIB_FIX_INTRINSIC) == 0) {
-            fx = ema * cameraData[0] + (1 - ema) * fx;
-            fy = ema * cameraData[4] + (1 - ema) * fy;
-            cx = ema * cameraData[2] + (1 - ema) * cx;
-            cy = ema * cameraData[5] + (1 - ema) * cy;
-        }
-
-        for (int i = 0; i < std::min(distCoeff.size(), data.distCoeff.size()); ++i) {
-            data.distCoeff[i] = ema * data.distCoeff[i] + (1 - ema) * distCoeff[i];
-        }
-
         data.callCount++;
 
         return result;
+    }
+
+    template <typename T> void Calibrator::mergeCalibrationItem(const T &newData, double newDataDev, T &existsData, double existsDataDev) {
+        std::normal_distribution<double> generalization(1., existsDataDev);
+        std::mt19937 r {std::random_device{}()};
+
+        double randomValue = generalization(r);
+
+        // Чтобы объекты обрабатывались in-place
+        existsData *= randomValue * (1 - newDataDev);
+        existsData += randomValue * newDataDev * newData;
+    }
+
+    void Calibrator::mergeIntrinsics(const CalibrationData &newData, double newDataDev, CalibrationData &existsData, double existsDataDev) {
+        mergeCalibrationItem(std::clamp(newData.cameraMatrix.at<double>(0, 0), 0., 10000.), newDataDev, existsData.cameraMatrix.at<double>(0, 0), existsDataDev);
+        existsData.cameraMatrix.at<double>(1, 1) = existsData.cameraMatrix.at<double>(0, 0);
+        mergeCalibrationItem(std::clamp(newData.cameraMatrix.at<double>(0, 2), 0., 3000.), newDataDev, existsData.cameraMatrix.at<double>(0, 2), existsDataDev);
+        mergeCalibrationItem(std::clamp(newData.cameraMatrix.at<double>(1, 2), 0., 3000.), newDataDev, existsData.cameraMatrix.at<double>(1, 2), existsDataDev);
+
+        for (int i = 0; i < std::min(newData.distCoeff.size(), existsData.distCoeff.size()); ++i) {
+            mergeCalibrationItem(std::clamp(newData.distCoeff[i], -1e2, 1e2), newDataDev, existsData.distCoeff[i], existsDataDev);
+        }
+        existsData.rvecs = newData.rvecs;
+        existsData.tvecs = newData.tvecs;
+        existsData.callCount = newData.callCount;
     }
 
     void Calibrator::convertTo2dPoints(const std::vector<cv::Point3d> &points3d, std::vector<cv::Point2f> &points2d) {

@@ -78,7 +78,6 @@ namespace ecv {
         std::mutex pendingFramesMutex;
         std::vector<std::set<CalibrateFrameCollector::FrameRef, FrameCompare>> pendingFrames;
         std::set<FrameRefList, FrameSetCompare> pendingFrameSets;
-        std::vector<cv::FileStorage> frameDataStorage;
         std::condition_variable camThreadsWait;
         std::vector<std::thread> camThreads;
         std::condition_variable multicamThreadWait;
@@ -111,7 +110,6 @@ namespace ecv {
             // содержат небезопасные ссылки (char * и т.п.), в результате FileStorage сваливается в SIGSEGV
             // на некоторых абсолютно корректных файлах
             frameCollectors.reserve(numCameras);
-            frameDataStorage.reserve(numCameras);
             calibrators.reserve(numCameras);
             data.reserve(numCameras);
             rectificationData.reserve(numCameras);
@@ -124,9 +122,8 @@ namespace ecv {
 
             for (int i = 0; i < numCameras; ++i) {
                 frameCollectors.emplace_back(frameSize);
-                frameDataStorage.emplace_back();
                 calibrators.emplace_back();
-                data.emplace_back();
+                data.emplace_back(frameSize);
                 rectificationData.emplace_back();
                 map.emplace_back();
                 rectifiedMap.emplace_back();

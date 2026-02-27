@@ -137,12 +137,10 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
     }
 
     auto trainData = getCalibrationData(i);
-    auto trainData0 = trainData;
 
     std::vector<double> stdDeviationsIntrinsics(CALIB_NINTRINSIC);
-
     std::vector<double> perViewErrors(sample.size());
-    trainData = trainData0;
+
     calibrators[i].calibrateSingleCamera(
             frameSize,
             frameCollectors[i].getCollectedObjectGridsSample(sample),
@@ -168,8 +166,18 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
             frameCollectors[i].getCollectedImageGridsSample(sampleValidate),
             testData);
 
-    if (cost < costs[i] * 2 && cost < 10) {
-        setCalibrationData(i, trainData);
+    if (cost < costs[i] * 1.5) {
+        if (trainData.callCount > 1) {
+            auto existsData = getCalibrationData(i);
+            double ema = trainData.callCount > 0 ? 2. / (cost * 20. + 1.) : 1;
+            double dispersion = 0.1 / ((double) frameCollectors[i].getFrameSetCount() + 2.);
+            calibrators[i].mergeIntrinsics(trainData, ema, existsData, dispersion);
+            setCalibrationData(i, existsData);
+            trainData = existsData;
+        } else {
+            setCalibrationData(i, trainData);
+        }
+
         costs[i] = std::min(cost, costs[i]);
         viewCosts[i] = cost;
         multicamThreadWait.notify_all();
@@ -244,7 +252,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         models.emplace_back(cv::CALIB_MODEL_PINHOLE);
         flagsForIntrinsics.emplace_back(cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC);
         Ks.emplace_back(calibrationData.cameraMatrix);
-        Rs.emplace_back(calibrationData.Ri);
+        Rs.emplace_back(calibrationData.Rs);
         Ts.emplace_back(calibrationData.Ts);
         distortions.emplace_back(calibrationData.distCoeff, CV_64FC1);
     }
@@ -275,7 +283,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
                 tvecs0,
                 perFrameErrors,
                 flagsForIntrinsics,
-                cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_USE_EXTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC,
+                cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC,
                 cv::TermCriteria(1000, 1e-8)
         );
     } catch (const std::exception &e) {
@@ -313,6 +321,8 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
     for (int i = 0; i < numCameras; ++i) {
         Ks2[i] = Ks[i].clone();
         distortions2[i] = distortions[i].clone();
+        Rs2[i] = Rs[i].clone();
+        Ts2[i] = Ts[i].clone();
     }
 
     double cost;
@@ -332,7 +342,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
                 tvecs2,
                 perFrameErrors,
                 flagsForIntrinsics,
-                cv::CALIB_USE_INTRINSIC_GUESS,
+                cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_USE_EXTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC,
                 cv::TermCriteria(1, 1e-7)
         );
     } catch (const std::exception &e) {
@@ -381,7 +391,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         auto gridCost0 = verifyParamsUsingGridMatch(imagePoints[i], calibrationData0);
 
         // оптимизация методом адаптивных ограничений
-        if (gridCost < gridDistanceCosts[i] * 1.2 && gridCost0 < gridDistanceCosts[0] * 1.2 && cost < multicamCosts * 2) {
+        if (gridCost < gridDistanceCosts[i] * 1.2 && gridCost0 < gridDistanceCosts[0] * 1.2 && cost < multicamCosts * 10) {
             printMulticamCalibrationStats(Ks, Rs, Ts, "c");
             gridDistanceCosts[i] = std::min(gridCost, gridDistanceCosts[i]);
             multicamCosts = std::min(cost, multicamCosts);
@@ -392,41 +402,40 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
             cv::initUndistortRectifyMap(Ks[0], distortions[0], R1, P1, frameSize, CV_32FC2, rectifiedMap[0], tmp);
             cv::initUndistortRectifyMap(Ks[i], distortions[i], R2, P2, frameSize, CV_32FC2, rectifiedMap[i], tmp);
 
-            frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::WRITE);
+            cv::FileStorage storage;
 
-            if (frameDataStorage[i].isOpened()) {
-                frameCollectors[i].store(frameDataStorage[i]);
-                frameDataStorage[i].release();
+            storage.open(std::format("gridDataset{}.yaml", i), cv::FileStorage::WRITE);
+
+            if (storage.isOpened()) {
+                frameCollectors[i].store(storage);
+                storage.release();
             }
 
-            frameDataStorage[0].open(std::format("frameData{}.yaml", 0), cv::FileStorage::WRITE);
+            storage.open(std::format("gridDataset{}.yaml", 0), cv::FileStorage::WRITE);
 
-            if (frameDataStorage[0].isOpened()) {
-                frameCollectors[0].store(frameDataStorage[0]);
-                frameDataStorage[0].release();
+            if (storage.isOpened()) {
+                frameCollectors[0].store(storage);
+                storage.release();
+            }
+
+            storage.open(std::format("config_{}.yaml", i), cv::FileStorage::WRITE);
+
+            if (storage.isOpened()) {
+                calibrationData.store(storage);
+                storage.release();
+            }
+
+            storage.open(std::format("config_0_{}.yaml", i), cv::FileStorage::WRITE);
+
+            if (storage.isOpened()) {
+                calibrationData0.store(storage);
+                storage.release();
             }
 
             onUpdateCallback(0, *this);
             onUpdateCallback(i, *this);
         }
     }
-}
-
-template<typename T>
-int CalibrationStrategy::filterOutliers(std::vector<T> &frameSets, const std::vector<bool> &outliers) const {
-    int i, k = 0;
-    for (i = 0; i < frameSets.size(); ++i) {
-        if (!outliers[i]) {
-            frameSets[k] = frameSets[i];
-            k++;
-        } else if (i > k) {
-            frameSets[k] = frameSets[i];
-        }
-    }
-
-    frameSets.resize(k);
-
-    return i - k;
 }
 
 std::vector<cv::Mat> CalibrationStrategy::getObjectPointsFromFrameSets(const std::vector<FrameRefList> &frameSets) const {
@@ -677,15 +686,16 @@ std::vector<bool> CalibrationStrategy::findOutliersPerFrameError(const cv::Mat& 
 
 void CalibrationStrategy::loadConfig() {
     for (int i = 0; i < numCameras; ++i) {
-        frameDataStorage[i].open(std::format("frameData{}.yaml", i), cv::FileStorage::READ);
+        cv::FileStorage storage;
+        storage.open(std::format("gridDataset{}.yaml", i), cv::FileStorage::READ);
 
-        if (!frameDataStorage[i].isOpened()) {
+        if (!storage.isOpened()) {
             continue;
         }
 
-        frameCollectors[i].load(gridPreferredSizeProvider, frameDataStorage[i]);
+        frameCollectors[i].load(gridPreferredSizeProvider, storage);
 
-        frameDataStorage[i].release();
+        storage.release();
     }
 
     auto [w, h] = gridPreferredSizeProvider.getGridPreferredSize();
@@ -694,13 +704,15 @@ void CalibrationStrategy::loadConfig() {
         return;
     }
 
-    for (int i = 0; i < numCameras; ++i) {
-        const auto &framesSample = frameCollectors[i].getFramesSample(100, w, h, false);
-        camThreadCallback(framesSample, i);
-    }
+    for (int j = 0; j < 10; ++j) {
+        for (int i = 0; i < numCameras; ++i) {
+            const auto &framesSample = frameCollectors[i].getFramesSample(100, w, h, false);
+            camThreadCallback(framesSample, i);
+        }
 
-    const auto &framesSample = frameCollectors[0].getFrameSetsSample(100, w, h, false);
-    multicamThreadCallback(framesSample);
+        const auto &framesSample = frameCollectors[0].getFrameSetsSample(100, w, h, false);
+        multicamThreadCallback(framesSample);
+    }
 }
 
 /**
