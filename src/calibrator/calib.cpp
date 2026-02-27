@@ -154,10 +154,11 @@ int main(int argc, const char **argv) {
         readerThreads[i] = std::thread(captureThreadCallback, i);
     }
 
+    const cv::Size &size = frames[0].size();
     std::vector<ecv::CalibrateMapper> calibrateMapper(frames.size()), testCalibrateMapper(frames.size());
     std::vector<ecv::Calibrator> calibrator(frames.size());
-    std::vector<ecv::Calibrator::CalibrationData> calibrationData(frames.size());
-    std::vector<ecv::Calibrator::CalibrationData> rectificationData(frames.size());
+    std::vector<ecv::Calibrator::CalibrationData> calibrationData(frames.size(), ecv::Calibrator::CalibrationData(size));
+    std::vector<ecv::Calibrator::CalibrationData> rectificationData(frames.size(), ecv::Calibrator::CalibrationData(size));
 
     std::vector<double> bestQ(frames.size(), 1. / 0.);
     std::vector<double> bestPairQ(frames.size(), 1. / 0.);
@@ -176,7 +177,6 @@ int main(int argc, const char **argv) {
         ecv::MatStorage::matRead(std::format("map_{}.bin", i), maps[i]);
     }
 
-    const cv::Size &size = frames[0].size();
     ecv::CalibrationStrategy calibrationStrategy(size, (int)frames.size(), [&maps, &rectifiedMaps, &mapsMutex, &calibrationData, &rectificationData](int cameraId, const ecv::CalibrationStrategy &that) {
         {
             std::unique_lock lock(mapsMutex);
@@ -248,7 +248,7 @@ int main(int argc, const char **argv) {
                 std::cout << "Grid error is " << frameQuality << std::endl;
             }
 
-            if (frameQuality < 0.5 && w >= 6 && h >= 4) {
+            if (frameQuality < 0.5 && w >= 6 && h >= 3) {
                 calibrateMapper[i].generateFrameObjectPointsGrid(objectGrid, w, h);
                 imageGrid.resize(w * h);
                 objectGrid.resize(w * h);

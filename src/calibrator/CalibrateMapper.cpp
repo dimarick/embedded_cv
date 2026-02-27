@@ -56,7 +56,7 @@ namespace ecv {
             drawGrid(debugFrame, imageGrid, *w, *h, cv::Scalar(255, 0, 0));
         }
 
-        if (result < 0.2 && squareRmse < 0.4 && result < prevError * 1.1 && *w > 3 && *h > 3) {
+        if (result < 0.2 && squareRmse < 0.4 && result < prevError * 1.1 && *w >= 3 && *h >= 3) {
             prevError = result;
             setPattern(suggestPatternSize(imageGrid, square, *w, *h), (float) suggestSkew(imageGrid, *w, *h));
         } else if (result > 5 * prevError || result > 0.3) {
