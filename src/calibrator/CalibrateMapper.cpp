@@ -871,7 +871,7 @@ namespace ecv {
      * @param right
      * @return grid cost
      */
-    double CalibrateMapper::getGridCost(std::vector<Point3> &grid, int w, int h, int top, int left, int bottom, int right) {
+    double CalibrateMapper::getGridCost(const std::vector<Point3> &grid, int w, int h, int top, int left, int bottom, int right) {
         StatStreaming err;
 
         err.addFirstValue(0);

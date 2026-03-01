@@ -132,7 +132,7 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
         }
     }
 
-    if (sample.size() < 10) {
+    if (sample.size() < 1) {
         return;
     }
 
@@ -168,6 +168,22 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
         return;
     }
 
+    double gridCost = 0.0;
+    double gridPlainCost = 0.0;
+
+    for (const auto &frame : sampleValidate) {
+        std::vector<ecv::CalibrateMapper::Point3> plainPoints(frame->imageGrid.size());
+        undistortImagePoints(frame->imageGrid, plainPoints, trainData);
+        gridPlainCost += (double)CalibrateMapper::getGridCost(plainPoints, (int)frame->w, (int)frame->h) / (double)frame->imageGrid.size();
+        gridCost += (double)CalibrateMapper::getGridCost(frame->imageGrid, (int)frame->w, (int)frame->h) / (double)frame->imageGrid.size();
+    }
+
+    gridCost = gridPlainCost / gridCost;
+
+    if (gridCost > 1) {
+        return;
+    }
+
     auto cost = calibrators[i].validateSingleCamera(
             frameSize,
             frameCollectors[i].getCollectedObjectGridsSample(sampleValidate),
@@ -193,14 +209,15 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
         if (condition) {
             setCalibrationData(i, trainData);
             costs[i] = std::min(cost, costs[i]);
+            viewCosts[i] = cost;
             multicamThreadWait.notify_all();
 
             cv::Mat tmp;
-            cv::initUndistortRectifyMap(trainData.cameraMatrix, trainData.distCoeff, cv::noArray(), trainData.cameraMatrix, frameSize, CV_32FC2, map[i], tmp);
+            cv::initUndistortRectifyMap(trainData.cameraMatrix, trainData.distCoeff, cv::noArray(),
+                                        trainData.cameraMatrix, frameSize, CV_32FC2, map[i], tmp);
 
             onUpdateCallback(i, *this);
         }
-        viewCosts[i] = cost;
         std::cout << "Calib " << cameraId << ", c = " << cost << std::endl;
         annealFreq[i] = annealEma * 1 + (1 - annealEma) * annealFreq[i];
     } else {
@@ -306,7 +323,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
                 tvecs0,
                 perFrameErrors,
                 flagsForIntrinsics,
-                cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC,
+                cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC | cv::CALIB_USE_EXTRINSIC_GUESS,
                 cv::TermCriteria(10, 1e-8)
         );
     } catch (const std::exception &e) {

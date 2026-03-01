@@ -65,7 +65,7 @@ namespace ecv {
         void drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, int w, int h, const cv::Scalar& color, int thickness = 3);
         bool isInsideQuadSimple(const Point3 &p, BaseSquare quad);
 
-        static double getGridCost(std::vector<Point3> &grid, int w, int h, int top = 0, int left = 0, int bottom = 0, int right = 0);
+        static double getGridCost(const std::vector<Point3> &grid, int w, int h, int top = 0, int left = 0, int bottom = 0, int right = 0);
     };
 } // ecv
 
