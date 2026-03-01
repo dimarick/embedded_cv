@@ -45,7 +45,7 @@ namespace ecv {
         std::unordered_map<int, FrameRef> positionMap;
         std::unordered_map<int, std::vector<FrameRef>> frameSets;
 
-        void addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *map, const FrameRef &frameRef);
+        bool addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *map, const FrameRef &frameRef);
     public:
         explicit CalibrateFrameCollector(cv::Size frameSize) : frameSize(frameSize) {
             m = std::make_unique<std::mutex>();
@@ -64,8 +64,8 @@ namespace ecv {
         cv::Point3d getPositionClass(const Frame &frame) const;
         int getClass(cv::Point3d point3, Dim dimX, Dim dimY, Dim dimZ);
         FrameRef createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts, bool validate = std::rand() % 2 == 0);
-        void addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const FrameRef &frameRef);
-        void addMulticamFrames(const std::vector<std::vector<FrameRef>>& _frameSets);
+        bool addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const FrameRef &frameRef);
+        bool addMulticamFrameSet(const std::vector<CalibrateFrameCollector::FrameRef> &f);
         double getProgress() const;
         std::vector<FrameRef> getFramesSample(int n, size_t w, size_t h, bool validate) const;
         std::vector<std::vector<FrameRef>> getFrameSetsSample(int n, size_t w, size_t h, bool validate) const;

@@ -749,9 +749,7 @@ namespace ecv {
      * @param prevVertical
      * @return
      */
-    typename CalibrateMapper::Point3 CalibrateMapper::approximate2(Point3 current, Point3 left, Point3 top) const {
-//        auto x = current.x + (left.x - current.x) + (top.x - current.x);
-//        auto y = current.y + (left.y - current.y) + (top.y - current.y);
+    typename CalibrateMapper::Point3 CalibrateMapper::approximate2(Point3 current, Point3 left, Point3 top) {
         auto x = top.x + (left.x - current.x);
         auto y = left.y + (top.y - current.y);
 
@@ -780,32 +778,14 @@ namespace ecv {
         int cW = centerId % *w;
         int cH = centerId / *w;
 
-        auto cost = [cH, cW, &grid, w, h, this](int top, int left, int right, int bottom) {
-            StatStreaming err;
-
-            err.addFirstValue(0);
-            for (int y = cH - top; y <= cH + bottom; ++y) {
-                for (int x = cW - left; x <= cW + right; ++x) {
-                    if (x >= 0 && x < *w && y >= 0 && y < *h) {
-                        auto p = grid[y * *w + x];
-                        int sy = y < *h - 1 ? 1 : -1;
-                        int sx = x < *w - 1 ? 1 : -1;
-                        if (p.z < 0) {
-                            err.addValue(1.);
-                            continue;
-                        }
-                        auto prediction = approximate2(p, grid[y * *w + x + sx], grid[(y + sy) * *w + x]);
-                        prediction.z = p.z;
-                        auto real = grid[(y + sy) * *w + x + sx];
-                        double norm = distanceSqr3(p, prediction);
-                        err.addValue(distanceSqr3(prediction, real) / norm * 0.5 + (1 - p.z) * 0.5);
-                    } else {
-                        err.addValue(1.);
-                    }
-                }
-            }
-
-            return err.stddev();
+        auto cost = [&grid, cH, cW, w, h](int top, int left, int right, int bottom) {
+            return getGridCost(grid,
+                               *w,
+                               *h,
+                               std::clamp(cH - top, 0, *h),
+                               std::clamp(cW - left, 0, *w),
+                               std::clamp(*h - cH - bottom - 1, 0, *h),
+                               std::clamp(*w - cW - right - 1, 0, *w));
         };
 
         auto threshold = 1.;
@@ -880,6 +860,31 @@ namespace ecv {
         return Q;
     }
 
+    double
+    CalibrateMapper::getGridCost(std::vector<Point3> &grid, int w, int h, int top, int left, int bottom, int right) {
+        StatStreaming err;
+
+        err.addFirstValue(0);
+        for (int y = top; y < h - bottom; ++y) {
+            for (int x = left; x < w - right; ++x) {
+                auto p = grid[y * w + x];
+                int sy = y < h - 1 ? 1 : -1;
+                int sx = x < w - 1 ? 1 : -1;
+                if (p.z < 0) {
+                    err.addValue(1.);
+                    continue;
+                }
+                auto prediction = approximate2(p, grid[y * w + x + sx], grid[(y + sy) * w + x]);
+                prediction.z = p.z;
+                auto real = grid[(y + sy) * w + x + sx];
+                double norm = distanceSqr3(p, prediction);
+                err.addValue(distanceSqr3(prediction, real) / norm * 0.5 + (1 - p.z) * 0.5);
+            }
+        }
+
+        return err.stddev();
+    }
+
     void CalibrateMapper::fillGridRow(size_t w, size_t cH, size_t cW, int j, const std::vector<Point3> &peaks, std::vector<Point3> &grid) {
         for (auto i = 0; i < cW; i++) {
             for (auto s = -1; s <= 1; s += 2) {
@@ -935,7 +940,7 @@ namespace ecv {
         return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
     }
 
-    double CalibrateMapper::distanceSqr3(Point3 p1, Point3 p2) const {
+    double CalibrateMapper::distanceSqr3(Point3 p1, Point3 p2) {
         return std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2) + std::pow(p1.z - p2.z, 2);
     }
 

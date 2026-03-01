@@ -23,7 +23,7 @@ namespace ecv {
         template<typename T> void mergeCalibrationItem(const T &newData, double newDataDev, T &existsData, double existsDataDev);
     public:
         struct CalibrationData {
-            int callCount = 0;
+            int frameCount = 0;
             cv::Mat cameraMatrix;
             std::vector<double> distCoeff;
             cv::Mat rvecs;
@@ -53,7 +53,7 @@ namespace ecv {
             }
 
             void copyTo(CalibrationData& target) const {
-                target.callCount = callCount;
+                target.frameCount = frameCount;
                 target.cameraMatrix = cameraMatrix.clone();
                 target.distCoeff = distCoeff;
                 target.rvecs = rvecs.clone();

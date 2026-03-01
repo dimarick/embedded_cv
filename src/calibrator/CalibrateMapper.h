@@ -39,13 +39,13 @@ namespace ecv {
         double findSquareByTop(const std::vector<Point3> &points, size_t size, BaseSquare &result);
         double findSquareByTopLeft(const std::vector<Point3> &points, size_t size, BaseSquare &result);
         Point3 approximate(Point3 current, Point3 prev);
-        Point3 approximate2(Point3 current, Point3 left, Point3 top) const;
+        static Point3 approximate2(Point3 current, Point3 left, Point3 top);
         void fillGridRow(size_t w, size_t cH, size_t cW, int j, const std::vector<Point3> &peaks, std::vector<Point3> &grid);
         [[nodiscard]] Point3 findNearestPoint(const Point3 &point, const std::vector<Point3> &points, double searchRadius) const;
         [[nodiscard]] int findNearestPointId(const Point3 &point, const std::vector<Point3> &points, double searchRadius) const;
         [[nodiscard]] double distance2(Point3 p1, Point3 p2) const;
         [[nodiscard]] double sign(double val) const;
-        [[nodiscard]] double distanceSqr3(Point3 p1, Point3 p2) const;
+        [[nodiscard]] static double distanceSqr3(Point3 p1, Point3 p2);
         double cropGrid(std::vector<Point3> &grid, int *w, int *h, Point3 center) const;
     public:
 
@@ -65,6 +65,8 @@ namespace ecv {
 
         void drawGrid(const cv::Mat &target, const std::vector<Point3> &grid, int w, int h, const cv::Scalar& color, int thickness = 3);
         bool isInsideQuadSimple(const Point3 &p, BaseSquare quad);
+
+        static double getGridCost(std::vector<Point3> &grid, int w, int h, int top = 0, int left = 0, int bottom = 0, int right = 0);
     };
 } // ecv
 

@@ -36,21 +36,28 @@ namespace ecv {
             imagePointsSlice = std::vector(imagePoints.begin(), imagePoints.begin() + (int)inputSize);
         }
 
-        auto random = std::rand() % 32;
-
         int baseFlags =
                 cv::CALIB_USE_LU|
-                (cv::CALIB_RATIONAL_MODEL && random & 1)|
-                (cv::CALIB_TILTED_MODEL && random & 2)|
-                (cv::CALIB_THIN_PRISM_MODEL && random & 4)|
-                (cv::CALIB_FIX_PRINCIPAL_POINT && random & 8)|
-                (cv::CALIB_FIX_FOCAL_LENGTH && random & 16)|
+                cv::CALIB_RATIONAL_MODEL|
+                cv::CALIB_TILTED_MODEL|
+                cv::CALIB_THIN_PRISM_MODEL|
                 cv::CALIB_FIX_ASPECT_RATIO;
 
-        if (data.callCount > 0) {
+        if (data.frameCount > 0) {
             baseFlags |= cv::CALIB_USE_INTRINSIC_GUESS;
         }
-
+//
+//        if (data.frameCount > 10) {
+//            baseFlags |= cv::CALIB_RATIONAL_MODEL;
+//        }
+//
+//        if (data.frameCount > 20) {
+//            baseFlags |= cv::CALIB_TILTED_MODEL;
+//        }
+//
+//        if (data.frameCount > 30) {
+//            baseFlags |= cv::CALIB_THIN_PRISM_MODEL;
+//        }
 
         double result = 0;
 
@@ -65,12 +72,18 @@ namespace ecv {
             return 1. / 0.;
         }
 
-        data.callCount++;
+        data.frameCount += inputSize;
 
         return result;
     }
 
     template <typename T> void Calibrator::mergeCalibrationItem(const T &newData, double newDataDev, T &existsData, double existsDataDev) {
+        if (existsDataDev == 0) {
+            existsData *= (1 - newDataDev);
+            existsData += newDataDev * newData;
+            return;
+        }
+
         std::normal_distribution<double> generalization(1., existsDataDev);
         std::mt19937 r {std::random_device{}()};
 
@@ -92,7 +105,7 @@ namespace ecv {
         }
         existsData.rvecs = newData.rvecs;
         existsData.tvecs = newData.tvecs;
-        existsData.callCount = newData.callCount;
+        existsData.frameCount = newData.frameCount;
     }
 
     void Calibrator::convertTo2dPoints(const std::vector<cv::Point3d> &points3d, std::vector<cv::Point2f> &points2d) {

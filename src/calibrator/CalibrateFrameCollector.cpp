@@ -145,7 +145,7 @@ CalibrateFrameCollector::FrameRef CalibrateFrameCollector::createFrame(const std
 }
 
 
-void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *map, const CalibrateFrameCollector::FrameRef &frameRef) {
+bool CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferredSizeProvider, int cls, std::unordered_map<int, FrameRef> *map, const CalibrateFrameCollector::FrameRef &frameRef) {
     const auto &it = map->find(cls);
 
     const auto w = frameRef->w;
@@ -160,11 +160,15 @@ void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferre
     if (it == map->end()) {
         gridPreferredSizeProvider.insertFrameStat(w, h);
         map->insert({cls, frameRef});
+        return true;
     // если сетка лучше или соответствует более популярному размеру
     } else if (frameRef->cost < it->second->cost) {
         gridPreferredSizeProvider.replaceFrameStat(w, h, ew, eh);
         map->insert_or_assign(cls, frameRef);
+        return true;
     }
+
+    return false;
 }
 
 /**
@@ -179,27 +183,31 @@ void CalibrateFrameCollector::addFrameTo(GridPreferredSizeProvider &gridPreferre
  * @param h
  * @param cost
  */
-void CalibrateFrameCollector::addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const FrameRef &frameRef) {
-    addFrameTo(gridPreferredSizeProvider, frameRef->rotationClass, &rotationMap, frameRef);
-    addFrameTo(gridPreferredSizeProvider, frameRef->positionClass, &positionMap, frameRef);
+bool CalibrateFrameCollector::addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const FrameRef &frameRef) {
+    auto rot = addFrameTo(gridPreferredSizeProvider, frameRef->rotationClass, &rotationMap, frameRef);
+    auto pos = addFrameTo(gridPreferredSizeProvider, frameRef->positionClass, &positionMap, frameRef);
+
+    return rot || pos;
 }
 
-void CalibrateFrameCollector::addMulticamFrames(const std::vector<std::vector<CalibrateFrameCollector::FrameRef>> &_frameSets) {
-    for (const auto &f : _frameSets) {
-        if (f[0] == nullptr) {
-            continue;
-        }
-        int rotationClasses = R_DIM_X.size * R_DIM_Y.size * R_DIM_Z.size;
-        int cls = f[0]->rotationClass + f[0]->positionClass * rotationClasses;
-        double cost = f[0]->cost;
-        const auto &it = this->frameSets.find(cls);
-
-        if (it == this->frameSets.end()) {
-            this->frameSets.insert({cls, f});
-        } else if (cost < it->second[0]->cost) {
-            this->frameSets.insert_or_assign(cls, f);
-        }
+bool CalibrateFrameCollector::addMulticamFrameSet(const std::vector<CalibrateFrameCollector::FrameRef> &f) {
+    if (f[0] == nullptr) {
+        return false;
     }
+    int rotationClasses = R_DIM_X.size * R_DIM_Y.size * R_DIM_Z.size;
+    int cls = f[0]->rotationClass + f[0]->positionClass * rotationClasses;
+    double cost = f[0]->cost;
+    const auto &it = this->frameSets.find(cls);
+
+    if (it == this->frameSets.end()) {
+        this->frameSets.insert({cls, f});
+        return true;
+    } else if (cost < it->second[0]->cost) {
+        this->frameSets.insert_or_assign(cls, f);
+        return true;
+    }
+
+    return false;
 }
 
 std::vector<CalibrateFrameCollector::FrameRef> CalibrateFrameCollector::getFramesSampleFrom(int n, size_t w, size_t h, bool validate, const std::unordered_map<int, FrameRef> &map) const {
@@ -362,7 +370,7 @@ void CalibrateFrameCollector::load(GridPreferredSizeProvider &gridPreferredSizeP
             set.emplace_back(loadFrame(frame));
         }
 
-        addMulticamFrames({set});
+        addMulticamFrameSet(set);
     }
 }
 

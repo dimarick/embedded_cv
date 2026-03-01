@@ -13,8 +13,8 @@
 #include "CalibrateMapper.h"
 
 static const int MAX_FRAMES_QUEUE = 100;
-static const int TRAIN_SAMPLE_SIZE = 100;
-static const int VALIDATE_SAMPLE_SIZE = 200;
+static const int TRAIN_SAMPLE_SIZE = 50;
+static const int VALIDATE_SAMPLE_SIZE = 100;
 namespace ecv {
 
     /**
@@ -68,13 +68,17 @@ namespace ecv {
         std::vector<ecv::Calibrator> calibrators;
         mutable std::shared_mutex dataMutex;
         std::vector<Calibrator::CalibrationData> data;
+        std::vector<Calibrator::CalibrationData> tmpData;
         std::vector<Calibrator::CalibrationData> rectificationData;
         std::vector<cv::Mat> map;
         std::vector<cv::Mat> rectifiedMap;
         std::vector<double> costs;
+        std::vector<double> temperature;
+        std::vector<double> annealFreq;
+        double temperatureMc = 100.;
+        double annealFreqMc = 0.5;
         double multicamCosts = 1. / 0.;
         std::vector<double> gridDistanceCosts;
-        double multicamRoiSize = 0.;
         std::mutex pendingFramesMutex;
         std::vector<std::set<CalibrateFrameCollector::FrameRef, FrameCompare>> pendingFrames;
         std::set<FrameRefList, FrameSetCompare> pendingFrameSets;
@@ -93,8 +97,6 @@ namespace ecv {
 
         void printMulticamCalibrationStats(const std::vector<cv::Mat> &camMatrices, const std::vector<cv::Mat> &Rs,
                                            const std::vector<cv::Mat> &Ts, const std::string &unit);
-        std::vector<bool> findOutliersPerFrameError(const cv::Mat &errors, double k = 2.0);
-        template<typename T> int filterOutliers(std::vector<T> &frameSets, const std::vector<bool> &outliers) const;
     public:
         explicit CalibrationStrategy(
                 cv::Size frameSize, int numCameras,
@@ -112,6 +114,7 @@ namespace ecv {
             frameCollectors.reserve(numCameras);
             calibrators.reserve(numCameras);
             data.reserve(numCameras);
+            tmpData.reserve(numCameras);
             rectificationData.reserve(numCameras);
             map.reserve(numCameras);
             rectifiedMap.reserve(numCameras);
@@ -119,11 +122,14 @@ namespace ecv {
             camThreads.reserve(numCameras);
             viewCosts.reserve(numCameras);
             viewMulticamCosts.reserve(numCameras);
+            temperature.reserve(numCameras);
+            annealFreq.reserve(numCameras);
 
             for (int i = 0; i < numCameras; ++i) {
                 frameCollectors.emplace_back(frameSize);
                 calibrators.emplace_back();
                 data.emplace_back(frameSize);
+                tmpData.emplace_back(frameSize);
                 rectificationData.emplace_back();
                 map.emplace_back();
                 rectifiedMap.emplace_back();
@@ -132,6 +138,8 @@ namespace ecv {
                 camThreads.emplace_back();
                 viewCosts.emplace_back();
                 viewMulticamCosts.emplace_back();
+                temperature.emplace_back(100.);
+                annealFreq.emplace_back(0.5);
             }
             pendingFrames.resize(numCameras);
         }

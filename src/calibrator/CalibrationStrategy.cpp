@@ -1,5 +1,6 @@
 #include <iomanip>
 #include <calib3d.hpp>
+#include <random>
 #include "CalibrationStrategy.h"
 #include "StatStreaming.h"
 #include "CalibrateMapper.h"
@@ -124,19 +125,19 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
     auto sample = frameCollectors[i].getFramesSample(TRAIN_SAMPLE_SIZE, w, h, false);
 
     for (const auto &frame : frames) {
-        if (frame != nullptr) {
-            frameCollectors[i].addFrame(gridPreferredSizeProvider, frame);
+        if (frame != nullptr && frameCollectors[i].addFrame(gridPreferredSizeProvider, frame)) {
             if (!frame->validate) {
                 sample.emplace_back(frame);
             }
         }
     }
 
-    if (sample.empty()) {
+    if (sample.size() < 10) {
         return;
     }
 
-    auto trainData = getCalibrationData(i);
+    auto trainData = tmpData[i];
+    auto isFirstTime = trainData.frameCount == 0;
 
     std::vector<double> stdDeviationsIntrinsics(CALIB_NINTRINSIC);
     std::vector<double> perViewErrors(sample.size());
@@ -152,6 +153,13 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
             cv::TermCriteria(100, 1e-8)
     );
 
+    if (!isFirstTime) {
+        auto existsData = getCalibrationData(i);
+        double ema = 2. / (1. + 1.);
+        calibrators[i].mergeIntrinsics(trainData, ema, existsData, 0.05);
+        trainData = existsData;
+    }
+
     auto testData = trainData;
     std::tie(w, h) = gridPreferredSizeProvider.getGridPreferredSize();
     auto sampleValidate = frameCollectors[i].getFramesSample(VALIDATE_SAMPLE_SIZE, w, h, true);
@@ -166,28 +174,45 @@ void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int came
             frameCollectors[i].getCollectedImageGridsSample(sampleValidate),
             testData);
 
-    if (cost < costs[i] * 1.5) {
-        if (trainData.callCount > 1) {
-            auto existsData = getCalibrationData(i);
-            double ema = trainData.callCount > 0 ? 2. / (cost * 20. + 1.) : 1;
-            double dispersion = 0.1 / ((double) frameCollectors[i].getFrameSetCount() + 2.);
-            calibrators[i].mergeIntrinsics(trainData, ema, existsData, dispersion);
-            setCalibrationData(i, existsData);
-            trainData = existsData;
-        } else {
+    if (cost > 10) {
+        return;
+    }
+
+    std::uniform_real_distribution<double> randomRange(0., 1.);
+    std::mt19937 r {std::random_device{}()};
+    double annealEma = 2. / (20. + 1.);
+
+    // Имитация отжига. Вероятность перехода тем выше, чем меньше ошибка и чем выше температура.
+    // Отношение нормируется к 0.0-1.0 с помощью e^(d/T)
+    double random = randomRange(r);
+    auto probability = std::pow(std::numbers::e, (costs[i] - cost) / temperature[i]);
+    bool condition = cost < costs[i];
+    if (condition || random < probability) {
+        std::cout << (condition ? "Single cam Normal... " : "Annealing... ") << i << std::endl;
+        tmpData[i] = trainData;
+        if (condition) {
             setCalibrationData(i, trainData);
+            costs[i] = std::min(cost, costs[i]);
+            multicamThreadWait.notify_all();
+
+            cv::Mat tmp;
+            cv::initUndistortRectifyMap(trainData.cameraMatrix, trainData.distCoeff, cv::noArray(), trainData.cameraMatrix, frameSize, CV_32FC2, map[i], tmp);
+
+            onUpdateCallback(i, *this);
         }
-
-        costs[i] = std::min(cost, costs[i]);
         viewCosts[i] = cost;
-        multicamThreadWait.notify_all();
-
-        cv::Mat tmp;
-        cv::initUndistortRectifyMap(trainData.cameraMatrix, trainData.distCoeff, cv::noArray(), trainData.cameraMatrix, frameSize, CV_32FC2, map[i], tmp);
-
-        onUpdateCallback(i, *this);
-
         std::cout << "Calib " << cameraId << ", c = " << cost << std::endl;
+        annealFreq[i] = annealEma * 1 + (1 - annealEma) * annealFreq[i];
+    } else {
+        annealFreq[i] = annealEma * 0 + (1 - annealEma) * annealFreq[i];
+    }
+
+    if (annealFreq[i] > 0.8 && temperature[i] > 1e-2) {
+        std::cout << "Cooling... " << i << std::endl;
+        temperature[i] /= 1.1;
+    } else if (annealFreq[i] < 0.2 && temperature[i] < 1e3) {
+        std::cout << "Heating... " << i << std::endl;
+        temperature[i] *= 1.1;
     }
 }
 
@@ -210,15 +235,13 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
     }
 
     for (const auto &frameSet : frameSets) {
-        if (isValid(frameSet)) {
+        if (isValid(frameSet) && frameCollectors[0].addMulticamFrameSet(frameSet)) {
             validFrameSets.emplace_back(frameSet);
             if (!frameSet[0]->validate) {
                 trainFrameSets.emplace_back(frameSet);
             }
         }
     }
-
-    frameCollectors[0].addMulticamFrames(validFrameSets);
 
     auto sample = frameCollectors[0].getFrameSetsSample(TRAIN_SAMPLE_SIZE, w, h, false);
 
@@ -284,7 +307,7 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
                 perFrameErrors,
                 flagsForIntrinsics,
                 cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_FIX_INTRINSIC,
-                cv::TermCriteria(1000, 1e-8)
+                cv::TermCriteria(10, 1e-8)
         );
     } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
@@ -350,6 +373,10 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         return;
     }
 
+    if (cost > 10) {
+        return;
+    }
+
     for (int i = 1; i < numCameras; ++i) {
         viewMulticamCosts[i] = cost;
         cv::Mat tmp;
@@ -387,11 +414,18 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
         calibrationData0.Rs = Rs[0];
         calibrationData0.Ts = Ts[0];
 
+        std::uniform_real_distribution<double> randomRange(0., 1.);
+        std::mt19937 r {std::random_device{}()};
+        double annealEma = 2. / (20. + 1.);
+
         auto gridCost = verifyParamsUsingGridMatch(imagePoints[i], calibrationData);
-        auto gridCost0 = verifyParamsUsingGridMatch(imagePoints[i], calibrationData0);
+        auto gridCost0 = verifyParamsUsingGridMatch(imagePoints[0], calibrationData0);
 
         // оптимизация методом адаптивных ограничений
-        if (gridCost < gridDistanceCosts[i] * 1.2 && gridCost0 < gridDistanceCosts[0] * 1.2 && cost < multicamCosts * 10) {
+        bool condition = (gridCost < gridDistanceCosts[i] || gridCost0 < gridDistanceCosts[0]) && cost < multicamCosts * 2;
+        if (condition || randomRange(r) < std::pow(std::numbers::e, (gridDistanceCosts[i] - gridCost) / temperatureMc)) {
+            std::cout << (condition ? "Normal... " : "Annealing... ") << i << std::endl;
+            
             printMulticamCalibrationStats(Ks, Rs, Ts, "c");
             gridDistanceCosts[i] = std::min(gridCost, gridDistanceCosts[i]);
             multicamCosts = std::min(cost, multicamCosts);
@@ -434,6 +468,18 @@ void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList>
 
             onUpdateCallback(0, *this);
             onUpdateCallback(i, *this);
+
+            annealFreqMc = annealEma * 1 + (1 - annealEma) * annealFreqMc;
+        } else {
+            annealFreqMc = annealEma * 0 + (1 - annealEma) * annealFreqMc;
+        }
+
+        if (annealFreqMc > 0.8 && temperatureMc > 1e-2) {
+            std::cout << "Cooling... " << i << std::endl;
+            temperatureMc /= 1.1;
+        } else if (annealFreqMc < 0.2 && temperatureMc < 1e2) {
+            std::cout << "Heating... " << i << std::endl;
+            temperatureMc *= 1.1;
         }
     }
 }
@@ -638,52 +684,6 @@ void CalibrationStrategy::printMulticamCalibrationStats(
     std::cout << "\n========== Конец анализа ==========\n\n";
 }
 
-/**
- * @brief Возвращает индексы frame элементов матрицы errors, превышающих порог mean + k * stddev.
- * @param errors  cv::Mat размером (numFrames x numCameras), тип CV_64F.
- * @param k       коэффициент для порога (по умолчанию 2.0).
- * @return std::vector<std::pair<int,int>> список пар (frame, cam)-индексов выбросов.
- */
-std::vector<bool> CalibrationStrategy::findOutliersPerFrameError(const cv::Mat& errors, double k) {
-    std::vector<bool> outliers(errors.cols, false);
-
-    if (errors.empty() || errors.type() != CV_64F) {
-        std::cerr << "findOutliersPerFrameError: errors empty or not double" << std::endl;
-        return outliers;
-    }
-
-    // 1. Вычислим среднее и стандартное отклонение по всем элементам
-    double sum = 0.0, sumSq = 0.0;
-    int total = errors.rows * errors.cols;
-    for (int r = 0; r < errors.rows; ++r) {
-        for (int c = 0; c < errors.cols; ++c) {
-            double val = errors.at<double>(r, c);
-            sum += val;
-            sumSq += val * val;
-        }
-    }
-
-
-    double mean = sum / total;
-    double variance = (sumSq / total) - (mean * mean);
-    double stddev = std::sqrt(variance);
-
-    double threshold = mean + k * stddev;
-    std::cout << "Outlier filter: mean = " << mean << ", stddev = " << stddev
-              << ", threshold = " << threshold << std::endl;
-
-    // 2. Собираем индексы превышающих порог
-    for (int cam = 0; cam < errors.rows; ++cam) {
-        for (int f = 0; f < errors.cols; ++f) {
-            if (errors.at<double>(cam, f) > threshold) {
-                outliers[f] = true;
-            }
-        }
-    }
-
-    return outliers;
-}
-
 void CalibrationStrategy::loadConfig() {
     for (int i = 0; i < numCameras; ++i) {
         cv::FileStorage storage;
@@ -706,11 +706,11 @@ void CalibrationStrategy::loadConfig() {
 
     for (int j = 0; j < 10; ++j) {
         for (int i = 0; i < numCameras; ++i) {
-            const auto &framesSample = frameCollectors[i].getFramesSample(100, w, h, false);
+            const auto &framesSample = frameCollectors[i].getFramesSample(20, w, h, false);
             camThreadCallback(framesSample, i);
         }
 
-        const auto &framesSample = frameCollectors[0].getFrameSetsSample(100, w, h, false);
+        const auto &framesSample = frameCollectors[0].getFrameSetsSample(20, w, h, false);
         multicamThreadCallback(framesSample);
     }
 }
