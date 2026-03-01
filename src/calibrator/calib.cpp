@@ -19,18 +19,6 @@
 #include "CalibrateFrameCollector.h"
 #include "CalibrationStrategy.h"
 
-void noAction(cv::Mat &map)
-{
-    for (int y = 0; y < map.rows; ++y) {
-        for (int x = 0; x < map.cols; ++x) {
-            auto p = map.at<cv::Point2f>(y, x);
-            p.x = (float)x;
-            p.y = (float)y;
-            map.at<cv::Point2f>(y, x) = p;
-        }
-    }
-}
-
 int main(int argc, const char **argv) {
     cpptrace::register_terminate_handler();
 
@@ -240,15 +228,13 @@ int main(int argc, const char **argv) {
 
             auto frameQuality = calibrateMapper[i].detectFrameImagePointsGrid(frames[i], peaks[i], imageGrid, &w, &h, debug);
 
-
-
             std::vector<ecv::CalibrateMapper::Point3> calibImageGrid(500), calibObjectGrid(500);
 
             if (i == 1) {
                 std::cout << "Grid error is " << frameQuality << std::endl;
             }
 
-            if (frameQuality < 0.5 && w >= 6 && h >= 3) {
+            if (frameQuality < 1 && w >= 6 && h >= 3) {
                 calibrateMapper[i].generateFrameObjectPointsGrid(objectGrid, w, h);
                 imageGrid.resize(w * h);
                 objectGrid.resize(w * h);

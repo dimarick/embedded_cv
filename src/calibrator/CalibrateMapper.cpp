@@ -51,15 +51,15 @@ namespace ecv {
 
         auto result = detectFrameImagePointsGrid(frame.size(), peaks, square, imageGrid, w, h);
 
-        if (result < 0.2 && !debugFrame.empty()) {
+        if (result < 0.3 && !debugFrame.empty()) {
             drawBaseSquare(debugFrame, square, squareRmse < 0.2f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255));
             drawGrid(debugFrame, imageGrid, *w, *h, cv::Scalar(255, 0, 0));
         }
 
-        if (result < 0.2 && squareRmse < 0.4 && result < prevError * 1.1 && *w >= 3 && *h >= 3) {
+        if (result < 0.3 && squareRmse < 0.4 && result < prevError * 1.1 && *w >= 3 && *h >= 3) {
             prevError = result;
             setPattern(suggestPatternSize(imageGrid, square, *w, *h), (float) suggestSkew(imageGrid, *w, *h));
-        } else if (result > 5 * prevError || result > 0.3) {
+        } else if (result > 5 * prevError || result > 0.5) {
             std::normal_distribution<float> rngSkew(skew, 0.05);
             std::normal_distribution<float> rngSize((float)patternSize, 3);
             std::mt19937 r {std::random_device{}()};
@@ -649,7 +649,7 @@ namespace ecv {
                     auto p3 = points[j];
                     if (p3.x > result.topLeft.x && p3.y > result.topLeft.y) {
                         if (isInsideQuadSimple(p3, quad)) {
-                            auto z = p3.z * 4;
+                            auto z = p3.z * 3;
                             if (z > result.topLeft.z || z > result.bottomRight.z) {
                                 q2 = 1. / 0.;
                             }
@@ -788,7 +788,7 @@ namespace ecv {
                                std::clamp(*w - cW - right - 1, 0, *w));
         };
 
-        auto threshold = 1.;
+        auto threshold = 2.;
         auto Q = 1.;
         StatStreaming stat;
 
@@ -860,29 +860,38 @@ namespace ecv {
         return Q;
     }
 
-    double
-    CalibrateMapper::getGridCost(std::vector<Point3> &grid, int w, int h, int top, int left, int bottom, int right) {
+    /**
+     * Функция стоимости: средняя относительная ошибка экстраполяции следующей точки по 2 соседним, верхняя оценка 2 сигмы (99+%)
+     * @param grid
+     * @param w
+     * @param h
+     * @param top
+     * @param left
+     * @param bottom
+     * @param right
+     * @return grid cost
+     */
+    double CalibrateMapper::getGridCost(std::vector<Point3> &grid, int w, int h, int top, int left, int bottom, int right) {
         StatStreaming err;
 
         err.addFirstValue(0);
         for (int y = top; y < h - bottom; ++y) {
             for (int x = left; x < w - right; ++x) {
                 auto p = grid[y * w + x];
-                int sy = y < h - 1 ? 1 : -1;
-                int sx = x < w - 1 ? 1 : -1;
+                int sy = y < h - bottom - 1 ? 1 : -1;
+                int sx = x < w - right - 1 ? 1 : -1;
                 if (p.z < 0) {
                     err.addValue(1.);
                     continue;
                 }
                 auto prediction = approximate2(p, grid[y * w + x + sx], grid[(y + sy) * w + x]);
-                prediction.z = p.z;
                 auto real = grid[(y + sy) * w + x + sx];
-                double norm = distanceSqr3(p, prediction);
-                err.addValue(distanceSqr3(prediction, real) / norm * 0.5 + (1 - p.z) * 0.5);
+                double norm = distance2(p, prediction);
+                err.addValue(distance2(prediction, real) / norm * 0.5 + std::abs(real.z - p.z) * 0.5);
             }
         }
 
-        return err.stddev();
+        return err.mean() + err.stddev() * 3;
     }
 
     void CalibrateMapper::fillGridRow(size_t w, size_t cH, size_t cW, int j, const std::vector<Point3> &peaks, std::vector<Point3> &grid) {
@@ -936,12 +945,8 @@ namespace ecv {
         return found;
     }
 
-    double CalibrateMapper::distance2(Point3 p1, Point3 p2) const {
+    double CalibrateMapper::distance2(Point3 p1, Point3 p2) {
         return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
-    }
-
-    double CalibrateMapper::distanceSqr3(Point3 p1, Point3 p2) {
-        return std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2) + std::pow(p1.z - p2.z, 2);
     }
 
     double CalibrateMapper::sign(double val) const {
