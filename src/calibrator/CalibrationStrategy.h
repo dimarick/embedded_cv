@@ -12,6 +12,7 @@
 #include "GridPreferredSizeProvider.h"
 #include "CalibrateMapper.h"
 #include "SingleCameraThread.h"
+#include "MultiCameraCalibration.h"
 
 namespace ecv {
 
@@ -30,8 +31,6 @@ namespace ecv {
     class CalibrationStrategy {
     public:
         static const int MAX_FRAMES_QUEUE = 100;
-        static const int TRAIN_SAMPLE_SIZE = 50;
-        static const int VALIDATE_SAMPLE_SIZE = 100;
         typedef std::vector<CalibrateFrameCollector::FrameRef> FrameRefList;
     private:
         struct FrameSetCompare {
@@ -68,13 +67,7 @@ namespace ecv {
         std::vector<CalibrateFrameCollector> frameCollectors;
         std::vector<ecv::Calibrator> calibrators;
         std::vector<std::shared_ptr<ecv::SingleCameraThread>> cameraThread;
-        mutable std::shared_mutex dataMutex;
-        std::vector<CalibrationData> rectificationData;
-        std::vector<cv::Mat> rectifiedMap;
-        double temperatureMc = 100.;
-        double annealFreqMc = 0.5;
-        double multicamCosts = 1. / 0.;
-        std::vector<double> gridDistanceCosts;
+        std::shared_ptr<MultiCameraCalibration> multicamThreadHandler;
         std::mutex pendingFramesMutex;
         std::vector<std::set<CalibrateFrameCollector::FrameRef, FrameCompare>> pendingFrames;
         std::set<FrameRefList, FrameSetCompare> pendingFrameSets;
@@ -84,18 +77,16 @@ namespace ecv {
         std::thread multicamThread;
         std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback;
         std::string configPath;
-        std::vector<double> viewMulticamCosts;
-        void multicamThreadCallback(const std::vector<FrameRefList> &pendingFramesPerCam);
-        [[nodiscard]] std::vector<cv::Mat> getObjectPointsFromFrameSets(const std::vector<FrameRefList> &frameSets) const;
-
-        void printMulticamCalibrationStats(const std::vector<cv::Mat> &camMatrices, const std::vector<cv::Mat> &Rs,
-                                           const std::vector<cv::Mat> &Ts, const std::string &unit);
     public:
         explicit CalibrationStrategy(
                 cv::Size frameSize, int numCameras,
                 std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback,
                 std::string configPath = ""
-        ) : frameSize(frameSize), numCameras(numCameras), configPath(std::move(configPath)), onUpdateCallback(std::move(onUpdateCallback)) {
+        ) :
+        frameSize(frameSize),
+        numCameras(numCameras),
+        configPath(std::move(configPath)),
+        onUpdateCallback(std::move(onUpdateCallback)) {
 
             // Предварительно выделяем память, но не вызываем конструкторы объектов.
             // Это важно так как при добавлении второй камеры через emplace_back
@@ -106,27 +97,58 @@ namespace ecv {
             // на некоторых абсолютно корректных файлах
             frameCollectors.reserve(numCameras);
             calibrators.reserve(numCameras);
-            rectificationData.reserve(numCameras);
-            rectifiedMap.reserve(numCameras);
             camThreads.reserve(numCameras);
-            viewMulticamCosts.reserve(numCameras);
             cameraThread.reserve(numCameras);
-
             for (int i = 0; i < numCameras; ++i) {
                 frameCollectors.emplace_back(frameSize);
                 calibrators.emplace_back();
-                rectificationData.emplace_back();
-                rectifiedMap.emplace_back();
-                gridDistanceCosts.emplace_back(1. / 0.);
                 camThreads.emplace_back();
-                viewMulticamCosts.emplace_back();
+            }
+
+            auto callback = [this](int cameraId, const MultiCameraCalibration &that) {
+                cv::FileStorage storage;
+
+                storage.open(std::format("gridDataset{}.yaml", cameraId), cv::FileStorage::WRITE);
+
+                if (storage.isOpened()) {
+                    frameCollectors[cameraId].store(storage);
+                    storage.release();
+                }
+
+                storage.open(std::format("config_{}.yaml", cameraId), cv::FileStorage::WRITE);
+
+                if (storage.isOpened()) {
+                    getRectificationData(cameraId).store(storage);
+                    storage.release();
+                }
+
+                storage.open(std::format("config_0_{}.yaml", cameraId), cv::FileStorage::WRITE);
+
+                if (storage.isOpened()) {
+                    getRectificationData(0).store(storage);
+                    storage.release();
+                }
+
+                this->onUpdateCallback(cameraId, *this);
+            };
+            multicamThreadHandler = std::shared_ptr<MultiCameraCalibration>(new MultiCameraCalibration(
+                    numCameras,
+                    frameSize,
+                    callback,
+                    gridPreferredSizeProvider,
+                    frameCollectors[0]
+            ));
+
+            for (int i = 0; i < numCameras; ++i) {
                 cameraThread.emplace_back(new SingleCameraThread(i, frameSize, [i, this] (const SingleCameraThread &that) {
                     if (this->onUpdateCallback != nullptr) {
                         this->onUpdateCallback(i, *this);
+                        multicamThreadHandler->setCalibrationData(i, that.getCalibrationData());
                         multicamThreadWait.notify_all();
                     }
                 }, gridPreferredSizeProvider, frameCollectors[i], calibrators[i]));
             }
+
             pendingFrames.resize(numCameras);
         }
 
@@ -137,13 +159,7 @@ namespace ecv {
         }
 
         [[nodiscard]] CalibrationData getRectificationData(int cameraId) const {
-            CalibrationData result;
-            {
-                std::shared_lock lock(dataMutex);
-                result = rectificationData[cameraId];
-            }
-
-            return result;
+            return multicamThreadHandler->getRectificationData(cameraId);
         }
 
         [[nodiscard]] cv::Point2d getF(int cameraId) {
@@ -154,21 +170,12 @@ namespace ecv {
             return cameraThread[cameraId]->getC();
         }
 
-        void setCalibrationData(int cameraId, const CalibrationData &updatedData) {
-            cameraThread[cameraId]->setCalibrationData(updatedData);
-        }
-
-        void setRectificationData(int cameraId, const CalibrationData &updatedData) {
-            std::unique_lock lock(dataMutex);
-            rectificationData.at(cameraId) = updatedData;
-        }
-
         [[nodiscard]] cv::Mat getMap(int cameraId) const {
             return cameraThread[cameraId]->getMap();
         }
 
         [[nodiscard]] cv::Mat getRectifiedMap(int cameraId) const {
-            return rectifiedMap[cameraId];
+            return multicamThreadHandler->getRectifiedMap(cameraId);
         }
 
         [[nodiscard]] double getProgress(int cameraId) const {
@@ -192,7 +199,7 @@ namespace ecv {
         }
 
         [[nodiscard]] double getViewMulticamCosts(int cameraId) const {
-            return viewMulticamCosts[cameraId];
+            return multicamThreadHandler->getViewMulticamCosts(cameraId);
         }
 
         CalibrateFrameCollector::FrameRef
@@ -210,16 +217,14 @@ namespace ecv {
             stopCalibration();
         }
 
-        std::vector<std::vector<cv::Mat>>
-        getImagePointsFromFrameSets(const std::vector<FrameRefList> &frameSets) const;
-
-        bool isValid(const FrameRefList &frameSet) const;
-
-        double
-        verifyParamsUsingGridMatch(const std::vector<cv::Mat> &imagePoints,
-                                   const CalibrationData &calibrationData) const;
+        static void converPoints(const cv::Mat &pp, std::vector<ecv::CalibrateMapper::Point3> &points);
+        static void converPoints(const std::vector<ecv::CalibrateMapper::Point3> &points, cv::Mat &pp);
 
         void undistortImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints,
+                                  const CalibrationData &calibrationData) const;
+
+        void undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints,
+                                  std::vector<ecv::CalibrateMapper::Point3> &plainPoints,
                                   const CalibrationData &calibrationData) const;
 
         void rectifyImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints,
@@ -228,14 +233,6 @@ namespace ecv {
         void rectifyImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints,
                                 std::vector<ecv::CalibrateMapper::Point3> &plainPoints,
                                 const CalibrationData &calibrationData) const;
-
-        void undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints,
-                                  std::vector<ecv::CalibrateMapper::Point3> &plainPoints,
-                                  const CalibrationData &calibrationData) const;
-
-        void converPoints(const cv::Mat &pp, std::vector<ecv::CalibrateMapper::Point3> &points) const;
-
-        void converPoints(const std::vector<ecv::CalibrateMapper::Point3> &points, cv::Mat &pp) const;
     };
 }
 #endif //EMBEDDED_CV_CALIBRATIONSTRATEGY_H

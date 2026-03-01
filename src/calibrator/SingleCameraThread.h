@@ -1,11 +1,9 @@
 #ifndef EMBEDDED_CV_SINGLECAMERATHREAD_H
 #define EMBEDDED_CV_SINGLECAMERATHREAD_H
 
-#include <queue>
-#include <thread>
-#include <condition_variable>
-#include <utility>
+#include <atomic>
 #include <shared_mutex>
+#include <utility>
 #include "opencv2/core.hpp"
 #include "CalibrateFrameCollector.h"
 #include "Calibrator.h"
@@ -18,6 +16,7 @@ namespace ecv {
         static const int TRAIN_SAMPLE_SIZE = 50;
         static const int VALIDATE_SAMPLE_SIZE = 100;
         typedef std::vector<CalibrateFrameCollector::FrameRef> FrameRefList;
+
     private:
         static GridPreferredSizeProvider nullGridPreferredSizeProvider;
         static CalibrateFrameCollector nullFrameCollector;
@@ -25,7 +24,7 @@ namespace ecv {
 
         const int cameraId;
         const cv::Size frameSize;
-        const std::function<void(const SingleCameraThread &that)> onUpdateCallback;
+        std::function<void(const SingleCameraThread &that)> onUpdateCallback;
 
         GridPreferredSizeProvider &gridPreferredSizeProvider;
         CalibrateFrameCollector &frameCollector;
@@ -43,10 +42,6 @@ namespace ecv {
 
         std::atomic<bool> running = false;
         mutable std::shared_mutex dataMutex;
-        void undistortImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints, const CalibrationData &calibrationData) const;
-        void undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints, std::vector<ecv::CalibrateMapper::Point3> &plainPoints, const CalibrationData &calibrationData) const;
-        void converPoints(const cv::Mat &pp, std::vector<ecv::CalibrateMapper::Point3> &points) const;
-        void converPoints(const std::vector<ecv::CalibrateMapper::Point3> &points, cv::Mat &pp) const;
     public:
         explicit SingleCameraThread() :
             cameraId(-1),
@@ -61,22 +56,21 @@ namespace ecv {
         explicit SingleCameraThread(
             int cameraId,
             cv::Size frameSize,
-            const std::function<void(const SingleCameraThread &that)> &onUpdateCallback,
+            std::function<void(const SingleCameraThread &that)> onUpdateCallback,
             GridPreferredSizeProvider &gridPreferredSizeProvider,
             CalibrateFrameCollector &frameCollector,
             const Calibrator &calibrator
         ) :
             cameraId(cameraId),
             frameSize(frameSize),
-            onUpdateCallback(onUpdateCallback),
+            onUpdateCallback(std::move(onUpdateCallback)),
             gridPreferredSizeProvider(gridPreferredSizeProvider),
             frameCollector(frameCollector),
-            calibrator(calibrator)
-        {
-
-        }
+            calibrator(calibrator) {}
 
         void camThreadCallback(const FrameRefList &frames);
+        static void undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints, std::vector<ecv::CalibrateMapper::Point3> &plainPoints, const CalibrationData &calibrationData);
+        static void undistortImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints, const CalibrationData &calibrationData);
 
         [[nodiscard]] CalibrationData getCalibrationData() const {
             CalibrationData result;
@@ -121,10 +115,6 @@ namespace ecv {
 
         [[nodiscard]] double getProgress() const {
             return frameCollector.getProgress();
-        }
-
-        [[nodiscard]] auto getGridSize() const {
-            return gridPreferredSizeProvider.getGridPreferredSize();
         }
 
         [[nodiscard]] size_t getFrameCount() const {

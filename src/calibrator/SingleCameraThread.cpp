@@ -1,5 +1,6 @@
 #include <random>
 #include "SingleCameraThread.h"
+#include "CalibrationStrategy.h"
 
 using namespace ecv;
 
@@ -78,7 +79,6 @@ void SingleCameraThread::camThreadCallback(const FrameRefList &frames) {
 
     std::uniform_real_distribution<double> randomRange(0., 1.);
     std::mt19937 r {std::random_device{}()};
-    double annealEma = 2. / (20. + 1.);
 
     // Имитация отжига. Вероятность перехода тем выше, чем меньше ошибка и чем выше температура.
     // Отношение нормируется к 0.0-1.0 с помощью e^(d/T)
@@ -94,9 +94,11 @@ void SingleCameraThread::camThreadCallback(const FrameRefList &frames) {
             viewCost = testCost;
             reprCost = testCost;
 
-            cv::Mat tmp;
+            cv::Mat m, tmp;
             cv::initUndistortRectifyMap(trainData.cameraMatrix, trainData.distCoeff, cv::noArray(),
-                                        trainData.cameraMatrix, frameSize, CV_32FC2, map, tmp);
+                                        trainData.cameraMatrix, frameSize, CV_32FC2, m, tmp);
+
+            setMap(m);
 
             onUpdateCallback(*this);
 
@@ -121,34 +123,17 @@ void SingleCameraThread::camThreadCallback(const FrameRefList &frames) {
 }
 
 
-void SingleCameraThread::undistortImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints, const CalibrationData &calibrationData) const {
+void SingleCameraThread::undistortImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints, const CalibrationData &calibrationData) {
     const auto &d = calibrationData;
     for (int i = 0; i < imagePoints.size(); ++i) {
         cv::undistortPoints(imagePoints[i], plainPoints[i], d.cameraMatrix, d.distCoeff, cv::noArray(), d.cameraMatrix);
     }
 }
 
-void SingleCameraThread::undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints, std::vector<ecv::CalibrateMapper::Point3> &plainPoints, const CalibrationData &calibrationData) const {
+void SingleCameraThread::undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints, std::vector<ecv::CalibrateMapper::Point3> &plainPoints, const CalibrationData &calibrationData) {
     cv::Mat ip, pp((int)imagePoints.size(), 1, CV_32FC2);
-    converPoints(imagePoints, ip);
+    CalibrationStrategy::converPoints(imagePoints, ip);
     std::vector vpp = {pp};
     undistortImagePoints({ip}, vpp, calibrationData);
-    converPoints(pp, plainPoints);
-}
-
-void SingleCameraThread::converPoints(const cv::Mat &pp, std::vector<ecv::CalibrateMapper::Point3> &points) const {
-    for (int i = 0; i < pp.total(); ++i) {
-        const auto &p = pp.at<cv::Point2f>(i);
-        points[i].x = p.x;
-        points[i].y = p.y;
-        points[i].z = 0.0;
-    }
-}
-
-
-void SingleCameraThread::converPoints(const std::vector<ecv::CalibrateMapper::Point3> &points, cv::Mat &pp) const {
-    pp = cv::Mat::zeros((int)points.size(), 1, CV_32FC2);
-    for (int i = 0; i < points.size(); ++i) {
-        pp.at<cv::Point2f>(i) = cv::Point2f((float)points[i].x, (float)points[i].y);
-    }
+    CalibrationStrategy::converPoints(pp, plainPoints);
 }

@@ -111,6 +111,8 @@ add_executable(calib
         src/calibrator/CalibrationStrategy.h
         src/calibrator/SingleCameraThread.cpp
         src/calibrator/StatStreaming.h
+        src/calibrator/MultiCameraCalibration.cpp
+        src/calibrator/MultiCameraCalibration.h
 )
 
 target_link_libraries(calib PUBLIC OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
