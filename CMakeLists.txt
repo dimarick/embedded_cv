@@ -109,6 +109,7 @@ add_executable(calib
         src/calibrator/GridPreferredSizeProvider.cpp
         src/calibrator/CalibrationStrategy.cpp
         src/calibrator/CalibrationStrategy.h
+        src/calibrator/SingleCameraThread.cpp
         src/calibrator/StatStreaming.h
 )
 
@@ -135,6 +136,8 @@ add_executable(benchmark
         src/calibrator/CalibrateFrameCollector.h
         src/calibrator/GridPreferredSizeProvider.cpp
         src/calibrator/GridPreferredSizeProvider.h
+        src/calibrator/SingleCameraThread.cpp
+        src/calibrator/SingleCameraThread.h
 )
 
 target_link_libraries(benchmark PUBLIC OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS})

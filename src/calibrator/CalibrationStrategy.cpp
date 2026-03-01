@@ -24,7 +24,7 @@ void CalibrationStrategy::runCalibration() {
                         std::copy(that->pendingFrames[i].begin(), that->pendingFrames[i].end(), pendingFrames.begin());
                         pendingFrames.resize(that->pendingFrames[i].size());
                     }
-                    that->camThreadCallback(pendingFrames, i);
+                    that->cameraThread[i]->camThreadCallback(pendingFrames);
                     {
                         std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
                         that->pendingFrames[i].clear();
@@ -111,137 +111,9 @@ void CalibrationStrategy::addFrameSet(const FrameRefList &frameSet) {
     multicamThreadWait.notify_all();
 }
 
-void CalibrationStrategy::camThreadCallback(const FrameRefList &frames, int cameraId) {
-    const int i = cameraId;
-
-    size_t w, h;
-    if (frames.empty()) {
-        std::tie(w, h) = gridPreferredSizeProvider.getGridPreferredSize();
-    } else {
-        w = frames.begin()->get()->w;
-        h = frames.begin()->get()->h;
-    }
-
-    auto sample = frameCollectors[i].getFramesSample(TRAIN_SAMPLE_SIZE, w, h, false);
-
-    for (const auto &frame : frames) {
-        if (frame != nullptr && frameCollectors[i].addFrame(gridPreferredSizeProvider, frame)) {
-            if (!frame->validate) {
-                sample.emplace_back(frame);
-            }
-        }
-    }
-
-    if (sample.size() < 1) {
-        return;
-    }
-
-    auto trainData = tmpData[i];
-    auto isFirstTime = trainData.frameCount == 0;
-
-    std::vector<double> stdDeviationsIntrinsics(CALIB_NINTRINSIC);
-    std::vector<double> perViewErrors(sample.size());
-
-    calibrators[i].calibrateSingleCamera(
-            frameSize,
-            frameCollectors[i].getCollectedObjectGridsSample(sample),
-            frameCollectors[i].getCollectedImageGridsSample(sample),
-            trainData,
-            stdDeviationsIntrinsics,
-            perViewErrors,
-            0,
-            cv::TermCriteria(100, 1e-8)
-    );
-
-    if (!isFirstTime) {
-        auto existsData = getCalibrationData(i);
-        double ema = 2. / (1. + 1.);
-        calibrators[i].mergeIntrinsics(trainData, ema, existsData, 0.05);
-        trainData = existsData;
-    }
-
-    auto testData = trainData;
-    std::tie(w, h) = gridPreferredSizeProvider.getGridPreferredSize();
-    auto sampleValidate = frameCollectors[i].getFramesSample(VALIDATE_SAMPLE_SIZE, w, h, true);
-
-    if (sampleValidate.empty()) {
-        return;
-    }
-
-    double gridCost = 0.0;
-    double gridPlainCost = 0.0;
-
-    for (const auto &frame : sampleValidate) {
-        std::vector<ecv::CalibrateMapper::Point3> plainPoints(frame->imageGrid.size());
-        undistortImagePoints(frame->imageGrid, plainPoints, trainData);
-        gridPlainCost += (double)CalibrateMapper::getGridCost(plainPoints, (int)frame->w, (int)frame->h) / (double)frame->imageGrid.size();
-        gridCost += (double)CalibrateMapper::getGridCost(frame->imageGrid, (int)frame->w, (int)frame->h) / (double)frame->imageGrid.size();
-    }
-
-    gridCost = gridPlainCost / gridCost;
-
-    if (gridCost > 1) {
-        return;
-    }
-
-    auto cost = calibrators[i].validateSingleCamera(
-            frameSize,
-            frameCollectors[i].getCollectedObjectGridsSample(sampleValidate),
-            frameCollectors[i].getCollectedImageGridsSample(sampleValidate),
-            testData);
-
-    if (cost > 10) {
-        return;
-    }
-
-    std::uniform_real_distribution<double> randomRange(0., 1.);
-    std::mt19937 r {std::random_device{}()};
-    double annealEma = 2. / (20. + 1.);
-
-    // Имитация отжига. Вероятность перехода тем выше, чем меньше ошибка и чем выше температура.
-    // Отношение нормируется к 0.0-1.0 с помощью e^(d/T)
-    double random = randomRange(r);
-    auto probability = std::pow(std::numbers::e, (costs[i] - cost) / temperature[i]);
-    bool condition = cost < costs[i];
-    if (condition || random < probability) {
-        std::cout << (condition ? "Single cam Normal... " : "Annealing... ") << i << std::endl;
-        tmpData[i] = trainData;
-        if (condition) {
-            setCalibrationData(i, trainData);
-            costs[i] = std::min(cost, costs[i]);
-            viewCosts[i] = cost;
-            multicamThreadWait.notify_all();
-
-            cv::Mat tmp;
-            cv::initUndistortRectifyMap(trainData.cameraMatrix, trainData.distCoeff, cv::noArray(),
-                                        trainData.cameraMatrix, frameSize, CV_32FC2, map[i], tmp);
-
-            onUpdateCallback(i, *this);
-        }
-        std::cout << "Calib " << cameraId << ", c = " << cost << std::endl;
-        annealFreq[i] = annealEma * 1 + (1 - annealEma) * annealFreq[i];
-    } else {
-        annealFreq[i] = annealEma * 0 + (1 - annealEma) * annealFreq[i];
-    }
-
-    if (annealFreq[i] > 0.8 && temperature[i] > 1e-2) {
-        std::cout << "Cooling... " << i << std::endl;
-        temperature[i] /= 1.1;
-    } else if (annealFreq[i] < 0.2 && temperature[i] < 1e3) {
-        std::cout << "Heating... " << i << std::endl;
-        temperature[i] *= 1.1;
-    }
-}
-
 void CalibrationStrategy::multicamThreadCallback(const std::vector<FrameRefList> &frameSets) {
     std::vector<FrameRefList> validFrameSets;
     std::vector<FrameRefList> trainFrameSets;
-
-    for (int i = 0; i < numCameras; ++i) {
-        if (costs[i] > 10) {
-            return;
-        }
-    }
 
     size_t w, h;
     if (frameSets.empty()) {
@@ -724,7 +596,7 @@ void CalibrationStrategy::loadConfig() {
     for (int j = 0; j < 10; ++j) {
         for (int i = 0; i < numCameras; ++i) {
             const auto &framesSample = frameCollectors[i].getFramesSample(20, w, h, false);
-            camThreadCallback(framesSample, i);
+            cameraThread[i]->camThreadCallback(framesSample);
         }
 
         const auto &framesSample = frameCollectors[0].getFrameSetsSample(20, w, h, false);
@@ -747,7 +619,7 @@ void CalibrationStrategy::loadConfig() {
  * @param P
  * @return average of shortest 10 distances between undistorted and image point
  */
-double CalibrationStrategy::verifyParamsUsingGridMatch(const std::vector<cv::Mat> &imagePoints, const Calibrator::CalibrationData &calibrationData) const {
+double CalibrationStrategy::verifyParamsUsingGridMatch(const std::vector<cv::Mat> &imagePoints, const CalibrationData &calibrationData) const {
     std::multiset<double> distances;
     std::vector<cv::Mat> plainPoints(imagePoints.size());
     rectifyImagePoints(imagePoints, plainPoints, calibrationData);
@@ -773,7 +645,7 @@ double CalibrationStrategy::verifyParamsUsingGridMatch(const std::vector<cv::Mat
     return stat.mean() * 0.3 + stat.stddev() * 0.7;
 }
 
-void CalibrationStrategy::rectifyImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints, const Calibrator::CalibrationData &calibrationData) const {
+void CalibrationStrategy::rectifyImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints, const CalibrationData &calibrationData) const {
     std::multiset<double> distances;
     const auto &d = calibrationData;
     for (int i = 0; i < imagePoints.size(); ++i) {
@@ -782,14 +654,14 @@ void CalibrationStrategy::rectifyImagePoints(const std::vector<cv::Mat> &imagePo
 }
 
 
-void CalibrationStrategy::undistortImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints, const Calibrator::CalibrationData &calibrationData) const {
+void CalibrationStrategy::undistortImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints, const CalibrationData &calibrationData) const {
     const auto &d = calibrationData;
     for (int i = 0; i < imagePoints.size(); ++i) {
         cv::undistortPoints(imagePoints[i], plainPoints[i], d.cameraMatrix, d.distCoeff, cv::noArray(), d.cameraMatrix);
     }
 }
 
-void CalibrationStrategy::undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints, std::vector<ecv::CalibrateMapper::Point3> &plainPoints, const Calibrator::CalibrationData &calibrationData) const {
+void CalibrationStrategy::undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints, std::vector<ecv::CalibrateMapper::Point3> &plainPoints, const CalibrationData &calibrationData) const {
     cv::Mat ip, pp((int)imagePoints.size(), 1, CV_32FC2);
     converPoints(imagePoints, ip);
     std::vector vpp = {pp};
@@ -797,7 +669,7 @@ void CalibrationStrategy::undistortImagePoints(const std::vector<ecv::CalibrateM
     converPoints(pp, plainPoints);
 }
 
-void CalibrationStrategy::rectifyImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints, std::vector<ecv::CalibrateMapper::Point3> &plainPoints, const Calibrator::CalibrationData &calibrationData) const {
+void CalibrationStrategy::rectifyImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints, std::vector<ecv::CalibrateMapper::Point3> &plainPoints, const CalibrationData &calibrationData) const {
     cv::Mat ip, pp((int)imagePoints.size(), 1, CV_32FC2);
     converPoints(imagePoints, ip);
     std::vector vpp = {pp};

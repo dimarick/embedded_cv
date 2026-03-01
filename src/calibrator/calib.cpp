@@ -145,8 +145,8 @@ int main(int argc, const char **argv) {
     const cv::Size &size = frames[0].size();
     std::vector<ecv::CalibrateMapper> calibrateMapper(frames.size()), testCalibrateMapper(frames.size());
     std::vector<ecv::Calibrator> calibrator(frames.size());
-    std::vector<ecv::Calibrator::CalibrationData> calibrationData(frames.size(), ecv::Calibrator::CalibrationData(size));
-    std::vector<ecv::Calibrator::CalibrationData> rectificationData(frames.size(), ecv::Calibrator::CalibrationData(size));
+    std::vector<ecv::CalibrationData> calibrationData(frames.size(), ecv::CalibrationData(size));
+    std::vector<ecv::CalibrationData> rectificationData(frames.size(), ecv::CalibrationData(size));
 
     std::vector<double> bestQ(frames.size(), 1. / 0.);
     std::vector<double> bestPairQ(frames.size(), 1. / 0.);
@@ -177,7 +177,7 @@ int main(int argc, const char **argv) {
         std::cout << "Calibration updated " << cameraId << ",\t" << that.getProgress(cameraId) << "%\tcost " << that.getViewCosts(cameraId) << std::endl;
     });
 
-    calibrationStrategy.loadConfig();
+//    calibrationStrategy.loadConfig();
     calibrationStrategy.runCalibration();
 
     while (true) {
@@ -244,7 +244,7 @@ int main(int argc, const char **argv) {
 
             cv::Mat map;
             cv::Mat rectifiedMap;
-            ecv::Calibrator::CalibrationData calibrationDatum, rectificationDatum;
+            ecv::CalibrationData calibrationDatum, rectificationDatum;
             {
                 std::unique_lock lock(mapsMutex);
                 map = maps[i].clone();

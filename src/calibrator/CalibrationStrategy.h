@@ -11,10 +11,8 @@
 #include "Calibrator.h"
 #include "GridPreferredSizeProvider.h"
 #include "CalibrateMapper.h"
+#include "SingleCameraThread.h"
 
-static const int MAX_FRAMES_QUEUE = 100;
-static const int TRAIN_SAMPLE_SIZE = 50;
-static const int VALIDATE_SAMPLE_SIZE = 100;
 namespace ecv {
 
     /**
@@ -31,6 +29,9 @@ namespace ecv {
      */
     class CalibrationStrategy {
     public:
+        static const int MAX_FRAMES_QUEUE = 100;
+        static const int TRAIN_SAMPLE_SIZE = 50;
+        static const int VALIDATE_SAMPLE_SIZE = 100;
         typedef std::vector<CalibrateFrameCollector::FrameRef> FrameRefList;
     private:
         struct FrameSetCompare {
@@ -66,15 +67,10 @@ namespace ecv {
         GridPreferredSizeProvider gridPreferredSizeProvider;
         std::vector<CalibrateFrameCollector> frameCollectors;
         std::vector<ecv::Calibrator> calibrators;
+        std::vector<std::shared_ptr<ecv::SingleCameraThread>> cameraThread;
         mutable std::shared_mutex dataMutex;
-        std::vector<Calibrator::CalibrationData> data;
-        std::vector<Calibrator::CalibrationData> tmpData;
-        std::vector<Calibrator::CalibrationData> rectificationData;
-        std::vector<cv::Mat> map;
+        std::vector<CalibrationData> rectificationData;
         std::vector<cv::Mat> rectifiedMap;
-        std::vector<double> costs;
-        std::vector<double> temperature;
-        std::vector<double> annealFreq;
         double temperatureMc = 100.;
         double annealFreqMc = 0.5;
         double multicamCosts = 1. / 0.;
@@ -88,10 +84,7 @@ namespace ecv {
         std::thread multicamThread;
         std::function<void(int cameraId, const CalibrationStrategy &that)> onUpdateCallback;
         std::string configPath;
-        std::vector<double> viewCosts;
         std::vector<double> viewMulticamCosts;
-
-        void camThreadCallback(const FrameRefList &pendingFrames, int cameraId);
         void multicamThreadCallback(const std::vector<FrameRefList> &pendingFramesPerCam);
         [[nodiscard]] std::vector<cv::Mat> getObjectPointsFromFrameSets(const std::vector<FrameRefList> &frameSets) const;
 
@@ -113,51 +106,38 @@ namespace ecv {
             // на некоторых абсолютно корректных файлах
             frameCollectors.reserve(numCameras);
             calibrators.reserve(numCameras);
-            data.reserve(numCameras);
-            tmpData.reserve(numCameras);
             rectificationData.reserve(numCameras);
-            map.reserve(numCameras);
             rectifiedMap.reserve(numCameras);
-            costs.reserve(numCameras);
             camThreads.reserve(numCameras);
-            viewCosts.reserve(numCameras);
             viewMulticamCosts.reserve(numCameras);
-            temperature.reserve(numCameras);
-            annealFreq.reserve(numCameras);
+            cameraThread.reserve(numCameras);
 
             for (int i = 0; i < numCameras; ++i) {
                 frameCollectors.emplace_back(frameSize);
                 calibrators.emplace_back();
-                data.emplace_back(frameSize);
-                tmpData.emplace_back(frameSize);
                 rectificationData.emplace_back();
-                map.emplace_back();
                 rectifiedMap.emplace_back();
-                costs.emplace_back(1. / 0.);
                 gridDistanceCosts.emplace_back(1. / 0.);
                 camThreads.emplace_back();
-                viewCosts.emplace_back();
                 viewMulticamCosts.emplace_back();
-                temperature.emplace_back(100.);
-                annealFreq.emplace_back(0.5);
+                cameraThread.emplace_back(new SingleCameraThread(i, frameSize, [i, this] (const SingleCameraThread &that) {
+                    if (this->onUpdateCallback != nullptr) {
+                        this->onUpdateCallback(i, *this);
+                        multicamThreadWait.notify_all();
+                    }
+                }, gridPreferredSizeProvider, frameCollectors[i], calibrators[i]));
             }
             pendingFrames.resize(numCameras);
         }
 
         void loadConfig();
 
-        [[nodiscard]] Calibrator::CalibrationData getCalibrationData(int cameraId) const {
-            Calibrator::CalibrationData result;
-            {
-                std::shared_lock lock(dataMutex);
-                result = data[cameraId];
-            }
-
-            return result;
+        [[nodiscard]] CalibrationData getCalibrationData(int cameraId) const {
+            return cameraThread[cameraId]->getCalibrationData();
         }
 
-        [[nodiscard]] Calibrator::CalibrationData getRectificationData(int cameraId) const {
-            Calibrator::CalibrationData result;
+        [[nodiscard]] CalibrationData getRectificationData(int cameraId) const {
+            CalibrationData result;
             {
                 std::shared_lock lock(dataMutex);
                 result = rectificationData[cameraId];
@@ -167,31 +147,24 @@ namespace ecv {
         }
 
         [[nodiscard]] cv::Point2d getF(int cameraId) {
-            return {
-                data[cameraId].cameraMatrix.at<double>(0, 0),
-                data[cameraId].cameraMatrix.at<double>(1, 1),
-            };
+            return cameraThread[cameraId]->getF();
         }
 
         [[nodiscard]] cv::Point2d getC(int cameraId) {
-            return {
-                data[cameraId].cameraMatrix.at<double>(0, 2),
-                data[cameraId].cameraMatrix.at<double>(1, 2),
-            };
+            return cameraThread[cameraId]->getC();
         }
 
-        void setCalibrationData(int cameraId, const Calibrator::CalibrationData &updatedData) {
-            std::unique_lock lock(dataMutex);
-            data.at(cameraId) = updatedData;
+        void setCalibrationData(int cameraId, const CalibrationData &updatedData) {
+            cameraThread[cameraId]->setCalibrationData(updatedData);
         }
 
-        void setRectificationData(int cameraId, const Calibrator::CalibrationData &updatedData) {
+        void setRectificationData(int cameraId, const CalibrationData &updatedData) {
             std::unique_lock lock(dataMutex);
             rectificationData.at(cameraId) = updatedData;
         }
 
         [[nodiscard]] cv::Mat getMap(int cameraId) const {
-            return map[cameraId];
+            return cameraThread[cameraId]->getMap();
         }
 
         [[nodiscard]] cv::Mat getRectifiedMap(int cameraId) const {
@@ -199,7 +172,7 @@ namespace ecv {
         }
 
         [[nodiscard]] double getProgress(int cameraId) const {
-            return frameCollectors[cameraId].getProgress();
+            return cameraThread[cameraId]->getProgress();
         }
 
         [[nodiscard]] auto getGridSize() const {
@@ -207,15 +180,15 @@ namespace ecv {
         }
 
         [[nodiscard]] size_t getFrameCount(int cameraId) const {
-            return frameCollectors[cameraId].getFrameCount();
+            return cameraThread[cameraId]->getFrameCount();
         }
 
         [[nodiscard]] size_t getFrameSetCount(int cameraId) const {
-            return frameCollectors[cameraId].getFrameSetCount();
+            return cameraThread[cameraId]->getFrameSetCount();
         }
 
         [[nodiscard]] double getViewCosts(int cameraId) const {
-            return viewCosts[cameraId];
+            return cameraThread[cameraId]->getViewCosts();
         }
 
         [[nodiscard]] double getViewMulticamCosts(int cameraId) const {
@@ -244,21 +217,21 @@ namespace ecv {
 
         double
         verifyParamsUsingGridMatch(const std::vector<cv::Mat> &imagePoints,
-                                   const Calibrator::CalibrationData &calibrationData) const;
+                                   const CalibrationData &calibrationData) const;
 
         void undistortImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints,
-                                  const Calibrator::CalibrationData &calibrationData) const;
+                                  const CalibrationData &calibrationData) const;
 
         void rectifyImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints,
-                                const Calibrator::CalibrationData &calibrationData) const;
+                                const CalibrationData &calibrationData) const;
 
         void rectifyImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints,
                                 std::vector<ecv::CalibrateMapper::Point3> &plainPoints,
-                                const Calibrator::CalibrationData &calibrationData) const;
+                                const CalibrationData &calibrationData) const;
 
         void undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints,
                                   std::vector<ecv::CalibrateMapper::Point3> &plainPoints,
-                                  const Calibrator::CalibrationData &calibrationData) const;
+                                  const CalibrationData &calibrationData) const;
 
         void converPoints(const cv::Mat &pp, std::vector<ecv::CalibrateMapper::Point3> &points) const;
 
