@@ -21,33 +21,43 @@ namespace ecv {
         };
 
         enum CvMatCodecEnum : unsigned char {
-            JPEG =  0x0,
+            RAW =  0x0,
+            JPEG =  0x1,
         };
 
         struct CvMatHeader {
             CvMatTypeEnum type;
             CvMatCodecEnum codec;
             unsigned char channels;
+            short x;
+            short y;
             unsigned short w;
             unsigned short h;
+            float scale;
         };
 
-        struct Channel {
-            std::string name;
-            std::shared_ptr<mini_server::BroadcastingServer> server;
-            std::thread thread;
+        struct ChannelSettings {
+            std::string viewName;
+            int channelId;
+            short x;
+            short y;
+            short w;
+            short h;
+            float scale;
         };
 
+        std::shared_ptr<mini_server::BroadcastingServer> server;
+        std::thread serverThread;
         std::mutex channelsMutex;
-        std::unordered_map<std::string, Channel> channels;
-        const Channel &getOrCreateChannel(const std::string& name);
+        std::unordered_map<std::string, std::unordered_map<int, std::unordered_map<int, ChannelSettings>>> channelSettings;
+        void initializeServer();
     public:
         void showMat(const std::string& viewName, const cv::Mat& mat);
         int waitKey();
 
-        std::shared_ptr<CvMatHeader> createMessageFromMat(const cv::Mat &mat, size_t *size);
-
         virtual ~RemoteView();
+
+        std::vector<char> createMessageFromMat(const cv::Mat &mat, const cv::Rect &rect, float scale);
     };
 }
 

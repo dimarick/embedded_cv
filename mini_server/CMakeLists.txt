@@ -11,7 +11,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cpptrace)
 
-add_library(mini_server BroadcastingServer.cpp CallbackHandler.cpp CommandServer.cpp
-        SocketFactory.cpp)
+add_library(mini_server BroadcastingServer.cpp CallbackHandler.cpp CommandServer.cpp SocketFactory.cpp)
 
 install(TARGETS mini_server DESTINATION lib)

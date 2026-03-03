@@ -5,12 +5,15 @@
 #include <cstring>
 #include <stdexcept>
 #include <poll.h>
+#include <thread>
 #include "BroadcastingServer.h"
+#include "Encapsulation.h"
 
 using namespace mini_server;
 
 extern "C++" void BroadcastingServer::run() {
     struct pollfd fd = { .fd = socket, .events = POLLIN };
+    int threadId = 0;
 
     running = true;
 
@@ -33,10 +36,54 @@ extern "C++" void BroadcastingServer::run() {
         acceptedSocketsMutex.lock();
         acceptedSockets.insert(acceptedSocket);
         acceptedSocketsMutex.unlock();
+
+        threadId++;
+
+        threads.insert({threadId, std::thread(BroadcastingServer::interact, acceptedSocket, this, threadId)});
+
         std::cout << "socket accepted: " << acceptedSocket << ". Connections count: " << acceptedSockets.size() << std::endl;
     }
 
     std::cerr << "Performing graceful shutdown of BroadcastingServer" << std::endl;
+}
+
+void BroadcastingServer::interact(int socket, BroadcastingServer *server, int threadId) {
+    char input[BUFFER_SIZE];
+    struct pollfd fd = { .fd = socket, .events = POLLIN };
+
+    while (server->running) {
+        int pollStatus = poll(&fd, 1, 50);
+        if (pollStatus < 0) {
+            throw std::runtime_error(strerror(errno));
+        }
+
+        if (pollStatus == 0) {
+            continue;
+        }
+
+        bzero(input,sizeof(input));
+        auto n = read(socket, input, sizeof(input));
+
+        if (errno == EPIPE) {
+            break;
+        }
+
+        if (n == BUFFER_SIZE) {
+            throw std::runtime_error(strerror(errno));
+        }
+
+        if (n == 0) {
+            break;
+        }
+
+        if (n < 0) {
+            throw std::runtime_error(strerror(errno));
+        }
+
+        if (server->onMessage != nullptr) {
+            server->onMessage(socket, input);
+        }
+    }
 }
 
 extern "C++" void BroadcastingServer::broadcast(const std::string &message) {
@@ -48,47 +95,49 @@ extern "C++" void BroadcastingServer::broadcast(const void *buffer, size_t buffe
     auto threadSafeAcceptedSockets = acceptedSockets;
     acceptedSocketsMutex.unlock();
 
-    size_t frameSize = bufferSize + sizeof (MessageHeader);
-    const char *frame = (char *)malloc(frameSize);
-    auto header = (MessageHeader *)frame;
-    auto data = &frame[sizeof (MessageHeader)];
-    memcpy((void *) data, buffer, bufferSize);
-    header->magick = 'MsgS';
-    header->type = type;
-    header->size = bufferSize;
-    if (ttl > 0) {
-        header->ttl = duration_cast<std::chrono::milliseconds>(
-                std::chrono::high_resolution_clock::now().time_since_epoch()).count() + ttl;
-    } else {
-        header->ttl = 0;
-    }
+    MessageHeader header{'MsgS', MessageTypeEnum::TYPE_MAT, (unsigned int) bufferSize, ttl};
+    auto frame = Encapsulation::encapsulate(buffer, bufferSize, header);
 
     for (auto acceptedSocket : threadSafeAcceptedSockets) {
-        size_t sent = 0;
-        while (true) {
-            auto n = send(acceptedSocket, frame + sent, frameSize - sent, MSG_NOSIGNAL);
+        sendFrame(acceptedSocket, frame);
+    }
+}
 
-            if (n < 0) {
-                perror("ERROR writing to socket");
+void BroadcastingServer::sendFrame(int s, const std::vector<char> &frame) {
+    size_t sent = 0;
+    while (true) {
+        auto n = send(s, &frame[sent], frame.size() - sent, MSG_NOSIGNAL);
 
-                acceptedSocketsMutex.lock();
-                acceptedSockets.erase(acceptedSocket);
-                close(acceptedSocket);
-                acceptedSocketsMutex.unlock();
+        if (n < 0) {
+            perror("ERROR writing to socket");
 
-                std::cerr << "socket released: " << acceptedSocket << ". Connections count: " << acceptedSockets.size()
-                          << std::endl;
-
-                break;
+            if (onClose != nullptr) {
+                onClose(socket);
             }
 
-            sent += n;
+            acceptedSocketsMutex.lock();
+            acceptedSockets.erase(s);
+            close(s);
+            acceptedSocketsMutex.unlock();
 
-            if (sent == frameSize) {
-                break;
-            }
+            std::cerr << "socket released: " << s << ". Connections count: " << acceptedSockets.size()
+                      << std::endl;
+
+            break;
+        }
+
+        sent += n;
+
+        if (sent == frame.size()) {
+            break;
         }
     }
+}
 
-    free((void *)frame);
+void BroadcastingServer::setOnMessage(BroadcastingServer::MessageHandler handler) {
+    onMessage = std::move(handler);
+}
+
+void BroadcastingServer::setOnClose(BroadcastingServer::CloseHandler handler) {
+    onClose = std::move(handler);
 }

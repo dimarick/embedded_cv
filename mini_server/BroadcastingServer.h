@@ -5,9 +5,14 @@
 #include <set>
 #include <atomic>
 #include <string>
+#include <unordered_map>
+#include <functional>
 
 namespace mini_server {
     class BroadcastingServer {
+        typedef std::function<void(int socket, const std::string &)> MessageHandler;
+        typedef std::function<void(int socket)> CloseHandler;
+        static const size_t BUFFER_SIZE = 256;
         enum MessageTypeEnum : unsigned int {
             TYPE_MAT = 0,
             TYPE_TELEMETRY = 1,
@@ -25,8 +30,14 @@ namespace mini_server {
         int socket = -1;
         std::mutex acceptedSocketsMutex;
         std::set<int> acceptedSockets;
+        std::unordered_map<int, std::thread> threads;
         std::atomic<bool> running;
+        MessageHandler onMessage;
+        CloseHandler onClose;
     public:
+        void setOnMessage(BroadcastingServer::MessageHandler onMessage);
+        void setOnClose(BroadcastingServer::CloseHandler onClose);
+
         void setSocket(int _socket) {
             this->socket = _socket;
         }
@@ -37,6 +48,10 @@ namespace mini_server {
 
         void broadcast(const std::string &message);
         void broadcast(const void *buffer, size_t bufferSize, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
+
+        static void interact(int socket, BroadcastingServer *server, int threadId);
+
+        void sendFrame(int s, const std::vector<char> &frame);
     };
 }
 
