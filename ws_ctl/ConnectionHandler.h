@@ -10,21 +10,35 @@
 using namespace seasocks;
 
 class ConnectionHandler {
+public:
+    enum MessageTypeEnum : unsigned int {
+        TYPE_MAT = 0,
+        TYPE_TELEMETRY = 1,
+        TYPE_ACK = 2,
+        TYPE_CONTROL = 3,
+    };
+
     struct MessageHeader {
         unsigned int magick;
+        MessageTypeEnum type;
         unsigned int size;
         unsigned long ttl;
     };
+private:
     WebSocket *connection;
     int socketFd = -1;
+    int outputWidth = 0;
+    int outputHeight = 0;
     std::thread readingThread;
     std::atomic<bool> running = true;
     int sendingQueueDepth;
     std::counting_semaphore<10> sendingMutex;
 public:
-    explicit ConnectionHandler(WebSocket *connection, int socketFd, int sendingQueueDepth = -1) :
+    explicit ConnectionHandler(WebSocket *connection, int socketFd, int outputWidth, int outputHeight, int sendingQueueDepth = -1) :
         connection(connection),
         socketFd(socketFd),
+        outputWidth(outputWidth),
+        outputHeight(outputHeight),
         sendingQueueDepth(sendingQueueDepth),
         sendingMutex(this->sendingQueueDepth != -1 ? this->sendingQueueDepth : 10) {}
     void start();

@@ -1,4 +1,6 @@
 #include <seasocks/StringUtil.h>
+#include <sys/un.h>
+#include <format>
 #include "SocketProxy.h"
 
 void SocketProxy::onData(WebSocket *connection, const uint8_t *data, size_t dataSize) {
@@ -10,10 +12,34 @@ void SocketProxy::onData(WebSocket *connection, const char *data) {
 }
 
 void SocketProxy::onConnect(WebSocket *connection) {
-    sockaddr addr = {AF_UNIX};
-    socketName.copy(addr.sa_data, sizeof(addr.sa_data), 0);
+    const auto &requestUri = connection->getRequestUri();
+    const auto parts1 = split(requestUri, '?');
+    const auto parts2 = split(parts1[1], '&');
+
+    std::unordered_map<std::string, std::string> queryParams;
+
+    for (const auto &param : parts2) {
+        const auto keyValue = split(param, '=');
+        const auto &key = keyValue[0];
+        const auto &value = keyValue[1];
+        queryParams[key] = value;
+    }
+    sockaddr_un addr = {AF_UNIX};
+
+    std::string name = socketName;
+
+    const auto &viewIt = queryParams.find("view");
+    if (viewIt != queryParams.end()) {
+        name += "/" + viewIt->second;
+    }
+
+    if (name.size() >= sizeof(addr.sun_path)) {
+        throw std::runtime_error(std::format("viewName is too large: {} has length {}, but {} allowed", viewIt->second, viewIt->second.size(), sizeof(addr.sun_path) - (name.size() - viewIt->second.size())));
+    }
+
+    name.copy(addr.sun_path, sizeof(addr.sun_path), 0);
     auto socketFd = socket(AF_UNIX, SOCK_STREAM, 0);
-    auto status = connect(socketFd, &addr, sizeof(addr));
+    auto status = connect(socketFd, (const struct sockaddr *)&addr, sizeof(addr));
 
     if (status < 0) {
         perror("Unable to connect to socket");
@@ -24,7 +50,20 @@ void SocketProxy::onConnect(WebSocket *connection) {
         return;
     }
 
-    auto pHandler = new ConnectionHandler(connection, socketFd, sendingQueueDepth);
+    int w = 0, h = 0;
+
+    const auto &maxWidthIt = queryParams.find("maxWidth");
+    const auto &maxHeightIt = queryParams.find("maxHeight");
+
+    if (maxWidthIt != queryParams.end()) {
+        w = stoi(maxWidthIt->second);
+    }
+
+    if (maxHeightIt != queryParams.end()) {
+        h = stoi(maxHeightIt->second);
+    }
+
+    auto pHandler = new ConnectionHandler(connection, socketFd, w, h, sendingQueueDepth);
     connectionHandlers.insert({connection, pHandler});
 
     pHandler->start();

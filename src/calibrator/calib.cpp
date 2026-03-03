@@ -15,9 +15,9 @@
 #include <core/ocl.hpp>
 #include "Calibrator.h"
 #include "CalibrateMapper.h"
-#include "../../MatStorage.h"
 #include "CalibrateFrameCollector.h"
 #include "CalibrationStrategy.h"
+#include <common/RemoteView.h>
 
 int main(int argc, const char **argv) {
     cpptrace::register_terminate_handler();
@@ -55,6 +55,8 @@ int main(int argc, const char **argv) {
         captureLeft.open(std::string(argv[1]), cv::CAP_V4L2, params);
         captureRight.open(std::string(argv[2]), cv::CAP_V4L2, params);
     }
+
+    auto remoteView = ecv::RemoteView();
 
     auto capFps = captureLeft.get(cv::CAP_PROP_FPS);
     auto capWidth = (int) captureLeft.get(cv::CAP_PROP_FRAME_WIDTH);
@@ -160,10 +162,6 @@ int main(int argc, const char **argv) {
     std::mutex mapsMutex;
     std::vector<cv::Mat> maps(frames.size());
     std::vector<cv::Mat> rectifiedMaps(frames.size());
-
-    for (int i = 0; i < frames.size(); ++i) {
-        ecv::MatStorage::matRead(std::format("map_{}.bin", i), maps[i]);
-    }
 
     ecv::CalibrationStrategy calibrationStrategy(size, (int)frames.size(), [&maps, &rectifiedMaps, &mapsMutex, &calibrationData, &rectificationData](int cameraId, const ecv::CalibrationStrategy &that) {
         {
@@ -298,14 +296,14 @@ int main(int argc, const char **argv) {
                     cv::line(rectifiedFrames[i], cv::Point(0, y), cv::Point(rectifiedFrames[i].cols - 1, y), cv::Scalar(0, 255, 0), 1);
                 }
 
-                cv::imshow(std::format("Plain {}", i), plainFrames[i]);
+                remoteView.showMat(std::format("plain__{}", i), plainFrames[i]);
             }
             if (!rectifiedFrames[i].empty()) {
-                cv::imshow(std::format("Rectified {}", i), rectifiedFrames[i]);
+                remoteView.showMat(std::format("rectified__{}", i), rectifiedFrames[i]);
             }
 
             if (!debug.empty()) {
-                cv::imshow(std::format("Debug {}", i), debug);
+                remoteView.showMat(std::format("debug__{}", i), debug);
             }
 #endif
         }
@@ -313,7 +311,7 @@ int main(int argc, const char **argv) {
         calibrationStrategy.addFrameSet(frameSet);
 
 #ifdef HAVE_OPENCV_HIGHGUI
-        if (cv::waitKey(1) != -1) {
+        if (remoteView.waitKey() != -1) {
             break;
         }
 #endif

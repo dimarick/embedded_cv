@@ -8,8 +8,16 @@
 
 namespace mini_server {
     class BroadcastingServer {
+        enum MessageTypeEnum : unsigned int {
+            TYPE_MAT = 0,
+            TYPE_TELEMETRY = 1,
+            TYPE_ACK = 2,
+            TYPE_CONTROL = 3,
+        };
+
         struct MessageHeader {
             unsigned int magick;
+            MessageTypeEnum type;
             unsigned int size;
             unsigned long ttl;
         };
@@ -28,7 +36,7 @@ namespace mini_server {
         }
 
         void broadcast(const std::string &message);
-        void broadcast(const void *buffer, size_t bufferSize, unsigned long ttl = 0);
+        void broadcast(const void *buffer, size_t bufferSize, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
     };
 }
 

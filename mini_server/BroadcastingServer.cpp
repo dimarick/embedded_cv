@@ -43,7 +43,7 @@ extern "C++" void BroadcastingServer::broadcast(const std::string &message) {
     this->broadcast(message.c_str(), message.size());
 }
 
-extern "C++" void BroadcastingServer::broadcast(const void *buffer, size_t bufferSize, unsigned long ttl) {
+extern "C++" void BroadcastingServer::broadcast(const void *buffer, size_t bufferSize, unsigned long ttl, MessageTypeEnum type) {
     acceptedSocketsMutex.lock();
     auto threadSafeAcceptedSockets = acceptedSockets;
     acceptedSocketsMutex.unlock();
@@ -54,6 +54,7 @@ extern "C++" void BroadcastingServer::broadcast(const void *buffer, size_t buffe
     auto data = &frame[sizeof (MessageHeader)];
     memcpy((void *) data, buffer, bufferSize);
     header->magick = 'MsgS';
+    header->type = type;
     header->size = bufferSize;
     if (ttl > 0) {
         header->ttl = duration_cast<std::chrono::milliseconds>(

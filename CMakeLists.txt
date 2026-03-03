@@ -94,6 +94,7 @@ target_link_libraries(tests PRIVATE Catch2::Catch2WithMain PUBLIC OpenCL::OpenCL
 include_directories( ${OpenCV_INCLUDE_DIRS} )
 
 include_directories(./mini_server)
+include_directories(./src)
 add_subdirectory(./mini_server)
 #add_subdirectory(./hw_ctl)
 add_subdirectory(./ws_ctl)
@@ -117,7 +118,7 @@ add_executable(calib
         src/common/RemoteView.h
 )
 
-target_link_libraries(calib PUBLIC OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
+target_link_libraries(calib PUBLIC mini_server OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
 
 install(TARGETS calib DESTINATION bin)
 
