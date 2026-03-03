@@ -12,32 +12,9 @@ void SocketProxy::onData(WebSocket *connection, const char *data) {
 }
 
 void SocketProxy::onConnect(WebSocket *connection) {
-    const auto &requestUri = connection->getRequestUri();
-    const auto parts1 = split(requestUri, '?');
-    const auto parts2 = split(parts1[1], '&');
-
-    std::unordered_map<std::string, std::string> queryParams;
-
-    for (const auto &param : parts2) {
-        const auto keyValue = split(param, '=');
-        const auto &key = keyValue[0];
-        const auto &value = keyValue[1];
-        queryParams[key] = value;
-    }
     sockaddr_un addr = {AF_UNIX};
 
-    std::string name = socketName;
-
-    const auto &viewIt = queryParams.find("view");
-    if (viewIt != queryParams.end()) {
-        name += "/" + viewIt->second;
-    }
-
-    if (name.size() >= sizeof(addr.sun_path)) {
-        throw std::runtime_error(std::format("viewName is too large: {} has length {}, but {} allowed", viewIt->second, viewIt->second.size(), sizeof(addr.sun_path) - (name.size() - viewIt->second.size())));
-    }
-
-    name.copy(addr.sun_path, sizeof(addr.sun_path), 0);
+    socketName.copy(addr.sun_path, sizeof(addr.sun_path), 0);
     auto socketFd = socket(AF_UNIX, SOCK_STREAM, 0);
     auto status = connect(socketFd, (const struct sockaddr *)&addr, sizeof(addr));
 
@@ -52,17 +29,6 @@ void SocketProxy::onConnect(WebSocket *connection) {
 
     int w = 0, h = 0;
 
-    const auto &maxWidthIt = queryParams.find("maxWidth");
-    const auto &maxHeightIt = queryParams.find("maxHeight");
-
-    if (maxWidthIt != queryParams.end()) {
-        w = stoi(maxWidthIt->second);
-    }
-
-    if (maxHeightIt != queryParams.end()) {
-        h = stoi(maxHeightIt->second);
-    }
-
     auto pHandler = new ConnectionHandler(connection, socketFd, w, h, sendingQueueDepth);
     connectionHandlers.insert({connection, pHandler});
 
@@ -72,6 +38,23 @@ void SocketProxy::onConnect(WebSocket *connection) {
               << " : " << formatAddress(connection->getRemoteAddress())
               << "\nCredentials: " << *(connection->credentials()) << "\n";
 
+}
+
+std::unordered_map<std::string, std::string> SocketProxy::parseQuery(const WebSocket *connection) const {
+    std::unordered_map<std::string, std::string> queryParams;
+    const auto &requestUri = connection->getRequestUri();
+    const auto parts1 = split(requestUri, '?');
+    if (parts1.size() > 1) {
+        const auto parts2 = split(parts1[1], '&');
+        for (const auto &param: parts2) {
+            const auto keyValue = split(param, '=');
+            const auto &key = keyValue[0];
+            const auto &value = keyValue[1];
+            queryParams[key] = value;
+        }
+    }
+
+    return queryParams;
 }
 
 void SocketProxy::onDisconnect(WebSocket *connection) {
