@@ -11,6 +11,7 @@
 
 namespace mini_server {
     class BroadcastingServer {
+    public:
         typedef std::function<void(int socket, const std::string &)> MessageHandler;
         typedef std::function<void(int socket)> CloseHandler;
         static const size_t BUFFER_SIZE = 256;
@@ -20,7 +21,7 @@ namespace mini_server {
             TYPE_ACK = 2,
             TYPE_CONTROL = 3,
         };
-
+    private:
         struct MessageHeader {
             unsigned int magick;
             MessageTypeEnum type;
@@ -53,6 +54,10 @@ namespace mini_server {
         static void interact(int socket, BroadcastingServer *server, int threadId);
 
         void sendFrame(int s, const std::vector<char> &frame);
+
+        std::vector<char>
+        getTransportMessage(const void *buffer, size_t bufferSize, unsigned long ttl,
+                            const MessageTypeEnum &type) const;
     };
 }
 

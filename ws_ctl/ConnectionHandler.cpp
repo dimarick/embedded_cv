@@ -2,9 +2,16 @@
 #include <unistd.h>
 #include <semaphore>
 #include <seasocks/StringUtil.h>
+#include <seasocks/Connection.h>
+#include <netinet/tcp.h>
 
 void ConnectionHandler::start() {
     readingThread = std::thread([](WebSocket *c, int _socketFd, ConnectionHandler *that) {
+        if (auto connection = dynamic_cast<seasocks::Connection *>(c); connection != nullptr) {
+            auto socket = connection->getFd();
+            int setTrue = 1;
+            setsockopt(socket, SOL_TCP, TCP_NODELAY, &setTrue, sizeof(setTrue));
+        }
         size_t currentBufferSize = sizeof (MessageHeader) + 100;
         auto buffer = (uint8_t *) malloc(currentBufferSize);
         size_t messageSize = 0;
@@ -35,7 +42,7 @@ void ConnectionHandler::start() {
                 // Дожидаемся завершения _server.execute
                 shudownMutex.lock();
                 shudownMutex.unlock();
-                that->stop();
+                that->selfStop();
 
                 break;
             }
@@ -51,7 +58,7 @@ void ConnectionHandler::start() {
                     receivedSize -= header->size + sizeof (MessageHeader);
 
                     if (receivedSize > 0) {
-                        memcpy(buffer, buffer + header->size + sizeof (MessageHeader), currentBufferSize - (header->size + sizeof (MessageHeader)));
+                        memmove(buffer, buffer + header->size + sizeof (MessageHeader), currentBufferSize - (header->size + sizeof (MessageHeader)));
                     }
                 } else if (header->size + sizeof (MessageHeader) > currentBufferSize) {
                     buffer = (uint8_t *) realloc(buffer, header->size + sizeof (MessageHeader));
@@ -83,6 +90,7 @@ void ConnectionHandler::start() {
 
                             c->send(copyOfData, messageSize);
                             free((void *)copyOfData);
+                            that->sendingMutex.release();
                         }});
                     } else {
                         std::cerr << "Dropped frame size " << messageSize << " ttl expired " << now - header->ttl << std::endl;
@@ -113,16 +121,26 @@ void ConnectionHandler::start() {
 }
 
 void ConnectionHandler::onData(const uint8_t *data, size_t dataSize) {
-    if (this->sendingQueueDepth != -1) {
-        if (dataSize == 3 && strncmp((const char *)(data), "ACK", 3) == 0) {
-            std::cerr << "ACK received" << std::endl;
+//    if (this->sendingQueueDepth != -1) {
+//        if (dataSize == 3 && strncmp((const char *)(data), "ACK", 3) == 0) {
+//            std::cerr << "ACK received" << std::endl;
+//
+//            sendingMutex.release();
+//            return;
+//        }
+//    }
 
-            sendingMutex.release();
-            return;
-        }
-    }
+    auto *frame = new uint8_t[dataSize + sizeof(MessageHeader)];
+    auto *header = reinterpret_cast<MessageHeader *>(frame);
+    auto *body = (frame + sizeof(MessageHeader));
+    header->magick = 'MsgS';
+    header->ttl = 0;
+    header->type = TYPE_CONTROL;
+    header->size = dataSize;
+    memcpy(body, data, dataSize);
+    auto n = send(socketFd, frame, dataSize + sizeof(MessageHeader), MSG_NOSIGNAL);
 
-    auto n = send(socketFd, data, dataSize, MSG_NOSIGNAL);
+    delete[] frame;
 
     if (n == 0) {
         perror("Unable to write to socket");
@@ -139,6 +157,16 @@ void ConnectionHandler::stop() {
         running = false;
         shutdown(socketFd, SHUT_RDWR);
         close(socketFd);
+    }
+    if (readingThread.joinable()) {
         readingThread.join();
+    }
+}
+
+void ConnectionHandler::selfStop() {
+    if (running) {
+        running = false;
+        shutdown(socketFd, SHUT_RDWR);
+        close(socketFd);
     }
 }

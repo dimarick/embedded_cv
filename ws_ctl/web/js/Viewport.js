@@ -1,4 +1,4 @@
-import ViewportStream from "./ViewportStream";
+import ViewportStream from "./ViewportStream.js";
 
 export default class Viewport {
     #element;
@@ -7,7 +7,12 @@ export default class Viewport {
     constructor(element, socket) {
         this.#element = element;
         this.#title = element.getElementsByClassName("viewport-title");
-        this.#steam = new ViewportStream(element.getElementsByClassName("viewport-canvas-stream"), socket);
+        for (const canvas of element.getElementsByClassName("viewport-canvas-stream")) {
+            if (canvas.dataset === undefined || !canvas.dataset.name) {
+                 continue;
+            }
+            this.#steam = new ViewportStream(canvas, socket);
+        }
     }
 
     getTitle() {

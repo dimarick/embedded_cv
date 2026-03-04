@@ -10,7 +10,7 @@
 namespace ecv {
     class RemoteView {
     private:
-        enum CvMatTypeEnum : unsigned char {
+        enum CvMatTypeEnum : char {
             TYPE_8U =  0x10,
             TYPE_8S =  0x11,
             TYPE_16U = 0x20,
@@ -20,34 +20,36 @@ namespace ecv {
             TYPE_64F = 0x42,
         };
 
-        enum CvMatCodecEnum : unsigned char {
+        enum CvMatCodecEnum : char {
             RAW =  0x0,
             JPEG =  0x1,
         };
 
         struct StringHeader {
-            unsigned short nameSize;
+            short nameSize;
         };
 
         struct CvMatHeader {
             CvMatTypeEnum type;
             CvMatCodecEnum codec;
-            unsigned char channels;
-            short x;
-            short y;
-            unsigned short w;
-            unsigned short h;
-            float scale;
-        };
-
-        struct ChannelSettings {
-            std::string viewName;
-            int channelId;
+            short channels;
+            short viewW;
+            short viewH;
             short x;
             short y;
             short w;
             short h;
-            float scale;
+        };
+
+        struct ChannelSettings {
+            std::string viewName;
+            int channelId = -1;
+            short viewW = 0;
+            short viewH = 0;
+            short x = 0;
+            short y = 0;
+            short w = 0;
+            short h = 0;
         };
 
         std::shared_ptr<mini_server::BroadcastingServer> server;
@@ -61,7 +63,7 @@ namespace ecv {
 
         virtual ~RemoteView();
 
-        std::vector<char> createMessageFromMat(const cv::Mat &mat, const cv::Rect &rect, float scale);
+        std::vector<char> createMessageFromMat(const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH);
     };
 }
 

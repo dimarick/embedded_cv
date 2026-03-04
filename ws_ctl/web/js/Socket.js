@@ -10,9 +10,12 @@ export default class Socket {
     #onmessage = null;
 
     constructor(url, onmessage) {
-        this.onmessage = onmessage || (() => {});
-        this.url = url;
+        this.#onmessage = onmessage || (() => {});
+        this.#url = url;
         this.connect();
+        setInterval(() => {
+            this.connect();
+        }, 2000)
     }
 
     connect() {
@@ -20,7 +23,7 @@ export default class Socket {
             return;
         }
         this.#connecting = true;
-        this.#ws = new WebSocket('ws://' + document.location.host + '/' + this.#url);
+        this.#ws = new WebSocket('ws://' + document.location.host + this.#url);
 
         this.#ws.onopen = () => {
             console.log('onopen');
@@ -28,7 +31,7 @@ export default class Socket {
             this.#connected = true;
             this.#connecting = false;
 
-            for (const message in this.#sendMessageQueue) {
+            for (const message of this.#sendMessageQueue) {
                 this.#ws.send(message);
             }
         };
@@ -40,23 +43,19 @@ export default class Socket {
         };
         this.#ws.onmessage = async (message) => {
             const data = message.data;
-            let text;
-            if (data instanceof Blob) {
-                text = await data.text();
-            } else {
-                text = data;
-            }
 
             // Если есть ожидающие вызовы getNextMessage, резолвим первый из них
             if (this.#waitingResolvers.length > 0) {
                 const resolve = this.#waitingResolvers.shift();
-                resolve(text);
+                resolve(data);
             } else {
                 // Иначе сохраняем в очередь
-                this.#receiveMessageQueue.push(text);
+                this.#receiveMessageQueue.push(data);
             }
 
-            this.#onmessage(text);
+            if (!!this.#onmessage) {
+                this.#onmessage(data);
+            }
         };
         this.#ws.onerror = (error) => {
             document.getElementById('connection-status').textContent = 'Error: ' + error;

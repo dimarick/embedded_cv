@@ -31,19 +31,19 @@ void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
         int socket = socketSettings.first;
         for (const auto &settings : socketSettings.second) {
             const auto &s = settings.second;
-            const auto &key = std::format("{} {} {} {} {}", (int)s.x, (int)s.y, (int)s.w, (int)s.h, s.scale);
+            const auto &key = std::format("{} {} {} {} {} {}", (int)s.x, (int)s.y, (int)s.w, (int)s.h, (int)s.viewW, (int)s.viewH);
             if (settingsCache.find(key) == settingsCache.end()) {
                 StringHeader str{};
                 str.nameSize = viewName.size();
                 auto frame = Encapsulation::encapsulate(viewName.data(), viewName.size(), str);
-                auto matMessage = createMessageFromMat(mat, cv::Rect(s.x, s.y, s.w, s.h), s.scale);
+                auto matMessage = createMessageFromMat(mat, cv::Rect(s.x, s.y, s.w, s.h), s.viewW, s.viewH);
 
                 auto nameBufferSize = frame.size();
                 frame.resize(nameBufferSize + matMessage.size());
 
                 std::copy(matMessage.begin(), matMessage.end(), frame.begin() + (int)nameBufferSize);
-                
-                settingsCache[key] = frame;
+
+                settingsCache[key] = server->getTransportMessage(frame.data(), frame.size(), 200, mini_server::BroadcastingServer::MessageTypeEnum::TYPE_MAT);
             }
             const auto &f = settingsCache[key];
 
@@ -66,29 +66,33 @@ void RemoteView::initializeServer() {
     if (server == nullptr) {
         server = std::shared_ptr<mini_server::BroadcastingServer>(new mini_server::BroadcastingServer);
         server->setOnMessage([this](int socket, const std::string &message) -> void {
+            std::cout << message << std::endl;
+
             std::istringstream command(message);
             std::string commandName;
             command >> commandName;
 
             if (commandName == "CHANNEL") {
                 ChannelSettings commandData;
-                command >> commandData.viewName;
+                command >> std::quoted(commandData.viewName);
                 command >> commandData.channelId;
+                command >> commandData.viewW;
+                command >> commandData.viewH;
                 command >> commandData.x;
                 command >> commandData.y;
                 command >> commandData.w;
                 command >> commandData.h;
-                command >> commandData.scale;
+
+                if (commandData.channelId < 0) {
+                    std::cerr << "Failed to parse data" << std::endl;
+                    return;
+                }
 
                 std::lock_guard lock(channelsMutex);
+                channelSettings.insert({commandData.viewName, {{socket, {{commandData.channelId, commandData}}}}});
                 const auto &viewSettings = channelSettings.find(commandData.viewName);
-                if (viewSettings == channelSettings.end()) {
-                    channelSettings.insert({commandData.viewName, {{socket, {{commandData.channelId, commandData}}}}});
-                }
+                viewSettings->second.insert({socket, {{commandData.channelId, commandData}}});
                 const auto &socketSettings = viewSettings->second.find(socket);
-                if (socketSettings == viewSettings->second.end()) {
-                    viewSettings->second.insert({socket, {{commandData.channelId, commandData}}});
-                }
                 socketSettings->second.insert_or_assign(commandData.channelId, commandData);
             } else if (commandName == "DESTROY_CHANNEL") {
                 ChannelSettings commandData;
@@ -121,7 +125,7 @@ void RemoteView::initializeServer() {
             }
         });
 
-        server->setSocket(mini_server::SocketFactory::createListeningSocket("/tmp/stream/", 10));
+        server->setSocket(mini_server::SocketFactory::createListeningSocket("/tmp/stream", 10));
 
         serverThread = std::thread([this]() {
             server->run();
@@ -131,14 +135,15 @@ void RemoteView::initializeServer() {
     }
 }
 
-std::vector<char> RemoteView::createMessageFromMat(const cv::Mat &mat, const cv::Rect &rect, float scale) {
+std::vector<char> RemoteView::createMessageFromMat(const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH) {
     CvMatHeader header{};
     header.channels = mat.channels();
-    header.x = (short)rect.x;
-    header.y = (short)rect.y;
-    header.w = mat.cols;
-    header.h = mat.rows;
-    header.scale = scale;
+    header.viewW = (short)(viewW & 0xFFFF);
+    header.viewH = (short)(viewH & 0xFFFF);
+    header.x = (short)(rect.x & 0xFFFF);
+    header.y = (short)(rect.y & 0xFFFF);
+    header.w = (short)(rect.width & 0xFFFF);
+    header.h = (short)(rect.height & 0xFFFF);
     header.codec = CvMatCodecEnum::RAW;
 
     switch (mat.type() & CV_MAT_DEPTH_MASK) {
@@ -167,15 +172,28 @@ std::vector<char> RemoteView::createMessageFromMat(const cv::Mat &mat, const cv:
             throw std::runtime_error(std::format("Unsupported mat type {}", mat.type()));
     }
 
-    cv::Mat crop = mat(rect).clone();
-    cv::resize(crop, crop, cv::Size((int)std::round((float)crop.cols * scale), (int)std::round((float)crop.rows * scale)));
+    cv::Mat crop;
+
+    if (rect.width > 0 && rect.height > 0) {
+        crop = mat(rect).clone();
+    } else {
+        crop = mat;
+    }
+
+    if (viewW != 0 || viewH != 0) { // autofit
+        auto scaleW = viewW > 0 ? (double)viewW / (double)crop.cols : 1.;
+        auto scaleH = viewH > 0 ? (double)viewH / (double)crop.rows : 1.;
+        auto scale = std::min(1., std::min(scaleW, scaleH));
+
+        cv::resize(crop, crop, cv::Size(0, 0), scale, scale);
+    }
 
     std::vector<char> frame;
 
     if (header.type == TYPE_8U || header.type == TYPE_8S) {
         std::vector<uchar> buffer;
-        cv::imencode("jpg", crop, buffer, {
-            cv::ImwriteFlags::IMWRITE_JPEG_QUALITY, 80,
+        cv::imencode(".jpg", crop, buffer, {
+            cv::ImwriteFlags::IMWRITE_JPEG_QUALITY, 99,
         });
 
         header.codec = CvMatCodecEnum::JPEG;

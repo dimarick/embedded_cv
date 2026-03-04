@@ -296,14 +296,14 @@ int main(int argc, const char **argv) {
                     cv::line(rectifiedFrames[i], cv::Point(0, y), cv::Point(rectifiedFrames[i].cols - 1, y), cv::Scalar(0, 255, 0), 1);
                 }
 
-                remoteView.showMat(std::format("plain__{}", i), plainFrames[i]);
+                remoteView.showMat(std::format("Plain {}", i), plainFrames[i]);
             }
             if (!rectifiedFrames[i].empty()) {
-                remoteView.showMat(std::format("rectified__{}", i), rectifiedFrames[i]);
+                remoteView.showMat(std::format("Rectified {}", i), rectifiedFrames[i]);
             }
 
             if (!debug.empty()) {
-                remoteView.showMat(std::format("debug__{}", i), debug);
+                remoteView.showMat(std::format("Debug {}", i), debug);
             }
 #endif
         }

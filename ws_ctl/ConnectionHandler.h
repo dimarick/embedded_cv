@@ -44,6 +44,8 @@ public:
     void start();
     void stop();
     void onData(const uint8_t *data, size_t dataSize);
+
+    void selfStop();
 };
 
 

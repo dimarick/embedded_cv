@@ -48,9 +48,11 @@ extern "C++" void BroadcastingServer::run() {
 }
 
 void BroadcastingServer::interact(int socket, BroadcastingServer *server, int threadId) {
-    char input[BUFFER_SIZE];
     struct pollfd fd = { .fd = socket, .events = POLLIN };
 
+    size_t receivedSize = 0;
+    size_t currentBufferSize = sizeof (MessageHeader) + 100;
+    auto buffer = (uint8_t *) malloc(currentBufferSize);
     while (server->running) {
         int pollStatus = poll(&fd, 1, 50);
         if (pollStatus < 0) {
@@ -61,15 +63,10 @@ void BroadcastingServer::interact(int socket, BroadcastingServer *server, int th
             continue;
         }
 
-        bzero(input,sizeof(input));
-        auto n = read(socket, input, sizeof(input));
+        auto n = recv(socket, buffer + receivedSize, currentBufferSize - receivedSize, MSG_NOSIGNAL);
 
         if (errno == EPIPE) {
             break;
-        }
-
-        if (n == BUFFER_SIZE) {
-            throw std::runtime_error(strerror(errno));
         }
 
         if (n == 0) {
@@ -80,8 +77,39 @@ void BroadcastingServer::interact(int socket, BroadcastingServer *server, int th
             throw std::runtime_error(strerror(errno));
         }
 
-        if (server->onMessage != nullptr) {
-            server->onMessage(socket, input);
+        receivedSize += n;
+
+        auto header = (MessageHeader *)buffer;
+
+        if (receivedSize >= sizeof (MessageHeader)) {
+            // невалидное сообщение, отбрасываем весь остаток полученных данных
+            if (header->magick != 'MsgS' || header->size > 100 * 1024 * 1024) {
+                receivedSize = 0;
+            // одно или несколько сообщений в буфере
+            } else if (receivedSize >= header->size + sizeof (MessageHeader)) {
+                size_t offset = 0;
+                while (true) {
+                    auto h = (MessageHeader *)(&buffer[offset]);
+                    auto d = &buffer[sizeof (MessageHeader) + offset];
+                    auto frameSize = h->size + sizeof(MessageHeader);
+                    if (offset + frameSize > receivedSize) {
+                        break;
+                    }
+                    offset += frameSize;
+                    if (server->onMessage != nullptr) {
+                        const auto &message = std::string(reinterpret_cast<const char *>(d),
+                                                                             h->size);
+                        server->onMessage(socket, message);
+                    }
+                };
+                if (offset > 0 && receivedSize - offset > 0) {
+                    memmove(buffer, buffer + offset, receivedSize - offset);
+                }
+                receivedSize -= offset;
+            // единственное сообщение не поместилось в буфер: реаллоцируем и продолжаем читать
+            } else if (header->size + sizeof (MessageHeader) > currentBufferSize) {
+                currentBufferSize = header->size + sizeof (MessageHeader);
+            }
         }
     }
 }
@@ -95,12 +123,25 @@ extern "C++" void BroadcastingServer::broadcast(const void *buffer, size_t buffe
     auto threadSafeAcceptedSockets = acceptedSockets;
     acceptedSocketsMutex.unlock();
 
-    MessageHeader header{'MsgS', MessageTypeEnum::TYPE_MAT, (unsigned int) bufferSize, ttl};
-    auto frame = Encapsulation::encapsulate(buffer, bufferSize, header);
+    auto frame = getTransportMessage(buffer, bufferSize, ttl, type);
 
     for (auto acceptedSocket : threadSafeAcceptedSockets) {
         sendFrame(acceptedSocket, frame);
     }
+}
+
+std::vector<char> BroadcastingServer::getTransportMessage(const void *buffer, size_t bufferSize, unsigned long ttl,
+                                                          const BroadcastingServer::MessageTypeEnum &type) const {
+    MessageHeader header{'MsgS', type, (unsigned int) bufferSize, ttl};
+    if (ttl > 0) {
+        header.ttl = duration_cast<std::chrono::milliseconds>(
+                std::chrono::high_resolution_clock::now().time_since_epoch()).count() + ttl;
+    } else {
+        header.ttl = 0;
+    }
+
+    auto frame = Encapsulation::encapsulate(buffer, bufferSize, header);
+    return frame;
 }
 
 void BroadcastingServer::sendFrame(int s, const std::vector<char> &frame) {

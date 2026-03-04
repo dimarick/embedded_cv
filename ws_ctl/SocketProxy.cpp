@@ -1,6 +1,7 @@
 #include <seasocks/StringUtil.h>
 #include <sys/un.h>
 #include <format>
+#include <netinet/tcp.h>
 #include "SocketProxy.h"
 
 void SocketProxy::onData(WebSocket *connection, const uint8_t *data, size_t dataSize) {
@@ -17,6 +18,8 @@ void SocketProxy::onConnect(WebSocket *connection) {
     socketName.copy(addr.sun_path, sizeof(addr.sun_path), 0);
     auto socketFd = socket(AF_UNIX, SOCK_STREAM, 0);
     auto status = connect(socketFd, (const struct sockaddr *)&addr, sizeof(addr));
+    int setTrue = 1;
+    setsockopt(socketFd, SOL_TCP, TCP_NODELAY, &setTrue, sizeof(setTrue));
 
     if (status < 0) {
         perror("Unable to connect to socket");
@@ -38,23 +41,6 @@ void SocketProxy::onConnect(WebSocket *connection) {
               << " : " << formatAddress(connection->getRemoteAddress())
               << "\nCredentials: " << *(connection->credentials()) << "\n";
 
-}
-
-std::unordered_map<std::string, std::string> SocketProxy::parseQuery(const WebSocket *connection) const {
-    std::unordered_map<std::string, std::string> queryParams;
-    const auto &requestUri = connection->getRequestUri();
-    const auto parts1 = split(requestUri, '?');
-    if (parts1.size() > 1) {
-        const auto parts2 = split(parts1[1], '&');
-        for (const auto &param: parts2) {
-            const auto keyValue = split(param, '=');
-            const auto &key = keyValue[0];
-            const auto &value = keyValue[1];
-            queryParams[key] = value;
-        }
-    }
-
-    return queryParams;
 }
 
 void SocketProxy::onDisconnect(WebSocket *connection) {

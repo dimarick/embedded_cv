@@ -9,7 +9,11 @@
     <!-- Подключение Font Awesome CSS -->
     <link rel="stylesheet" href="/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
     <link rel="stylesheet" href="/css/style.css">
-    <link rel="stylesheet" href="/js/app.js">
+    <script type="module" src="/js/Socket.js"></script>
+    <script type="module" src="/js/Viewport.js"></script>
+    <script type="module" src="/js/Viewports.js"></script>
+    <script type="module" src="/js/ViewportStream.js"></script>
+    <script type="module" src="/js/app.js"></script>
     <style>
 
     </style>
@@ -69,7 +73,7 @@
                     <!-- Viewport 1 (Основной, всегда видим) -->
                     <div class="viewport active" id="viewport-1">
                         <span class="viewport-title">ОСНОВНАЯ КАМЕРА</span>
-                        <canvas class="viewport-canvas-stream" data-name="debug__0"></canvas>
+                        <canvas class="viewport-canvas-stream" data-name="Debug 0"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
@@ -78,7 +82,7 @@
                     <!-- Следующие viewport'ы скрыты в лейауте "single" -->
                     <div class="viewport is-hidden" id="viewport-2">
                         <span class="viewport-title">КАМЕРА 2</span>
-                        <canvas class="viewport-canvas-stream"></canvas>
+                        <canvas class="viewport-canvas-stream" data-name="Debug 1"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
@@ -86,7 +90,7 @@
                     </div>
                     <div class="viewport is-hidden" id="viewport-3">
                         <span class="viewport-title">КАМЕРА 3</span>
-                        <canvas class="viewport-canvas-stream"></canvas>
+                        <canvas class="viewport-canvas-stream" data-name="Plain 0"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
@@ -94,7 +98,23 @@
                     </div>
                     <div class="viewport is-hidden" id="viewport-4">
                         <span class="viewport-title">КАРТА</span>
-                        <canvas class="viewport-canvas-stream"></canvas>
+                        <canvas class="viewport-canvas-stream" data-name="Plain 1"></canvas>
+                        <div class="viewport-controls">
+                            <button class="viewport-btn"><i class="fas fa-star"></i></button>
+                            <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
+                        </div>
+                    </div>
+                    <div class="viewport is-hidden" id="viewport-5">
+                        <span class="viewport-title">КАМЕРА 3</span>
+                        <canvas class="viewport-canvas-stream" data-name="Rectified 0"></canvas>
+                        <div class="viewport-controls">
+                            <button class="viewport-btn"><i class="fas fa-star"></i></button>
+                            <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
+                        </div>
+                    </div>
+                    <div class="viewport is-hidden" id="viewport-6">
+                        <span class="viewport-title">КАРТА</span>
+                        <canvas class="viewport-canvas-stream" data-name="Rectified 1"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
