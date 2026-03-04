@@ -33,7 +33,17 @@ void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
             const auto &s = settings.second;
             const auto &key = std::format("{} {} {} {} {}", (int)s.x, (int)s.y, (int)s.w, (int)s.h, s.scale);
             if (settingsCache.find(key) == settingsCache.end()) {
-                settingsCache[key] = createMessageFromMat(mat, cv::Rect(s.x, s.y, s.w, s.h), s.scale);
+                StringHeader str{};
+                str.nameSize = viewName.size();
+                auto frame = Encapsulation::encapsulate(viewName.data(), viewName.size(), str);
+                auto matMessage = createMessageFromMat(mat, cv::Rect(s.x, s.y, s.w, s.h), s.scale);
+
+                auto nameBufferSize = frame.size();
+                frame.resize(nameBufferSize + matMessage.size());
+
+                std::copy(matMessage.begin(), matMessage.end(), frame.begin() + (int)nameBufferSize);
+                
+                settingsCache[key] = frame;
             }
             const auto &f = settingsCache[key];
 

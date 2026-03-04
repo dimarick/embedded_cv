@@ -25,6 +25,10 @@ namespace ecv {
             JPEG =  0x1,
         };
 
+        struct StringHeader {
+            unsigned short nameSize;
+        };
+
         struct CvMatHeader {
             CvMatTypeEnum type;
             CvMatCodecEnum codec;
