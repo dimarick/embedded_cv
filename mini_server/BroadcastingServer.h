@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <functional>
+#include <thread>
 
 namespace mini_server {
     class BroadcastingServer {
