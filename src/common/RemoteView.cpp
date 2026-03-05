@@ -96,25 +96,30 @@ void RemoteView::initializeServer() {
                 socketSettings->second.insert_or_assign(commandData.channelId, commandData);
             } else if (commandName == "DESTROY_CHANNEL") {
                 ChannelSettings commandData;
-                command >> commandData.viewName;
+                command >> std::quoted(commandData.viewName);
                 command >> commandData.channelId;
 
                 std::lock_guard lock(channelsMutex);
                 const auto &viewSettings = channelSettings.find(commandData.viewName);
                 if (viewSettings == channelSettings.end()) {
+                    std::cerr << "Channel failed unsubscribe 1 " << commandData.viewName << " " << socket << " " << commandData.channelId << std::endl;
                     return;
                 }
                 const auto &socketSettings = viewSettings->second.find(socket);
                 if (socketSettings == viewSettings->second.end()) {
+                    std::cerr << "Channel failed unsubscribe 2 " << commandData.viewName << " " << socket << " " << commandData.channelId << std::endl;
                     return;
                 }
 
                 const auto &settings = socketSettings->second.find(commandData.channelId);
                 if (settings == socketSettings->second.end()) {
+                    std::cerr << "Channel failed unsubscribe 3 " << commandData.viewName << " " << socket << " " << commandData.channelId << std::endl;
                     return;
                 }
 
                 socketSettings->second.erase(settings);
+
+                std::cerr << "Channel unsubscribed " << commandData.viewName << " " << socket << " " << commandData.channelId << std::endl;
             }
         });
 
