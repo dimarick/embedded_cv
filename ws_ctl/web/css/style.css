@@ -227,6 +227,21 @@ body {
     border-color: #a899e6;
 }
 
+.viewport-title {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 10;
+    display: flex;
+    gap: 5px;
+    opacity: 0.1;
+    transition: opacity 0.3s ease;
+}
+
+.viewport:hover .viewport-title {
+    opacity: 0.7;
+}
+
 .viewport-controls {
     position: absolute;
     top: 10px;
@@ -270,7 +285,7 @@ body {
     display: flex;
     flex-direction: column;
     box-shadow: 0 4px 6px rgba(230, 225, 255, 0.2);
-    overflow-y: auto;
+    overflow: hidden; /* отключаем скролл всей панели */
 }
 
 .telemetry-box, .log-box {
@@ -281,6 +296,137 @@ body {
     margin-bottom: 15px;
     flex-shrink: 0;
 }
+    /* Правая панель */
+.right-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* отключаем скролл всей панели */
+    /* остальные стили (ширина, фон и т.д.) уже есть */
+}
+
+/* Заголовок панели с кнопкой сворачивания */
+.panel-header {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: flex-end;
+    padding: 8px;
+}
+
+.panel-toggle-right {
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    color: var(--pastel-text);
+    transition: background-color 0.2s;
+}
+.panel-toggle-right:hover {
+    background-color: var(--pastel-lavender);
+}
+
+/* Контент панели (занимает оставшееся место) */
+.panel-content {
+    flex: 1;
+    overflow: hidden; /* важно: сам контент не скроллится */
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 10px 10px 10px;
+}
+
+/* Секции (телеметрия и логи) */
+.right-panel-section {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Заголовок секции */
+.right-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 8px 0;
+    user-select: none;
+    margin-bottom: 6px;
+}
+
+.right-panel-header h2.title {
+    margin-bottom: 0;
+    flex: 1;
+}
+
+/* Контейнер для кнопок в заголовке */
+.right-panel-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding-bottom: 10px;
+}
+
+/* Иконка сворачивания секции */
+.collapse-icon {
+    font-size: 0.9em;
+    color: var(--pastel-text);
+    transition: transform 0.2s;
+}
+
+/* Кнопка полного экрана логов */
+.fullscreen-log-btn {
+    background: none;
+    border: none;
+    color: var(--pastel-text);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 1.1em;
+    line-height: 1;
+}
+.fullscreen-log-btn:hover {
+    background-color: var(--pastel-lavender);
+}
+
+/* Скрытие контента при свёрнутой секции */
+.right-panel-section.collapsed .right-panel-content {
+    display: none;
+}
+
+/* Изменение иконки при свёрнутой секции */
+.right-panel-section.collapsed .collapse-icon i {
+    transform: rotate(-90deg); /* или fa-chevron-down, но мы заменим класс в JS */
+}
+
+/* Сама правая панель в свёрнутом состоянии */
+.right-panel.collapsed {
+    flex: 0 0 60px; /* Ещё уже, только под иконки */
+    padding: 15px 10px;
+    align-items: center; /* Центрируем содержимое по горизонтали */
+}
+
+.right-panel.collapsed .right-panel-content {
+    display: none;
+}
+
+.right-panel.collapsed .title-text, .right-panel.collapsed .right-panel-controls {
+    display: none;
+}
+
+.right-panel-section.collapsed .panel-content {
+    display: none;
+}
+
+
+/* Телеметрия — фиксированная высота по содержимому, не скроллится */
+.telemetry-box {
+    flex-shrink: 0;
+}
+
+/* Лог-бокс — занимает всё свободное место и скроллится */
+.log-box {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0; /* критически важно для скролла */
+    /* остальные стили (фон, рамка и т.д.) уже есть */
+}
 
 .log-box {
     flex: 1;
@@ -288,7 +434,70 @@ body {
     font-family: monospace;
     font-size: 0.85em;
 }
+/* Стили для контейнера логов */
+.log-box {
+    background-color: #f9f8ff;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: 'SF Mono', 'Menlo', 'Monaco', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.9em;
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: 100%;
+    border: 1px solid var(--pastel-lavender, #e6e1ff);
+    scroll-behavior: smooth;
+}
 
+/* Базовая запись */
+.log-entry {
+    padding: 4px 8px;
+    margin-bottom: 2px;
+    border-radius: 4px;
+    line-height: 1.4;
+    word-break: break-word;
+    transition: background-color 0.2s ease;
+    width: max-content;
+}
+
+.log-entry:hover {
+    background-color: rgba(230, 225, 255, 0.3);
+}
+
+.log-time {
+    color: #a0a0c0;
+    font-weight: 400;
+    margin-right: 3px;
+}
+
+/* Цвета для разных уровней (применяются ко всему тексту внутри span уровня) */
+.log-level-info {
+    color: #4a6fa5; /* пастельно-синий */
+}
+
+.log-level-warn {
+    color: #b36b3a; /* пастельно-оранжевый */
+}
+
+.log-level-error {
+    color: #b33a3a; /* пастельно-красный */
+}
+
+.log-level-debug {
+    color: #7a7a9a; /* пастельно-серый */
+}
+
+.log-entry-info {
+    background-color: rgba(74, 111, 165, 0.05);
+}
+.log-entry-warn {
+    background-color: rgba(179, 107, 58, 0.05);
+}
+.log-entry-error {
+    background-color: rgba(179, 58, 58, 0.05);
+}
+.log-entry-debug {
+    background-color: rgba(122, 122, 154, 0.05);
+}
 /* Утилитарные классы */
 .is-hidden {
     display: none !important;

@@ -2,13 +2,12 @@ import Viewport from "./Viewport.js";
 import Socket from "./Socket.js";
 
 export default class Viewports {
-    static EVENT_NAME_STREAM_IMAGE = 'socket.stream.received.mat.image';
-    static EVENT_NAME_STREAM_RAW = 'socket.stream.received.mat.raw';
+    static EVENT_NAME_STREAM_IMAGE = 'stream.received.mat.image';
+    static EVENT_NAME_STREAM_RAW = 'stream.received.mat.raw';
 
     #viewportsElement;
     #streamSocket;
     #viewports = [];
-
 
     constructor(viewportsElement) {
         this.#viewportsElement = viewportsElement;
@@ -95,88 +94,4 @@ export default class Viewports {
             pixelData,
         };
     }
-    fourCC(str) {
-        if (str.length !== 4) throw new Error('FourCC must be 4 chars');
-        return (str.charCodeAt(0) << 24) |
-            (str.charCodeAt(1) << 16) |
-            (str.charCodeAt(2) << 8)  |
-            str.charCodeAt(3);
-    }
-    // /**
-    //  * Преобразует объект с данными в бинарный ArrayBuffer в соответствии со схемой типов.
-    //  * @param {Object} data - объект, где ключи соответствуют полям схемы, значения - числа
-    //  * @param {Object} schema - объект, где ключи - имена полей, значения - строки типа ('int', 'uint', 'short', 'ushort', 'char', 'uchar', 'float', 'double')
-    //  * @returns {ArrayBuffer} - бинарное представление данных (little-endian)
-    //  */
-    // toBinaryStruct(data, schema) {
-    //     // Размеры типов в байтах
-    //     const typeSizes = {
-    //         'int': 4,
-    //         'uint': 4,
-    //         'short': 2,
-    //         'ushort': 2,
-    //         'char': 1,
-    //         'uchar': 1,
-    //         'float': 4,
-    //         'double': 8
-    //     };
-    //
-    //     // Вычисляем общий размер и собираем информацию о полях в порядке схемы
-    //     let totalSize = 0;
-    //     const fields = [];
-    //     for (const key of schema) {
-    //         if (schema.hasOwnProperty(key)) {
-    //             const type = schema[key];
-    //             const size = typeSizes[type];
-    //             if (size === undefined) {
-    //                 throw new Error(`Неподдерживаемый тип: ${type}`);
-    //             }
-    //             fields.push({ key, type, offset: totalSize });
-    //             totalSize += size;
-    //         }
-    //     }
-    //
-    //     // Создаём буфер и DataView
-    //     const buffer = new ArrayBuffer(totalSize);
-    //     const view = new DataView(buffer);
-    //
-    //     // Записываем каждое поле
-    //     for (const field of fields) {
-    //         const value = data[field.key];
-    //         if (typeof value !== 'number') {
-    //             throw new Error(`Поле ${field.key} должно быть числом`);
-    //         }
-    //
-    //         switch (field.type) {
-    //             case 'int':
-    //                 view.setInt32(field.offset, value, true);
-    //                 break;
-    //             case 'uint':
-    //                 view.setUint32(field.offset, value, true);
-    //                 break;
-    //             case 'short':
-    //                 view.setInt16(field.offset, value, true);
-    //                 break;
-    //             case 'ushort':
-    //                 view.setUint16(field.offset, value, true);
-    //                 break;
-    //             case 'char':
-    //                 view.setInt8(field.offset, value);
-    //                 break;
-    //             case 'uchar':
-    //                 view.setUint8(field.offset, value);
-    //                 break;
-    //             case 'float':
-    //                 view.setFloat32(field.offset, value, true);
-    //                 break;
-    //             case 'double':
-    //                 view.setFloat64(field.offset, value, true);
-    //                 break;
-    //             default:
-    //                 throw new Error(`Неподдерживаемый тип: ${field.type}`);
-    //         }
-    //     }
-    //
-    //     return buffer;
-    // }
 }

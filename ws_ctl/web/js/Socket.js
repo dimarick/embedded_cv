@@ -44,6 +44,15 @@ export default class Socket {
         this.#ws.onmessage = async (message) => {
             const data = message.data;
 
+            if (typeof data === "string" && data.indexOf("ERROR ") === 0) {
+                document.getElementById('connection-status').textContent = 'Error: ' + data;
+                console.log(data);
+                window.logger.error("Сбой подключения к " + this.#ws.url + " причина " + data);
+                this.#connecting = false;
+                this.#ws.close();
+                return;
+            }
+
             // Если есть ожидающие вызовы getNextMessage, резолвим первый из них
             if (this.#waitingResolvers.length > 0) {
                 const resolve = this.#waitingResolvers.shift();
@@ -60,6 +69,7 @@ export default class Socket {
         this.#ws.onerror = (error) => {
             document.getElementById('connection-status').textContent = 'Error: ' + error;
             console.log(error);
+            window.logger.error("Не удалось подключиться к " + this.#ws.url + " причина " + error.reason);
             this.#connecting = false;
         };
     }

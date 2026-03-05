@@ -9,10 +9,6 @@
     <!-- Подключение Font Awesome CSS -->
     <link rel="stylesheet" href="/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
     <link rel="stylesheet" href="/css/style.css">
-    <script type="module" src="/js/Socket.js"></script>
-    <script type="module" src="/js/Viewport.js"></script>
-    <script type="module" src="/js/Viewports.js"></script>
-    <script type="module" src="/js/ViewportStream.js"></script>
     <script type="module" src="/js/app.js"></script>
     <style>
 
@@ -29,8 +25,6 @@
             <p class="menu-label title is-5">Управление</p>
             <ul class="menu-list">
                 <li><a><i class="fas fa-plug"></i><span class="menu-text">&nbsp;Подключение</span></a></li>
-                <li><a><i class="fas fa-video"></i><span class="menu-text">&nbsp;Источник видео</span></a></li>
-                <li><a><i class="fas fa-crosshairs"></i><span class="menu-text">&nbsp;Оверлей</span></a></li>
                 <li><a><i class="fas fa-map-marked-alt"></i><span class="menu-text">&nbsp;Навигация</span></a></li>
             </ul>
 
@@ -43,7 +37,7 @@
 
             <div class="is-flex is-justify-content-center mt-auto">
                 <button class="button is-danger is-rounded is-small">
-                    <i class="fas fa-stop-circle"></i><span class="menu-text">&nbsp;Аварийный стоп</span>
+                    <i class="fas fa-power-off"></i><span class="menu-text">&nbsp;Аварийный стоп</span>
                 </button>
             </div>
         </aside>
@@ -52,18 +46,11 @@
         <main class="main-panel">
             <!-- Панель выбора лейаута -->
             <div class="layout-controls">
-                <button class="layout-btn active" data-layout="single" title="Один вид">
+                <button class="layout-btn active" data-layout="dual" title="Одна колонка">
                     <i class="fas fa-square"></i>
                 </button>
-                <button class="layout-btn" data-layout="dual" title="Два вида">
+                <button class="layout-btn" data-layout="quad" title="Две колонки">
                     <i class="fas fa-th-large"></i> 2
-                </button>
-                <button class="layout-btn" data-layout="quad" title="Четыре вида">
-                    <i class="fas fa-th-large"></i> 4
-                </button>
-                <div class="is-flex-grow-1"></div> <!-- Разделитель -->
-                <button class="layout-btn" title="Полный экран" id="fullscreen-btn">
-                    <i class="fas fa-expand"></i>
                 </button>
             </div>
 
@@ -72,7 +59,7 @@
                 <div id="app-viewports" class="viewport-grid">
                     <!-- Viewport 1 (Основной, всегда видим) -->
                     <div class="viewport active" id="viewport-1">
-                        <span class="viewport-title">ОСНОВНАЯ КАМЕРА</span>
+                        <div class="viewport-title">КАМЕРА 1</div>
                         <canvas class="viewport-canvas-stream" data-name="Debug 0"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
@@ -80,8 +67,8 @@
                         </div>
                     </div>
                     <!-- Следующие viewport'ы скрыты в лейауте "single" -->
-                    <div class="viewport is-hidden" id="viewport-2">
-                        <span class="viewport-title">КАМЕРА 2</span>
+                    <div class="viewport active" id="viewport-2">
+                        <div class="viewport-title">КАМЕРА 2</div>
                         <canvas class="viewport-canvas-stream" data-name="Debug 1"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
@@ -89,7 +76,7 @@
                         </div>
                     </div>
                     <div class="viewport is-hidden" id="viewport-3">
-                        <span class="viewport-title">КАМЕРА 3</span>
+                        <div class="viewport-title">КАМЕРА 3</div>
                         <canvas class="viewport-canvas-stream" data-name="Plain 0"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
@@ -97,7 +84,7 @@
                         </div>
                     </div>
                     <div class="viewport is-hidden" id="viewport-4">
-                        <span class="viewport-title">КАРТА</span>
+                        <div class="viewport-title">КАРТА</div>
                         <canvas class="viewport-canvas-stream" data-name="Plain 1"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
@@ -105,7 +92,7 @@
                         </div>
                     </div>
                     <div class="viewport is-hidden" id="viewport-5">
-                        <span class="viewport-title">КАМЕРА 3</span>
+                        <div class="viewport-title">КАМЕРА 3</div>
                         <canvas class="viewport-canvas-stream" data-name="Rectified 0"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
@@ -113,7 +100,7 @@
                         </div>
                     </div>
                     <div class="viewport is-hidden" id="viewport-6">
-                        <span class="viewport-title">КАРТА</span>
+                        <div class="viewport-title">КАРТА</div>
                         <canvas class="viewport-canvas-stream" data-name="Rectified 1"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
@@ -124,35 +111,56 @@
             </div>
         </main>
 
-        <!-- ПРАВАЯ ПАНЕЛЬ (Телеметрия и логи) -->
         <aside class="right-panel">
-            <h2 class="title is-5">📊 Телеметрия</h2>
-            <div class="telemetry-box">
-                <div class="field is-horizontal">
-                    <div class="field-label is-normal">
-                        <label class="label">Батарея</label>
-                    </div>
-                    <div class="field-body">
-                        <div class="field">
-                            <progress class="progress is-primary" value="78" max="100">78%</progress>
-                        </div>
-                    </div>
-                </div>
-                <div><strong>Скорость:</strong> 1.4 м/с</div>
-                <div><strong>Координаты:</strong> X: 12.4, Y: 5.7</div>
-                <div><strong>Температура:</strong> 42°C</div>
-                <div><strong>Состояние:</strong> <span id="connection-status" class="has-text-success">✓ Активно</span></div>
+            <!-- Кнопка сворачивания всей панели -->
+            <div class="panel-header">
+                <a class="panel-toggle-right panel-toggle button is-small is-light is-rounded">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
             </div>
 
-            <h2 class="title is-5">📝 Журнал событий</h2>
-            <div class="log-box">
-                <div class="log-entry"><span class="has-text-grey">[12:34:05]</span> Подключение к видеопотоку...</div>
-                <div class="log-entry"><span class="has-text-grey">[12:34:07]</span> Телеметрия активна.</div>
-                <div class="log-entry"><span class="has-text-grey">[12:35:22]</span> Команда: движение вперед.</div>
-                <div class="log-entry"><span class="has-text-grey">[12:35:45]</span> Получен кадр 1280x720.</div>
-                <div class="log-entry"><span class="has-text-grey">[12:36:10]</span> Включен оверлей "Сетка".</div>
-                <div class="log-entry"><span class="has-text-grey">[12:34:05]</span> Подключение к видеопотоку...</div>
-                <div class="log-entry"><span class="has-text-grey">[12:34:07]</span> Телеметрия активна.</div>
+            <!-- Контент панели (скрывается при сворачивании) -->
+            <div class="panel-content">
+                <!-- Секция телеметрии -->
+                <div class="right-panel-section">
+                    <div class="right-panel-header">
+                        <h2 class="title is-5">📊 <span class="title-text">Телеметрия</span></h2>
+                        <div class="right-panel-controls">
+                            <span class="collapse-icon"><i class="fas fa-chevron-up"></i></span>
+                        </div>
+                    </div>
+                    <div class="right-panel-content telemetry-box">
+                        <!-- существующее содержимое телеметрии -->
+                        <div class="field is-horizontal">
+                            <div class="field-label is-normal">
+                                <label class="label">Батарея</label>
+                            </div>
+                            <div class="field-body">
+                                <div class="field">
+                                    <progress class="progress is-primary" value="78" max="100">78%</progress>
+                                </div>
+                            </div>
+                        </div>
+                        <div><strong>Скорость:</strong> 1.4 м/с</div>
+                        <div><strong>Координаты:</strong> X: 12.4, Y: 5.7</div>
+                        <div><strong>Температура:</strong> 42°C</div>
+                        <div><strong>Состояние:</strong> <span id="connection-status" class="has-text-success">✓ Активно</span></div>
+                    </div>
+                </div>
+
+                <!-- Секция журнала событий -->
+                <div id="logs-container" class="right-panel-section">
+                    <div class="right-panel-header">
+                        <h2 class="title is-5">📝 <span class="title-text">Журнал событий</span></h2>
+                        <div class="right-panel-controls">
+                            <button class="fullscreen-log-btn"><i class="fas fa-expand"></i></button>
+                            <span class="collapse-icon"><i class="fas fa-chevron-up"></i></span>
+                        </div>
+                    </div>
+                    <div class="right-panel-content log-box">
+                        <!-- сюда будут добавляться логи через JS -->
+                    </div>
+                </div>
             </div>
         </aside>
     </div>
@@ -221,6 +229,67 @@
                     parentViewport.classList.add('active');
                 });
             });
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // 1. Сворачивание правой панели
+            const rightPanel = document.querySelector('.right-panel');
+            const toggleRight = document.querySelector('.panel-toggle-right');
+
+            function toggleRightPanel(rightPanel, icon) {
+                rightPanel.classList.toggle('collapsed');
+                if (rightPanel.classList.contains('collapsed')) {
+                    icon.classList.remove('fa-chevron-right');
+                    icon.classList.add('fa-chevron-left');
+                } else {
+                    icon.classList.remove('fa-chevron-left');
+                    icon.classList.add('fa-chevron-right');
+                }
+            }
+
+            if (toggleRight) {
+                toggleRight.addEventListener('click', function() {
+                    const icon = this.querySelector('i');
+                    toggleRightPanel(rightPanel, icon);
+                });
+            }
+
+            // 2. Сворачивание секций по клику на заголовок
+            const sections = document.querySelectorAll('.right-panel-section');
+            sections.forEach(section => {
+                const header = section.querySelector('.right-panel-header');
+                if (header) {
+                    header.addEventListener('click', function(e) {
+                        // Игнорируем клик по кнопке внутри заголовка (например, fullscreen)
+                        if (e.target.closest('.fullscreen-log-btn')) return;
+
+                        if (rightPanel.classList.contains('collapsed')) {
+                            toggleRightPanel(rightPanel, toggleRight.querySelector('i'));
+                            return;
+                        }
+
+                        section.classList.toggle('collapsed');
+                        const icon = section.querySelector('.collapse-icon i');
+                        if (section.classList.contains('collapsed')) {
+                            icon.classList.remove('fa-chevron-up');
+                            icon.classList.add('fa-chevron-down');
+                        } else {
+                            icon.classList.remove('fa-chevron-down');
+                            icon.classList.add('fa-chevron-up');
+                        }
+                    });
+                }
+            });
+
+            // 3. Обработчик кнопки полного экрана логов (заглушка)
+            const fullscreenBtn = document.querySelector('.fullscreen-log-btn');
+            if (fullscreenBtn) {
+                fullscreenBtn.addEventListener('click', function(e) {
+                    e.stopPropagation(); // предотвращаем всплытие к заголовку
+                    console.log('Кнопка полного экрана логов нажата');
+                    // Здесь можно реализовать логику: скрыть телеметрию, развернуть лог-бокс и т.д.
+                });
+            }
         });
     </script>
 </body>
