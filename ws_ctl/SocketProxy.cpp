@@ -23,8 +23,7 @@ void SocketProxy::onConnect(WebSocket *connection) {
 
     if (status < 0) {
         perror("Unable to connect to socket");
-        connection->send("Unable to connect to socket");
-        connection->send(strerror(errno));
+        connection->send(std::format("ERROR Unable to connect to socket: {}", strerror(errno)));
         connection->close();
 
         return;

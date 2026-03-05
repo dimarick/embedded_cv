@@ -15,6 +15,7 @@
 #include "CalibrateFrameCollector.h"
 #include "CalibrationStrategy.h"
 #include <common/RemoteView.h>
+#include <common/Telemetry.h>
 
 int main(int argc, const char **argv) {
     cpptrace::register_terminate_handler();
@@ -94,6 +95,15 @@ int main(int argc, const char **argv) {
               << ", " << capPixFormat << ", buffer " << capBuffer << std::endl;
 
     auto prev = std::chrono::high_resolution_clock::now();
+
+    auto tm = std::shared_ptr<mini_server::BroadcastingServer>(new mini_server::BroadcastingServer);
+    tm->setSocket(mini_server::SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
+    std::thread tmThread([&tm] () {
+        tm->run();
+    });
+
+    ecv::Telemetry::setServer(tm);
+    ecv::Telemetry::setLogLevel(ecv::Telemetry::LogLevel::DEBUG);
 
     if (!captureLeft.isOpened()) {
         std::cerr << "Left Capture is not opened" << std::endl;
@@ -224,7 +234,7 @@ int main(int argc, const char **argv) {
             std::vector<ecv::CalibrateMapper::Point3> calibImageGrid(500), calibObjectGrid(500);
 
             if (i == 1) {
-                std::cout << "Grid error is " << frameQuality << std::endl;
+                ecv::Telemetry::debug(std::format("Grid error is {}", frameQuality));
             }
 
             if (frameQuality < 1 && w >= 6 && h >= 3) {
@@ -280,6 +290,7 @@ int main(int argc, const char **argv) {
                     std::round(calibrationStrategy.getC(i).x * 1000) / 1000,
                     std::round(calibrationStrategy.getC(i).y * 1000) / 1000
             );
+
             cv::putText(debug, text, cv::Point2i(30, 30), 1, 2, cv::Scalar(0, 0, 255));
 
 #ifdef HAVE_OPENCV_HIGHGUI

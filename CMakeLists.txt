@@ -116,6 +116,8 @@ add_executable(calib
         src/calibrator/MultiCameraCalibration.h
         src/common/RemoteView.cpp
         src/common/RemoteView.h
+        src/common/Telemetry.cpp
+        src/common/Telemetry.h
 )
 
 target_link_libraries(calib PUBLIC mini_server OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
