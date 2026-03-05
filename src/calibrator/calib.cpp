@@ -1,9 +1,6 @@
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
 #include "opencv2/videoio.hpp"
-#ifdef HAVE_OPENCV_HIGHGUI
-#include "opencv2/highgui.hpp"
-#endif
 #include <iostream>
 #include <chrono>
 #include <cpptrace/cpptrace.hpp>
@@ -26,8 +23,6 @@ int main(int argc, const char **argv) {
     cv::UMat output, outputLeft, inputLeft, imageLeft, outputRight, inputRight, imageRight;
     cv::Mat resultLeft, resultRight;
     cv::VideoCapture captureLeft, captureRight;
-
-    cpptrace::register_terminate_handler();
 
     std::cerr << (cv::ocl::haveOpenCL() ? "with OpenCl" : "cpu only") << std::endl;
 
