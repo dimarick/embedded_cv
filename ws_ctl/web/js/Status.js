@@ -1,10 +1,7 @@
 import Telemetry from "./Telemetry.js";
 
 export default class Status {
-    #dbName;
-    #storeName;
-    #db;
-    #container;
+    #state = {};
     constructor() {
         document.addEventListener(Telemetry.EVENT_NAME_TELEMETRY, (event) => this.onTelemetry(event.detail));
     }
@@ -15,31 +12,29 @@ export default class Status {
         }
 
         const component = event.args.shift();
-        while (event.args.length >= 2) {
-            const property = event.args.shift();
-            const value = event.args.shift();
+        this.setStatus(component, event.args);
+    }
+
+    setStatusAll(component, args) {
+        while (args.length >= 2) {
+            const property = args.shift();
+            const value = args.shift();
             this.setStatus(component, property, value);
         }
     }
 
     setStatus(component, property, value) {
-        switch (component) {
-            case "calibration":
-                this.setCalibrationProperty(property, value);
-                break;
-            case "camera":
-                this.setCameraProperty(property, value);
-                break;
+        const tm = component + '.' + property;
+        const prev = this.#state[tm];
+
+        if (value === prev) {
+            return;
         }
-    }
 
-    setCalibrationProperty(property, value) {
-
-    }
-
-    setCameraProperty(property, value) {
-        switch (property) {
-            case "resolution.w":
+        for (const element of document.querySelectorAll('.telemetry-value[name="' + tm + '"]')) {
+            element.innerHTML = value;
         }
+
+        document.dispatchEvent(new CustomEvent(tm, {detail: {component, property, value}}));
     }
 }

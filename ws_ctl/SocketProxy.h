@@ -23,8 +23,6 @@ public:
     void onData(WebSocket* connection, const char*) override;
     void onData(WebSocket* connection, const uint8_t *data, size_t) override;
     void onDisconnect(WebSocket* connection) override;
-
-    std::unordered_map<std::string, std::string> parseQuery(const WebSocket *connection) const;
 };
 
 #endif //WS_CTL_SOCKETPROXY_H

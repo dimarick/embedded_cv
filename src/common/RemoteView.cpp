@@ -198,7 +198,7 @@ std::vector<char> RemoteView::createMessageFromMat(const cv::Mat &mat, const cv:
     if (header.type == TYPE_8U || header.type == TYPE_8S) {
         std::vector<uchar> buffer;
         cv::imencode(".jpg", crop, buffer, {
-            cv::ImwriteFlags::IMWRITE_JPEG_QUALITY, 99,
+            cv::ImwriteFlags::IMWRITE_JPEG_QUALITY, 50,
         });
 
         header.codec = CvMatCodecEnum::JPEG;

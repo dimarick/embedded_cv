@@ -337,6 +337,8 @@ body {
 .right-panel-section {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 0;
 }
 
 /* Заголовок секции */
@@ -393,6 +395,12 @@ body {
 /* Изменение иконки при свёрнутой секции */
 .right-panel-section.collapsed .collapse-icon i {
     transform: rotate(-90deg); /* или fa-chevron-down, но мы заменим класс в JS */
+}
+
+/* Изменение иконки при свёрнутой секции */
+.right-panel-section.collapsed {
+    flex: initial;
+    min-height: 0;
 }
 
 /* Сама правая панель в свёрнутом состоянии */

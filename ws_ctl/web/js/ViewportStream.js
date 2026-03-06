@@ -58,7 +58,7 @@ export default class ViewportStream {
     }
 
     isVisible() {
-        return this.#isElementVisibleByCSS(this.#element) && this.#isElementInViewPort(this.#element);
+        return !document.hidden && this.#isElementVisibleByCSS(this.#element) && this.#isElementInViewPort(this.#element);
     }
     #isElementVisibleByCSS(element) {
         const style = getComputedStyle(element)

@@ -1,4 +1,15 @@
 export default class Socket {
+    static #bytesSent0 = 0;
+    static #bytesReceived0 = 0;
+    static #bytesSent = 0;
+    static #bytesReceived = 0;
+    static #bytesSentPrev = 0;
+    static #bytesReceivedPrev = 0;
+    static #statTs = 0;
+    static #bpsSent = 0;
+    static #bpsReceived = 0;
+    static #bpsInterval = 0;
+
     #url;
     onmessage;
     #ws;
@@ -15,7 +26,12 @@ export default class Socket {
         this.connect();
         setInterval(() => {
             this.connect();
-        }, 2000)
+        }, 2000);
+
+        if (Socket.#bpsInterval === 0) {
+            Socket.#statTs = performance.now();
+            Socket.#bpsInterval = setInterval(() => Socket.#sendStat(), 1000);
+        }
     }
 
     connect() {
@@ -43,6 +59,10 @@ export default class Socket {
         };
         this.#ws.onmessage = async (message) => {
             const data = message.data;
+
+            const dataSize = data instanceof Blob ? data.size : data.length;
+            Socket.#bytesReceived += dataSize;
+            Socket.#bytesReceived0 += dataSize;
 
             if (typeof data === "string" && data.indexOf("ERROR ") === 0) {
                 document.getElementById('connection-status').textContent = 'Error: ' + data;
@@ -100,5 +120,46 @@ export default class Socket {
         } else {
             this.#ws.send(data);
         }
+
+        Socket.#bytesSent += data.length;
+        Socket.#bytesSent0 += data.length;
+    }
+
+    static #sendStat() {
+        const now = performance.now();
+        const sent = Socket.#bytesSent;
+        const recv = Socket.#bytesReceived;
+
+        const interval = now - Socket.#statTs;
+        Socket.#bpsSent = 1000 * (sent - Socket.#bytesSentPrev) / interval;
+        Socket.#bpsReceived = 1000 * (recv - Socket.#bytesReceivedPrev) / interval;
+        Socket.#bytesSentPrev = sent;
+        Socket.#bytesReceivedPrev = recv;
+        Socket.#statTs = now;
+
+        if (Socket.#bytesSent > 1e8) {
+            Socket.#bytesSent -= Socket.#bytesSentPrev;
+            Socket.#bytesSentPrev -= Socket.#bytesSentPrev;
+        }
+
+        if (Socket.#bytesReceived > 1e8) {
+            Socket.#bytesReceived -= Socket.#bytesReceivedPrev;
+            Socket.#bytesReceivedPrev -= Socket.#bytesReceivedPrev;
+        }
+
+        window.telemetryStatus.setStatusAll('network', [
+            'bytes.sent.raw', Socket.#bytesSent0,
+            'bytes.sent.value', Math.round(Socket.#bytesSent0 / 1e5) / 1e1,
+            'bytes.sent.unit', 'MB',
+            'bytes.received.raw', Socket.#bytesReceived0,
+            'bytes.received.value', Math.round(Socket.#bytesReceived0 / 1e5) / 1e1,
+            'bytes.received.unit', 'MB',
+            'bps.sent.raw', Socket.#bpsSent,
+            'bps.sent.value', Math.round(Socket.#bpsSent / 1e3),
+            'bps.sent.unit', 'kB/s',
+            'bps.received.raw', Socket.#bpsReceived,
+            'bps.received.value', Math.round(Socket.#bpsReceived / 1e3),
+            'bps.received.unit', 'kB/s',
+        ]);
     }
 }

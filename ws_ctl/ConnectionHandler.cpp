@@ -22,7 +22,7 @@ void ConnectionHandler::start() {
         size_t receivedSize = 0;
         auto &_server = c->server();
         while (that->running) {
-            auto n = recv(_socketFd, buffer + receivedSize, currentBufferSize - receivedSize, MSG_NOSIGNAL);
+            auto n = recv(_socketFd, buffer + receivedSize, currentBufferSize - receivedSize, 0);
 
             if (n < 0) {
                 perror("Unable to read socket");
