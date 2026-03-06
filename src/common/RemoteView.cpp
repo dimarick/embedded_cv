@@ -7,11 +7,11 @@ using namespace ecv;
 std::string urlEncode(const std::string &value);
 
 void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
+    initializeServer();
+    const auto expire = server->getExpire(200);
 #ifdef HAVE_OPENCV_HIGHGUI
     cv::imshow(viewName, mat);
 #endif
-    initializeServer();
-    size_t size = 0;
 
     std::unordered_map<int, std::unordered_map<int, ChannelSettings>> viewSettingsCopy;
 
@@ -43,7 +43,7 @@ void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
 
                 std::copy(matMessage.begin(), matMessage.end(), frame.begin() + (int)nameBufferSize);
 
-                settingsCache[key] = server->getTransportMessage(frame.data(), frame.size(), 200, mini_server::BroadcastingServer::MessageTypeEnum::TYPE_MAT);
+                settingsCache[key] = server->getTransportMessage(frame.data(), frame.size(), expire, mini_server::BroadcastingServer::MessageTypeEnum::TYPE_MAT);
             }
             const auto &f = settingsCache[key];
 

@@ -337,6 +337,10 @@ body {
 .right-panel-section {
     display: flex;
     flex-direction: column;
+}
+
+/* Секции (телеметрия и логи) */
+.right-panel-section.log-section {
     flex: 1;
     min-height: 0;
 }

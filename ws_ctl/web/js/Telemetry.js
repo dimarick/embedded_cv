@@ -9,8 +9,9 @@ export default class Telemetry {
         this.#socket.connect();
     }
 
-    onMessage(data) {
-        const parsedData = JSON.parse(data)
+    async onMessage(data) {
+        const text = data instanceof Blob ? await data.text() : data;
+        const parsedData = JSON.parse(text)
         const command = parsedData.shift();
         const args = parsedData;
         document.dispatchEvent(new CustomEvent(Telemetry.EVENT_NAME_TELEMETRY, {detail: {command, args}}));

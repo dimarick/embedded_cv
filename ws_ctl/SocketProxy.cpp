@@ -3,6 +3,7 @@
 #include <format>
 #include <netinet/tcp.h>
 #include "SocketProxy.h"
+#include "seasocks/Connection.h"
 
 void SocketProxy::onData(WebSocket *connection, const uint8_t *data, size_t dataSize) {
     connectionHandlers.find(connection)->second->onData(data, dataSize);
@@ -13,13 +14,24 @@ void SocketProxy::onData(WebSocket *connection, const char *data) {
 }
 
 void SocketProxy::onConnect(WebSocket *connection) {
+    auto c = dynamic_cast<Connection *>(connection);
+    int setTrue = 1;
+    auto status = setsockopt(c->getFd(), SOL_TCP, TCP_NODELAY, &setTrue, sizeof(setTrue));
+
+    if (status < 0) {
+        perror("Unable to setsockopt(TCP_NODELAY)");
+        connection->send(std::format("ERROR Unable to connect to socket: {}", strerror(errno)));
+        connection->close();
+
+        return;
+    }
+
+
     sockaddr_un addr = {AF_UNIX};
 
     socketName.copy(addr.sun_path, sizeof(addr.sun_path), 0);
     auto socketFd = socket(AF_UNIX, SOCK_STREAM, 0);
-    auto status = connect(socketFd, (const struct sockaddr *)&addr, sizeof(addr));
-    int setTrue = 1;
-    setsockopt(socketFd, SOL_TCP, TCP_NODELAY, &setTrue, sizeof(setTrue));
+    status = connect(socketFd, (const struct sockaddr *)&addr, sizeof(addr));
 
     if (status < 0) {
         perror("Unable to connect to socket");

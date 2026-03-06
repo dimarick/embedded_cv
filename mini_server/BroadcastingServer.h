@@ -26,7 +26,7 @@ namespace mini_server {
             unsigned int magick;
             MessageTypeEnum type;
             unsigned int size;
-            unsigned long ttl;
+            unsigned long expire;
         };
 
         int socket = -1;
@@ -56,8 +56,10 @@ namespace mini_server {
         void sendFrame(int s, const std::vector<char> &frame);
 
         std::vector<char>
-        getTransportMessage(const void *buffer, size_t bufferSize, unsigned long ttl,
+        getTransportMessage(const void *buffer, size_t bufferSize, unsigned long expire,
                             const MessageTypeEnum &type) const;
+
+        unsigned long getExpire(unsigned long ttl) const;
     };
 }
 

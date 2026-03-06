@@ -74,9 +74,9 @@ namespace ecv {
             std::ostringstream str;
             str << "[" << std::quoted("LOG") << "," << std::quoted(level(l)) << "," << now() << "," << std::quoted(message) << "]";
             if (l != ERROR) {
-                std::cout << ":[" << datetimeFromFloat(now()) << "]\t" << level(l) << "\t" << message << std::endl;;
+                std::cout << "[" << datetimeFromFloat(now()) << "]\t" << level(l) << "\t" << message << std::endl;;
             } else {
-                std::cerr << ":[" << datetimeFromFloat(now()) << "]\t" << level(l) << "\t" << message << std::endl;;
+                std::cerr << "[" << datetimeFromFloat(now()) << "]\t" << level(l) << "\t" << message << std::endl;;
             }
             server->broadcast(str.str());
         }

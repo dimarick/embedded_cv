@@ -119,29 +119,33 @@ extern "C++" void BroadcastingServer::broadcast(const std::string &message) {
 }
 
 extern "C++" void BroadcastingServer::broadcast(const void *buffer, size_t bufferSize, unsigned long ttl, MessageTypeEnum type) {
+    const auto expire = getExpire(ttl);
     acceptedSocketsMutex.lock();
     auto threadSafeAcceptedSockets = acceptedSockets;
     acceptedSocketsMutex.unlock();
 
-    auto frame = getTransportMessage(buffer, bufferSize, ttl, type);
+    auto frame = getTransportMessage(buffer, bufferSize, expire, type);
 
     for (auto acceptedSocket : threadSafeAcceptedSockets) {
         sendFrame(acceptedSocket, frame);
     }
 }
 
-std::vector<char> BroadcastingServer::getTransportMessage(const void *buffer, size_t bufferSize, unsigned long ttl,
+std::vector<char> BroadcastingServer::getTransportMessage(const void *buffer, size_t bufferSize, unsigned long expire,
                                                           const BroadcastingServer::MessageTypeEnum &type) const {
-    MessageHeader header{'MsgS', type, (unsigned int) bufferSize, ttl};
-    if (ttl > 0) {
-        header.ttl = duration_cast<std::chrono::milliseconds>(
-                std::chrono::high_resolution_clock::now().time_since_epoch()).count() + ttl;
-    } else {
-        header.ttl = 0;
-    }
+    MessageHeader header{'MsgS', type, (unsigned int) bufferSize, expire};
 
     auto frame = Encapsulation::encapsulate(buffer, bufferSize, header);
     return frame;
+}
+
+unsigned long BroadcastingServer::getExpire(unsigned long ttl) const {
+    if (ttl > 0) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::high_resolution_clock::now().time_since_epoch()).count() + ttl;
+    } else {
+        return 0;
+    }
 }
 
 void BroadcastingServer::sendFrame(int s, const std::vector<char> &frame) {

@@ -12,7 +12,7 @@ export default class Status {
         }
 
         const component = event.args.shift();
-        this.setStatus(component, event.args);
+        this.setStatusAll(component, event.args);
     }
 
     setStatusAll(component, args) {
@@ -36,5 +36,6 @@ export default class Status {
         }
 
         document.dispatchEvent(new CustomEvent(tm, {detail: {component, property, value}}));
+        console.log("STATUS", component, property, value);
     }
 }

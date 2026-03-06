@@ -234,7 +234,7 @@ int main(int argc, const char **argv) {
             std::vector<ecv::CalibrateMapper::Point3> calibImageGrid(500), calibObjectGrid(500);
 
             if (i == 1) {
-                ecv::Telemetry::debug(std::format("Grid error is {}", frameQuality));
+                ecv::Telemetry::status("calibration", "grid.error.raw", std::format("Grid error is {}", frameQuality));
             }
 
             if (frameQuality < 1 && w >= 6 && h >= 3) {

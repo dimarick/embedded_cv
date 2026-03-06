@@ -15,11 +15,17 @@ export default class Logger {
                 this.#addUiItem(row.timestamp, row.level, row.message, 1000);
             }
             document.addEventListener(Telemetry.EVENT_NAME_TELEMETRY, (event) => this.onTelemetry(event.detail));
+
+            this.#cleanupOldRecords(1000);
         });
     }
 
     #addUiItem(ts, level, message, limit) {
         const container = this.#container;
+        if (!container) return;
+
+        // Проверяем, находится ли скролл внизу (с допуском в 5 пикселей)
+        const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 5;
 
         const date = ts ? new Date(ts) : new Date();
         const timeStr = date.toLocaleTimeString('ru-RU', { hour12: false });
@@ -30,8 +36,14 @@ export default class Logger {
 
         container.append(entry);
 
+        // Ограничиваем количество записей (удаляем самые старые – первые)
         while (container.children.length > limit) {
             container.removeChild(container.firstChild);
+        }
+
+        // Если до добавления были внизу – прокручиваем в самый низ после всех изменений
+        if (isAtBottom) {
+            container.scrollTop = container.scrollHeight;
         }
     }
 
@@ -66,8 +78,8 @@ export default class Logger {
             return;
         }
 
-        const ts = parseFloat(event.args.shift());
         const level = event.args.shift();
+        const ts = parseFloat(event.args.shift());
         const message = event.args.shift();
 
         this.#addUiItem(ts, level, message, 1000);
@@ -159,9 +171,11 @@ export default class Logger {
         if (total <= limit) return;
 
         const toDelete = total - limit;
-        const index = this.#db.transaction(this.#storeName).objectStore(this.storeName).index('timestamp');
+        const transaction = this.#db.transaction([this.#storeName], 'readwrite');
+        const store = transaction.objectStore(this.#storeName);
+        const index = store.index('timestamp');
 
-        return new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
             const cursorRequest = index.openCursor(); // от старых к новым
             let deleted = 0;
 
