@@ -1,5 +1,5 @@
 #include "KitDisparityBenchmark.h"
-#include <../DisparityEvaluator.h>
+#include <cv/DisparityEvaluator.h>
 #include <numeric>
 #include <fstream>
 #include <core/ocl.hpp>

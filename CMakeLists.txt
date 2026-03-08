@@ -105,8 +105,8 @@ add_executable(calib
         src/calibrator/CalibrateMapper.cpp
         src/calibrator/Calibrator.cpp
         src/calibrator/Calibrator.h
-        MatStorage.cpp
-        MatStorage.h
+        src/common/MatStorage.cpp
+        src/common/MatStorage.h
         src/calibrator/GridPreferredSizeProvider.cpp
         src/calibrator/CalibrationStrategy.cpp
         src/calibrator/CalibrationStrategy.h
@@ -125,11 +125,10 @@ target_link_libraries(calib PUBLIC mini_server OpenCL::OpenCL cpptrace::cpptrace
 install(TARGETS calib DESTINATION bin)
 
 add_executable(cv
-        cv.cpp
-        CvCommandHandler.cpp
-        ImageProcessor.cpp
-        DisparityEvaluator.cpp
-        DisparityEvaluator.h
+        src/cv/cv.cpp
+        src/cv/CvCommandHandler.cpp
+        src/cv/DisparityEvaluator.cpp
+        src/cv/DisparityEvaluator.h
 )
 
 target_link_libraries(cv PUBLIC OpenCL::OpenCL mini_server cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
@@ -137,8 +136,8 @@ target_link_libraries(cv PUBLIC OpenCL::OpenCL mini_server cpptrace::cpptrace Ei
 add_executable(benchmark
         benchmark/benchmark.cpp
         benchmark/KitDisparityBenchmark.cpp
-        DisparityEvaluator.cpp
-        DisparityEvaluator.h
+        src/cv/DisparityEvaluator.cpp
+        src/cv/DisparityEvaluator.h
         src/calibrator/CalibrateFrameCollector.cpp
         src/calibrator/CalibrateFrameCollector.h
         src/calibrator/GridPreferredSizeProvider.cpp

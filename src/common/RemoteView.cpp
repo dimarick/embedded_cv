@@ -4,7 +4,9 @@
 
 using namespace ecv;
 
-std::string urlEncode(const std::string &value);
+void RemoteView::showMat(const std::string& viewName, const cv::UMat& mat) {
+    showMat(viewName, mat.getMat(cv::ACCESS_READ));
+}
 
 void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
     initializeServer();

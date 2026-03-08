@@ -64,6 +64,8 @@ namespace ecv {
         virtual ~RemoteView();
 
         std::vector<char> createMessageFromMat(const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH);
+
+        void showMat(const std::string &viewName, const cv::UMat &mat);
     };
 }
 

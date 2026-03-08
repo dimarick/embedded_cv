@@ -1,5 +1,5 @@
 #ifdef __CLION_IDE__
-#include "opencl_ide_defs.h"
+#include "cv/opencl_ide_defs.h"
 #endif
 
 #ifndef H_GRANULE_SIZE

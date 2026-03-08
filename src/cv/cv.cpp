@@ -5,7 +5,6 @@
 #ifdef HAVE_OPENCV_HIGHGUI
 #include "opencv2/highgui.hpp"
 #endif
-#include "ImageProcessor.h"
 #include "CvCommandHandler.h"
 #include <iostream>
 #include <chrono>
@@ -20,6 +19,7 @@
 #include <core/opencl/ocl_defs.hpp>
 #include <fstream>
 #include <core/ocl.hpp>
+#include <common/RemoteView.h>
 
 #include "DisparityEvaluator.h"
 
@@ -79,6 +79,8 @@ int main(int argc, const char **argv) {
     cpptrace::register_terminate_handler();
 
     std::cerr << "Built with OpenCV " << CV_VERSION << std::endl;
+
+    auto remoteView = ecv::RemoteView();
 
     std::vector<int> params = {
             cv::VideoCaptureProperties::CAP_PROP_CONVERT_RGB, true,
@@ -221,10 +223,6 @@ int main(int argc, const char **argv) {
     }
 
     free(formattedInputCommand);
-
-    ImageProcessor processor(processingSize.width, processingSize.height, broadcastingServer);
-
-    handler.setImageProcessor(&processor);
 
     double fps = 0.;
     double avgFps = 0.;
@@ -407,8 +405,8 @@ int main(int argc, const char **argv) {
             clahe->apply(original, filtered);
             clahe->apply(filtered, filtered);
 
-            imshow("Original", original);
-            imshow("Filtered", filtered);
+            remoteView.showMat("Original", original);
+            remoteView.showMat("Filtered", filtered);
 
             if (j != 1) {
                 cv::remap(frames[j], result[j], bestMap1[j], noArray(), INTER_NEAREST);
@@ -475,6 +473,7 @@ int main(int argc, const char **argv) {
         varianceFp.convertTo(variance8, CV_8U);
         cv::applyColorMap(variance8, variance8, ColormapTypes::COLORMAP_JET);
 
+        //TODO перенести на клиента
         cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
         cv::drawMarker(result2[0], mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
         cv::drawMarker(result2[1], mouseDisp, cv::Scalar(255, 128, 255), MarkerTypes::MARKER_CROSS, 30, 3);
@@ -485,11 +484,10 @@ int main(int argc, const char **argv) {
         auto varStr = std::to_string((float)varianceAtPoint);
         cv::putText(disparity8, dispStr, mouseDisp, FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         cv::putText(variance8, varStr, mouseDisp, FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
-        cv::imshow("Disparity", disparity8);
-        cv::imshow("Variance", variance8);
+        remoteView.showMat("Disparity", disparity8);
+        remoteView.showMat("Variance", variance8);
         for (int j = 0; j < result2.size(); ++j) {
-            cv::imshow("Plain best " + std::to_string(j), result2[j]);
-//                imshow("src " + std::to_string(j), frames[j]);
+            remoteView.showMat("Plain best " + std::to_string(j), result2[j]);
         }
 
 #endif
