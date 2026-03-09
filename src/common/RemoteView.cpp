@@ -66,7 +66,7 @@ void RemoteView::initializeServer() {
     std::lock_guard lock(channelsMutex);
 
     if (server == nullptr) {
-        server = std::shared_ptr<mini_server::BroadcastingServer>(new mini_server::BroadcastingServer);
+        server = std::make_shared<mini_server::BroadcastingServer>();
         server->setOnMessage([this](int socket, const std::string &message) -> void {
             std::cout << message << std::endl;
 

@@ -27,9 +27,9 @@ namespace ecv {
             auto statIt = gridSizeStat.find(key);
             if (statIt == gridSizeStat.end()) {
                 if (gridSizeStat.empty()) {
-                    gridSizeStat.insert({key, std::shared_ptr<GridStat>(new GridStat(w, h, 1))});
+                    gridSizeStat.insert({key, std::make_shared<GridStat>(w, h, 1)});
                 } else {
-                    gridSizeStat.insert({key, std::shared_ptr<GridStat>(new GridStat(w, h, 1))});
+                    gridSizeStat.insert({key, std::make_shared<GridStat>(w, h, 1)});
                 }
             } else {
                 statIt->second->count++;

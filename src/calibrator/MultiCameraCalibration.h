@@ -77,7 +77,7 @@ namespace ecv {
         [[nodiscard]] CalibrationData getCalibrationData(int cameraId) const {
             CalibrationData result;
             {
-                std::shared_lock lock(dataMutex);
+                std::lock_guard lock(dataMutex);
                 result = data[cameraId];
             }
 
@@ -92,7 +92,7 @@ namespace ecv {
         [[nodiscard]] CalibrationData getRectificationData(int cameraId) const {
             CalibrationData result;
             {
-                std::shared_lock lock(dataMutex);
+                std::lock_guard lock(dataMutex);
                 result = rectificationData[cameraId];
             }
 

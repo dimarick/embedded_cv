@@ -96,7 +96,7 @@ int main(int argc, const char **argv) {
 
     auto prev = std::chrono::high_resolution_clock::now();
 
-    auto tm = std::shared_ptr<mini_server::BroadcastingServer>(new mini_server::BroadcastingServer);
+    auto tm = std::make_shared<mini_server::BroadcastingServer>();
     tm->setSocket(mini_server::SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
     std::thread tmThread([&tm] () {
         tm->run();

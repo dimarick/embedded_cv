@@ -11,7 +11,7 @@ export default class Viewports {
 
     constructor(viewportsElement) {
         this.#viewportsElement = viewportsElement;
-        this.#streamSocket = new Socket('/stream', (data) => this.onMessage(data));
+        this.#streamSocket = new Socket('/cv_stream', (data) => this.onMessage(data));
 
         for (const element of viewportsElement.getElementsByClassName("viewport")) {
             this.#viewports.push(new Viewport(element, this.#streamSocket));

@@ -131,13 +131,13 @@ namespace ecv {
 
                 this->onUpdateCallback(cameraId, *this);
             };
-            multicamThreadHandler = std::shared_ptr<MultiCameraCalibration>(new MultiCameraCalibration(
+            multicamThreadHandler = std::make_shared<MultiCameraCalibration>(
                     numCameras,
                     frameSize,
                     callback,
                     gridPreferredSizeProvider,
                     frameCollectors[0]
-            ));
+            );
 
             for (int i = 0; i < numCameras; ++i) {
                 cameraThread.emplace_back(new SingleCameraThread(i, frameSize, [i, this] (const SingleCameraThread &that) {

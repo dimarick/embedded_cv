@@ -75,7 +75,7 @@ namespace ecv {
         [[nodiscard]] CalibrationData getCalibrationData() const {
             CalibrationData result;
             {
-                std::shared_lock lock(dataMutex);
+                std::lock_guard lock(dataMutex);
                 result = data;
             }
 
@@ -83,7 +83,7 @@ namespace ecv {
         }
 
         [[nodiscard]] cv::Point2d getF() {
-            std::shared_lock lock(dataMutex);
+            std::lock_guard lock(dataMutex);
             return {
                     data.cameraMatrix.at<double>(0, 0),
                     data.cameraMatrix.at<double>(1, 1),
@@ -91,7 +91,7 @@ namespace ecv {
         }
 
         [[nodiscard]] cv::Point2d getC() {
-            std::shared_lock lock(dataMutex);
+            std::lock_guard lock(dataMutex);
             return {
                     data.cameraMatrix.at<double>(0, 2),
                     data.cameraMatrix.at<double>(1, 2),
@@ -104,12 +104,12 @@ namespace ecv {
         }
 
         [[nodiscard]] cv::Mat getMap() const {
-            std::shared_lock lock(dataMutex);
+            std::lock_guard lock(dataMutex);
             return map;
         }
 
         void setMap(const cv::Mat &m) {
-            std::shared_lock lock(dataMutex);
+            std::lock_guard lock(dataMutex);
             map = m.clone();
         }
 

@@ -11,9 +11,9 @@ int main(int argc, const char* argv[]) {
 
 //    server.addWebSocketHandler("/hw_ctl", std::make_shared<SocketProxy>("/tmp/hw_ctl"));
 //    server.addWebSocketHandler("/hw_tm", std::make_shared<SocketProxy>("/tmp/hw_tm"));
-    server.addWebSocketHandler("/cv_ctl", std::make_shared<SocketProxy>("/tmp/cv_ctl"));
-    server.addWebSocketHandler("/cv_tm", std::make_shared<SocketProxy>("/tmp/cv_tm"));
-    server.addWebSocketHandler("/stream", std::make_shared<SocketProxy>("/tmp/stream", 2));
+    server.addWebSocketHandler("/cv_ctl", std::make_shared<SocketProxy>("/tmp/cv_ctl", 2));
+    server.addWebSocketHandler("/cv_tm", std::make_shared<SocketProxy>("/tmp/cv_tm", 2));
+    server.addWebSocketHandler("/cv_stream", std::make_shared<SocketProxy>("/tmp/cv_stream", 2));
 
     server.serve("web", 9090);
 

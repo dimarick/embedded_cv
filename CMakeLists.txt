@@ -128,6 +128,8 @@ add_executable(cv
         src/cv/cv.cpp
         src/cv/CvCommandHandler.cpp
         src/cv/DisparityEvaluator.cpp
+        src/common/MatStorage.cpp
+        src/common/RemoteView.cpp
         src/cv/DisparityEvaluator.h
 )
 
