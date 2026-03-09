@@ -14,6 +14,8 @@ int main(int argc, const char* argv[]) {
     server.addWebSocketHandler("/cv_ctl", std::make_shared<SocketProxy>("/tmp/cv_ctl", 2));
     server.addWebSocketHandler("/cv_tm", std::make_shared<SocketProxy>("/tmp/cv_tm", 2));
     server.addWebSocketHandler("/cv_stream", std::make_shared<SocketProxy>("/tmp/cv_stream", 2));
+    server.addWebSocketHandler("/cv_calib_tm", std::make_shared<SocketProxy>("/tmp/cv_calib_tm", 2));
+    server.addWebSocketHandler("/cv_calib_stream", std::make_shared<SocketProxy>("/tmp/cv_calib_stream", 2));
 
     server.serve("web", 9090);
 

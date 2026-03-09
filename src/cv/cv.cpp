@@ -5,12 +5,11 @@
 #ifdef HAVE_OPENCV_HIGHGUI
 #include "opencv2/highgui.hpp"
 #endif
-#include "CvCommandHandler.h"
 #include <iostream>
 #include <chrono>
 #include <cpptrace/cpptrace.hpp>
 #include <CommandServer.h>
-#include <BroadcastingServer.h>
+#include <IpcServer.h>
 #include <unistd.h>
 #include <thread>
 #include <atomic>
@@ -28,9 +27,9 @@ using namespace cv;
 
 static std::atomic running = true;
 
-static BroadcastingServer broadcastingServer;
-static BroadcastingServer streamingServer;
-static CommandServer commandServer;
+static IpcServer tmServer;
+static IpcServer streamingServer;
+static IpcServer commandServer;
 
 void invMap(const cv::Mat &src, cv::Mat &dest) {
     if (dest.empty()) {
@@ -80,7 +79,7 @@ int main(int argc, const char **argv) {
 
     std::cerr << "Built with OpenCV " << CV_VERSION << std::endl;
 
-    auto remoteView = ecv::RemoteView();
+    auto remoteView = ecv::RemoteView("/cv_stream");
 
     std::vector<int> params = {
             cv::VideoCaptureProperties::CAP_PROP_CONVERT_RGB, true,
@@ -105,15 +104,16 @@ int main(int argc, const char **argv) {
         captureRight.open(std::string(argv[2]), cv::CAP_V4L2, params);
     }
 
-    broadcastingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
-    streamingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_s", 10));
+    tmServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
+    streamingServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_stream", 10));
     commandServer.setSocket(SocketFactory::createListeningSocket("/tmp/cv_ctl", 1));
-    auto handler = CvCommandHandler(commandServer);
-    commandServer.setHandler(handler);
+    commandServer.setOnMessage([] (int socket, const std::string &message) {
+
+    });
 
     signal(SIGINT, [](int signal) {
         running = false;
-        broadcastingServer.stop();
+        tmServer.stop();
         commandServer.stop();
     });
 
@@ -122,7 +122,7 @@ int main(int argc, const char **argv) {
     });
 
     std::thread broadcastingServerThread = std::thread([]() {
-        broadcastingServer.run();
+        tmServer.run();
     });
 
     std::thread streamingServerThread = std::thread([]() {
@@ -523,7 +523,7 @@ int main(int argc, const char **argv) {
                 tm->clear();
                 sendingLock->unlock();
 
-                broadcastingServer.broadcast(message);
+                tmServer.broadcast(message);
                 *isRunning = false;
             }, &writerIsRunning, &tm, &sendingLock);
         }

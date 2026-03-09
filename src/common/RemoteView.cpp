@@ -45,7 +45,8 @@ void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
 
                 std::copy(matMessage.begin(), matMessage.end(), frame.begin() + (int)nameBufferSize);
 
-                settingsCache[key] = server->getTransportMessage(frame.data(), frame.size(), expire, mini_server::BroadcastingServer::MessageTypeEnum::TYPE_MAT);
+                settingsCache[key] = server->createFrame(frame.data(), frame.size(), expire,
+                                                         mini_server::IpcServer::MessageTypeEnum::TYPE_MAT);
             }
             const auto &f = settingsCache[key];
 
@@ -66,7 +67,7 @@ void RemoteView::initializeServer() {
     std::lock_guard lock(channelsMutex);
 
     if (server == nullptr) {
-        server = std::make_shared<mini_server::BroadcastingServer>();
+        server = std::make_shared<mini_server::IpcServer>();
         server->setOnMessage([this](int socket, const std::string &message) -> void {
             std::cout << message << std::endl;
 
@@ -132,7 +133,7 @@ void RemoteView::initializeServer() {
             }
         });
 
-        server->setSocket(mini_server::SocketFactory::createListeningSocket("/tmp/stream", 10));
+        server->setSocket(mini_server::SocketFactory::createListeningSocket(socketPath, 10));
 
         serverThread = std::thread([this]() {
             server->run();

@@ -10,7 +10,7 @@
 #include <thread>
 
 namespace mini_server {
-    class BroadcastingServer {
+    class IpcServer {
     public:
         typedef std::function<void(int socket, const std::string &)> MessageHandler;
         typedef std::function<void(int socket)> CloseHandler;
@@ -30,15 +30,16 @@ namespace mini_server {
         };
 
         int socket = -1;
-        std::mutex acceptedSocketsMutex;
+        mutable std::mutex mutex;
         std::set<int> acceptedSockets;
         std::unordered_map<int, std::thread> threads;
         std::atomic<bool> running;
         MessageHandler onMessage;
         CloseHandler onClose;
+        static void interact(int socket, IpcServer *server, int threadId);
     public:
-        void setOnMessage(BroadcastingServer::MessageHandler onMessage);
-        void setOnClose(BroadcastingServer::CloseHandler onClose);
+        void setOnMessage(IpcServer::MessageHandler onMessage);
+        void setOnClose(IpcServer::CloseHandler onClose);
 
         void setSocket(int _socket) {
             this->socket = _socket;
@@ -51,13 +52,14 @@ namespace mini_server {
         void broadcast(const std::string &message);
         void broadcast(const void *buffer, size_t bufferSize, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
 
-        static void interact(int socket, BroadcastingServer *server, int threadId);
-
         void sendFrame(int s, const std::vector<char> &frame);
 
+        void send(int s, const std::string &message, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
+        void send(int s, const void *buffer, size_t bufferSize, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
+
         std::vector<char>
-        getTransportMessage(const void *buffer, size_t bufferSize, unsigned long expire,
-                            const MessageTypeEnum &type) const;
+        createFrame(const void *buffer, size_t bufferSize, unsigned long expire,
+                    const IpcServer::MessageTypeEnum &type) const;
 
         unsigned long getExpire(unsigned long ttl) const;
     };

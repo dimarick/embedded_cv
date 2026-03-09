@@ -4,7 +4,7 @@
 #include <iostream>
 #include <chrono>
 #include <cpptrace/cpptrace.hpp>
-#include <BroadcastingServer.h>
+#include <IpcServer.h>
 #include <unistd.h>
 #include <thread>
 #include <atomic>
@@ -52,7 +52,7 @@ int main(int argc, const char **argv) {
         captureRight.open(std::string(argv[2]), cv::CAP_V4L2, params);
     }
 
-    auto remoteView = ecv::RemoteView();
+    auto remoteView = ecv::RemoteView("/cv_calib_stream");
 
     auto capFps = captureLeft.get(cv::CAP_PROP_FPS);
     auto capWidth = (int) captureLeft.get(cv::CAP_PROP_FRAME_WIDTH);
@@ -96,8 +96,8 @@ int main(int argc, const char **argv) {
 
     auto prev = std::chrono::high_resolution_clock::now();
 
-    auto tm = std::make_shared<mini_server::BroadcastingServer>();
-    tm->setSocket(mini_server::SocketFactory::createListeningSocket("/tmp/cv_tm", 10));
+    auto tm = std::make_shared<mini_server::IpcServer>();
+    tm->setSocket(mini_server::SocketFactory::createListeningSocket("/tmp/cv_calib_tm", 10));
     std::thread tmThread([&tm] () {
         tm->run();
     });

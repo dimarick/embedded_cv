@@ -126,7 +126,6 @@ install(TARGETS calib DESTINATION bin)
 
 add_executable(cv
         src/cv/cv.cpp
-        src/cv/CvCommandHandler.cpp
         src/cv/DisparityEvaluator.cpp
         src/common/MatStorage.cpp
         src/common/RemoteView.cpp
@@ -140,6 +139,10 @@ add_executable(benchmark
         benchmark/KitDisparityBenchmark.cpp
         src/cv/DisparityEvaluator.cpp
         src/cv/DisparityEvaluator.h
+        src/calibrator/Calibrator.cpp
+        src/calibrator/CalibrationStrategy.cpp
+        src/calibrator/MultiCameraCalibration.cpp
+        src/calibrator/CalibrateMapper.cpp
         src/calibrator/CalibrateFrameCollector.cpp
         src/calibrator/CalibrateFrameCollector.h
         src/calibrator/GridPreferredSizeProvider.cpp

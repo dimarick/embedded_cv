@@ -7,7 +7,7 @@
 
 #include <CallbackHandler.h>
 #include <CommandServer.h>
-#include <BroadcastingServer.h>
+#include <IpcServer.h>
 #include <SocketFactory.h>
 #include <csignal>
 

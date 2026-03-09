@@ -6,12 +6,12 @@
 #include <stdexcept>
 #include <poll.h>
 #include <thread>
-#include "BroadcastingServer.h"
+#include "IpcServer.h"
 #include "Encapsulation.h"
 
 using namespace mini_server;
 
-extern "C++" void BroadcastingServer::run() {
+extern "C++" void IpcServer::run() {
     struct pollfd fd = { .fd = socket, .events = POLLIN };
     int threadId = 0;
 
@@ -33,13 +33,12 @@ extern "C++" void BroadcastingServer::run() {
             throw std::runtime_error(strerror(errno));
         }
 
-        acceptedSocketsMutex.lock();
+        std::lock_guard lock(mutex);
         acceptedSockets.insert(acceptedSocket);
-        acceptedSocketsMutex.unlock();
 
         threadId++;
 
-        threads.insert({threadId, std::thread(BroadcastingServer::interact, acceptedSocket, this, threadId)});
+        threads.insert({threadId, std::thread(IpcServer::interact, acceptedSocket, this, threadId)});
 
         std::cout << "socket accepted: " << acceptedSocket << ". Connections count: " << acceptedSockets.size() << std::endl;
     }
@@ -47,12 +46,13 @@ extern "C++" void BroadcastingServer::run() {
     std::cerr << "Performing graceful shutdown of BroadcastingServer" << std::endl;
 }
 
-void BroadcastingServer::interact(int socket, BroadcastingServer *server, int threadId) {
+void IpcServer::interact(int socket, IpcServer *server, int threadId) {
     struct pollfd fd = { .fd = socket, .events = POLLIN };
 
     size_t receivedSize = 0;
     size_t currentBufferSize = sizeof (MessageHeader) + 100;
     auto buffer = (uint8_t *) malloc(currentBufferSize);
+
     while (server->running) {
         int pollStatus = poll(&fd, 1, 50);
         if (pollStatus < 0) {
@@ -112,34 +112,39 @@ void BroadcastingServer::interact(int socket, BroadcastingServer *server, int th
             }
         }
     }
+
+    free(buffer);
+
+    std::lock_guard lock(server->mutex);
+    server->threads.erase(threadId);
 }
 
-extern "C++" void BroadcastingServer::broadcast(const std::string &message) {
+extern "C++" void IpcServer::broadcast(const std::string &message) {
     this->broadcast(message.c_str(), message.size());
 }
 
-extern "C++" void BroadcastingServer::broadcast(const void *buffer, size_t bufferSize, unsigned long ttl, MessageTypeEnum type) {
+extern "C++" void IpcServer::broadcast(const void *buffer, size_t bufferSize, unsigned long ttl, MessageTypeEnum type) {
     const auto expire = getExpire(ttl);
-    acceptedSocketsMutex.lock();
+    mutex.lock();
     auto threadSafeAcceptedSockets = acceptedSockets;
-    acceptedSocketsMutex.unlock();
+    mutex.unlock();
 
-    auto frame = getTransportMessage(buffer, bufferSize, expire, type);
+    auto frame = createFrame(buffer, bufferSize, expire, type);
 
     for (auto acceptedSocket : threadSafeAcceptedSockets) {
         sendFrame(acceptedSocket, frame);
     }
 }
 
-std::vector<char> BroadcastingServer::getTransportMessage(const void *buffer, size_t bufferSize, unsigned long expire,
-                                                          const BroadcastingServer::MessageTypeEnum &type) const {
+std::vector<char> IpcServer::createFrame(const void *buffer, size_t bufferSize, unsigned long expire,
+                                         const IpcServer::MessageTypeEnum &type) const {
     MessageHeader header{'MsgS', type, (unsigned int) bufferSize, expire};
 
     auto frame = Encapsulation::encapsulate(buffer, bufferSize, header);
     return frame;
 }
 
-unsigned long BroadcastingServer::getExpire(unsigned long ttl) const {
+unsigned long IpcServer::getExpire(unsigned long ttl) const {
     if (ttl > 0) {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::high_resolution_clock::now().time_since_epoch()).count() + ttl;
@@ -148,10 +153,10 @@ unsigned long BroadcastingServer::getExpire(unsigned long ttl) const {
     }
 }
 
-void BroadcastingServer::sendFrame(int s, const std::vector<char> &frame) {
+void IpcServer::sendFrame(int s, const std::vector<char> &frame) {
     size_t sent = 0;
     while (true) {
-        auto n = send(s, &frame[sent], frame.size() - sent, MSG_NOSIGNAL);
+        auto n = ::send(s, &frame[sent], frame.size() - sent, MSG_NOSIGNAL);
 
         if (n < 0) {
             perror("ERROR writing to socket");
@@ -160,10 +165,10 @@ void BroadcastingServer::sendFrame(int s, const std::vector<char> &frame) {
                 onClose(socket);
             }
 
-            acceptedSocketsMutex.lock();
+            mutex.lock();
             acceptedSockets.erase(s);
             close(s);
-            acceptedSocketsMutex.unlock();
+            mutex.unlock();
 
             std::cerr << "socket released: " << s << ". Connections count: " << acceptedSockets.size()
                       << std::endl;
@@ -179,10 +184,19 @@ void BroadcastingServer::sendFrame(int s, const std::vector<char> &frame) {
     }
 }
 
-void BroadcastingServer::setOnMessage(BroadcastingServer::MessageHandler handler) {
+void IpcServer::setOnMessage(IpcServer::MessageHandler handler) {
     onMessage = std::move(handler);
 }
 
-void BroadcastingServer::setOnClose(BroadcastingServer::CloseHandler handler) {
+void IpcServer::setOnClose(IpcServer::CloseHandler handler) {
     onClose = std::move(handler);
+}
+
+void IpcServer::send(int s, const void *buffer, size_t bufferSize, unsigned long ttl, IpcServer::MessageTypeEnum type) {
+    const auto expire = getExpire(ttl);
+    sendFrame(s, createFrame(buffer, bufferSize, expire, type));
+}
+
+void IpcServer::send(int s, const std::string &message, unsigned long ttl, IpcServer::MessageTypeEnum type) {
+    send(s, message.data(), message.size(), ttl, type);
 }

@@ -5,7 +5,7 @@
 #include <chrono>
 #include <any>
 #include <iostream>
-#include <BroadcastingServer.h>
+#include <IpcServer.h>
 
 namespace ecv {
     class Telemetry {
@@ -34,7 +34,7 @@ namespace ecv {
             return "";
         }
 
-        static std::shared_ptr<mini_server::BroadcastingServer> server;
+        static std::shared_ptr<mini_server::IpcServer> server;
         static LogLevel logLevel;
 
         static std::string datetimeFromFloat(double ts) {
@@ -61,7 +61,7 @@ namespace ecv {
             server->broadcast(str.str());
         }
     public:
-        static void setServer(std::shared_ptr<mini_server::BroadcastingServer> s) {
+        static void setServer(std::shared_ptr<mini_server::IpcServer> s) {
             server = std::move(s);
         }
         static void setLogLevel(LogLevel l) {

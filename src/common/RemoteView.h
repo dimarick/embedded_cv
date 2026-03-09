@@ -4,7 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <opencv.hpp>
-#include <BroadcastingServer.h>
+#include <IpcServer.h>
 #include <thread>
 
 namespace ecv {
@@ -52,12 +52,15 @@ namespace ecv {
             short h = 0;
         };
 
-        std::shared_ptr<mini_server::BroadcastingServer> server;
+        const std::string &socketPath;
+        std::shared_ptr<mini_server::IpcServer> server;
         std::thread serverThread;
         std::mutex channelsMutex;
         std::unordered_map<std::string, std::unordered_map<int, std::unordered_map<int, ChannelSettings>>> channelSettings;
         void initializeServer();
     public:
+        explicit RemoteView(const std::string &socketPath) : socketPath(socketPath) {}
+
         void showMat(const std::string& viewName, const cv::Mat& mat);
         int waitKey();
 
