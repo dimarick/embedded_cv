@@ -85,6 +85,10 @@ add_executable(tests
         src/calibrator/CalibrationStrategy.cpp
         src/calibrator/CalibrateFrameCollector.cpp
         src/calibrator/GridPreferredSizeProvider.cpp
+        src/calibrator/CalibrationStrategy.cpp
+        src/calibrator/MultiCameraCalibration.cpp
+        src/calibrator/SingleCameraThread.cpp
+        src/calibrator/CalibrateMapper.cpp
         tests/calibrator/CalibrateFrameCollectorTest.cpp
         tests/calibrator/StatStreamingTest.cpp
         tests/calibrator/StatStreamingTest.cpp
