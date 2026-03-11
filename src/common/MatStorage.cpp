@@ -23,12 +23,12 @@ namespace ecv {
         }
     }
 
-    void MatStorage::matRead(const std::string &filename, cv::Mat &mat) {
+    bool MatStorage::matRead(const std::string &filename, cv::Mat &mat) {
         std::ifstream fs(filename, std::fstream::binary);
 
         if (!fs.good()) {
             mat = cv::Mat();
-            return;
+            return false;
         }
 
         // Header
@@ -41,5 +41,22 @@ namespace ecv {
         // Data
         mat = cv::Mat(rows, cols, type);
         fs.read((char*)mat.data, CV_ELEM_SIZE(type) * rows * cols);
+
+        return true;
+    }
+
+    void MatStorage::matWrite(const std::string &filename, const cv::UMat &mat) {
+        matWrite(filename, mat.getMat(cv::ACCESS_READ));
+    }
+
+    bool MatStorage::matRead(const std::string &filename, cv::UMat &mat) {
+        cv::Mat tmp;
+        if (!matRead(filename, tmp)) {
+            return false;
+        }
+
+        tmp.copyTo(mat);
+
+        return true;
     }
 } // ecv

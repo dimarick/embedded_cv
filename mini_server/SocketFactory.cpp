@@ -8,7 +8,7 @@
 
 using namespace mini_server;
 
-extern "C++" int SocketFactory::createListeningSocket(const std::string &name, int maxConnections) {
+extern "C++" int SocketFactory::createServerSocket(const std::string &name, int maxConnections) {
     struct stat socketStat{};
 
     char fileName[name.size() + 1];
@@ -50,6 +50,24 @@ extern "C++" int SocketFactory::createListeningSocket(const std::string &name, i
     }
 
     if (::listen(sock, maxConnections) < 0) {
+        throw std::runtime_error(strerror(errno));
+    }
+
+    return sock;
+}
+
+extern "C++" int SocketFactory::createClientSocket(const std::string &name) {
+    auto sock = socket(AF_UNIX, SOCK_STREAM, 0);
+
+    if (sock < 0) {
+        throw std::runtime_error(strerror(errno));
+    }
+
+    sockaddr_un addr = {AF_UNIX, ""};
+
+    name.copy(addr.sun_path, sizeof(addr.sun_path), 0);
+
+    if (connect(sock, (sockaddr *)&addr, sizeof(addr)) < 0) {
         throw std::runtime_error(strerror(errno));
     }
 

@@ -1,4 +1,7 @@
 #include "RemoteView.h"
+
+#include <ranges>
+
 #include "SocketFactory.h"
 #include "Encapsulation.h"
 
@@ -34,9 +37,9 @@ void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
         for (const auto &settings : socketSettings.second) {
             const auto &s = settings.second;
             const auto &key = std::format("{} {} {} {} {} {}", (int)s.x, (int)s.y, (int)s.w, (int)s.h, (int)s.viewW, (int)s.viewH);
-            if (settingsCache.find(key) == settingsCache.end()) {
+            if (!settingsCache.contains(key)) {
                 StringHeader str{};
-                str.nameSize = viewName.size();
+                str.nameSize = (short)viewName.size();
                 auto frame = Encapsulation::encapsulate(viewName.data(), viewName.size(), str);
                 auto matMessage = createMessageFromMat(mat, cv::Rect(s.x, s.y, s.w, s.h), s.viewW, s.viewH);
 
@@ -128,15 +131,15 @@ void RemoteView::initializeServer() {
 
         server->setOnClose([this](int socket) -> void {
             std::lock_guard lock(channelsMutex);
-            for (auto &viewSettings : channelSettings) {
-                viewSettings.second.erase(socket);
+            for (auto &viewSettings: channelSettings | std::views::values) {
+                viewSettings.erase(socket);
             }
         });
 
-        server->setSocket(mini_server::SocketFactory::createListeningSocket(socketPath, 10));
+        server->setSocket(mini_server::SocketFactory::createServerSocket(socketPath, 10));
 
         serverThread = std::thread([this]() {
-            server->run();
+            server->serve();
             std::lock_guard lock(channelsMutex);
             channelSettings.clear();
         });
@@ -145,7 +148,7 @@ void RemoteView::initializeServer() {
 
 std::vector<char> RemoteView::createMessageFromMat(const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH) {
     CvMatHeader header{};
-    header.channels = mat.channels();
+    header.channels = (short)mat.channels();
     header.viewW = (short)(viewW & 0xFFFF);
     header.viewH = (short)(viewH & 0xFFFF);
     header.x = (short)(rect.x & 0xFFFF);

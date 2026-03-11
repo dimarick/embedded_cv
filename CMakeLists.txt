@@ -122,6 +122,7 @@ add_executable(calib
         src/common/RemoteView.h
         src/common/Telemetry.cpp
         src/common/Telemetry.h
+        src/common/CaptureInfo.h
 )
 
 target_link_libraries(calib PUBLIC mini_server OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
@@ -156,5 +157,11 @@ add_executable(benchmark
 )
 
 target_link_libraries(benchmark PUBLIC OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS})
+
+add_executable(capture
+        src/capture/capture.cpp
+)
+
+target_link_libraries(capture PUBLIC mini_server cpptrace::cpptrace)
 
 install(TARGETS cv DESTINATION bin)

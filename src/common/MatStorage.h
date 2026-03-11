@@ -9,7 +9,9 @@ namespace ecv {
     class MatStorage {
     public:
         static void matWrite(const std::string& filename, const cv::Mat& mat);
-        static void matRead(const std::string& filename, cv::Mat &mat);
+        static bool matRead(const std::string& filename, cv::Mat &mat);
+        static void matWrite(const std::string &filename, const cv::UMat &mat);
+        static bool matRead(const std::string &filename, cv::UMat &mat);
     };
 
 } // ecv

@@ -12,7 +12,8 @@
 namespace mini_server {
     class SocketFactory {
     public:
-        static int createListeningSocket(const std::string &name, int maxConnections);
+        static int createServerSocket(const std::string &name, int maxConnections);
+        static int createClientSocket(const std::string &name);
     };
 }
 

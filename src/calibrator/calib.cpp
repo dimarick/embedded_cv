@@ -97,9 +97,9 @@ int main(int argc, const char **argv) {
     auto prev = std::chrono::high_resolution_clock::now();
 
     auto tm = std::make_shared<mini_server::IpcServer>();
-    tm->setSocket(mini_server::SocketFactory::createListeningSocket("/tmp/cv_calib_tm", 10));
+    tm->setSocket(mini_server::SocketFactory::createServerSocket("/tmp/cv_calib_tm", 10));
     std::thread tmThread([&tm] () {
-        tm->run();
+        tm->serve();
     });
 
     ecv::Telemetry::setServer(tm);

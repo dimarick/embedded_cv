@@ -12,9 +12,9 @@
 namespace mini_server {
     class IpcServer {
     public:
-        typedef std::function<void(int socket, const std::string &)> MessageHandler;
+        typedef std::function<void(int socket, const std::string &)> StringMessageHandler;
+        typedef std::function<void(int socket, const void *buffer, size_t size)> BinaryMessageHandler;
         typedef std::function<void(int socket)> CloseHandler;
-        static const size_t BUFFER_SIZE = 256;
         enum MessageTypeEnum : unsigned int {
             TYPE_MAT = 0,
             TYPE_TELEMETRY = 1,
@@ -33,26 +33,30 @@ namespace mini_server {
         mutable std::mutex mutex;
         std::set<int> acceptedSockets;
         std::unordered_map<int, std::thread> threads;
+        std::set<int> deadThreads;
         std::atomic<bool> running;
-        MessageHandler onMessage;
+        StringMessageHandler onStringMessage;
+        BinaryMessageHandler onBinaryMessage;
         CloseHandler onClose;
-        static void interact(int socket, IpcServer *server, int threadId);
+        static void interactThread(int socket, IpcServer *server, int threadId);
+        void interact(int socket) const;
     public:
-        void setOnMessage(IpcServer::MessageHandler onMessage);
-        void setOnClose(IpcServer::CloseHandler onClose);
+        void setOnMessage(StringMessageHandler onMessage);
+        void setOnMessage(BinaryMessageHandler onMessage);
+        void setOnClose(CloseHandler onClose);
 
         void setSocket(int _socket) {
             this->socket = _socket;
         }
-        void run();
+        void serve();
+        void runClient();
+
         void stop() {
             running = false;
         }
 
         void broadcast(const std::string &message);
         void broadcast(const void *buffer, size_t bufferSize, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
-
-        void sendFrame(int s, const std::vector<char> &frame);
 
         void send(int s, const std::string &message, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
         void send(int s, const void *buffer, size_t bufferSize, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
@@ -61,7 +65,11 @@ namespace mini_server {
         createFrame(const void *buffer, size_t bufferSize, unsigned long expire,
                     const IpcServer::MessageTypeEnum &type) const;
 
+        void sendFrame(int s, const std::vector<char> &frame);
+
         unsigned long getExpire(unsigned long ttl) const;
+
+        size_t getClientsCount() const;
     };
 }
 
