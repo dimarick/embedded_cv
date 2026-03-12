@@ -78,7 +78,9 @@ namespace ecv {
             } else {
                 std::cerr << "[" << datetimeFromFloat(now()) << "]\t" << level(l) << "\t" << message << std::endl;;
             }
-            server->broadcast(str.str());
+            if (server != nullptr) {
+                server->broadcast(str.str());
+            }
         }
         static void debug(const std::string &message) {
             log(DEBUG, message);

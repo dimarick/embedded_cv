@@ -4,7 +4,6 @@
 #include <cpptrace/basic.hpp>
 #include <stereo.hpp>
 #include <core/ocl.hpp>
-#include <photo.hpp>
 #include "DisparityEvaluator.h"
 namespace ecv {
 //    const unsigned char kernelSources[] =

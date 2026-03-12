@@ -123,6 +123,8 @@ add_executable(calib
         src/common/Telemetry.cpp
         src/common/Telemetry.h
         src/common/CaptureInfo.h
+        src/capture/SocketCapture.cpp
+        src/capture/SocketCapture.h
 )
 
 target_link_libraries(calib PUBLIC mini_server OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
@@ -135,6 +137,9 @@ add_executable(cv
         src/common/MatStorage.cpp
         src/common/RemoteView.cpp
         src/cv/DisparityEvaluator.h
+        src/capture/SocketCapture.cpp
+        src/capture/SocketCapture.h
+        src/common/Telemetry.cpp
 )
 
 target_link_libraries(cv PUBLIC OpenCL::OpenCL mini_server cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})

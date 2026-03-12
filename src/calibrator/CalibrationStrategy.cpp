@@ -1,7 +1,4 @@
-#include <iomanip>
-#include <random>
 #include "CalibrationStrategy.h"
-#include "StatStreaming.h"
 #include "CalibrateMapper.h"
 
 using namespace ecv;
@@ -14,18 +11,18 @@ void CalibrationStrategy::runCalibration() {
             FrameRefList pendingFrames(MAX_FRAMES_QUEUE);
             while (that->running) {
                 {
-                    std::unique_lock<std::mutex> lock(that->pendingFramesMutex);
+                    std::unique_lock lock(that->pendingFramesMutex);
                     that->camThreadsWait.wait(lock);
                 }
                 if (that->running && !that->pendingFrames[i].empty()) {
                     {
-                        std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
+                        std::unique_lock lock2(that->pendingFramesMutex);
                         std::copy(that->pendingFrames[i].begin(), that->pendingFrames[i].end(), pendingFrames.begin());
                         pendingFrames.resize(that->pendingFrames[i].size());
                     }
                     that->cameraThread[i]->camThreadCallback(pendingFrames);
                     {
-                        std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
+                        std::unique_lock lock2(that->pendingFramesMutex);
                         that->pendingFrames[i].clear();
                     }
                 }
@@ -37,18 +34,18 @@ void CalibrationStrategy::runCalibration() {
         std::vector<FrameRefList> frames;
         while (that->running) {
             {
-                std::unique_lock<std::mutex> lock(that->pendingFramesMutex);
+                std::unique_lock lock(that->pendingFramesMutex);
                 that->multicamThreadWait.wait(lock);
             }
             if (that->running) {
                 {
-                    std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
+                    std::unique_lock lock2(that->pendingFramesMutex);
                     frames.resize(that->pendingFrameSets.size());
                     std::copy(that->pendingFrameSets.begin(), that->pendingFrameSets.end(), frames.begin());
                 }
                 that->multicamThreadHandler->multicamThreadCallback(frames);
                 {
-                    std::unique_lock<std::mutex> lock2(that->pendingFramesMutex);
+                    std::unique_lock lock2(that->pendingFramesMutex);
                     that->pendingFrameSets.clear();
                 }
             }
@@ -78,7 +75,7 @@ void CalibrationStrategy::stopCalibration() noexcept {
 
 CalibrateFrameCollector::FrameRef CalibrationStrategy::createFrame(int cameraId, const std::vector<cv::Point3d> &imagePoints,
                                  const std::vector<cv::Point3d> &objectPoints, int w, int h, double cost,
-                                 double ts) {
+                                 long ts) {
     return frameCollectors[cameraId].createFrame(imagePoints, objectPoints, w, h, cost, ts);
 }
 

@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <opencv.hpp>
 #include <IpcServer.h>
+#include <ranges>
+#include <shared_mutex>
 #include <thread>
 
 namespace ecv {
@@ -57,6 +59,8 @@ namespace ecv {
         std::thread serverThread;
         std::mutex channelsMutex;
         std::unordered_map<std::string, std::unordered_map<int, std::unordered_map<int, ChannelSettings>>> channelSettings;
+        mutable std::shared_mutex viewsMutex;
+        std::unordered_map<std::string, CvMatHeader> views;
         void initializeServer();
     public:
         explicit RemoteView(const std::string &socketPath) : socketPath(socketPath) {}
@@ -64,11 +68,22 @@ namespace ecv {
         void showMat(const std::string& viewName, const cv::Mat& mat);
         int waitKey();
 
+        CvMatHeader createMessageHeaderFromMat(const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH);
+
         virtual ~RemoteView();
 
-        std::vector<char> createMessageFromMat(const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH);
+        std::vector<char> createMessageFromMat(CvMatHeader header, const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH);
 
         void showMat(const std::string &viewName, const cv::UMat &mat);
+
+        std::unordered_map<std::string, CvMatHeader> getViews() const {
+            decltype(views )tmp;
+            {
+                std::shared_lock lock(viewsMutex);
+                tmp = views;
+            }
+            return tmp;
+        }
     };
 }
 

@@ -2,7 +2,6 @@
 #include "CalibrateFrameCollector.h"
 #include <ranges>
 #include <random>
-#include <imgproc.hpp>
 
 using namespace ecv;
 
@@ -132,7 +131,7 @@ int CalibrateFrameCollector::getClass(cv::Point3d p, Dim dimX, Dim dimY, Dim dim
 }
 
 CalibrateFrameCollector::FrameRef CalibrateFrameCollector::createFrame(const std::vector<cv::Point3d> &imageGrid,
-                                                                                     const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts, bool validate) {
+                                                                                     const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, long ts, bool validate) {
     auto pFrame = new Frame({{0, 0, 0}, {0, 0, 0}, 0, 0, imageGrid, objectGrid, w, h, cost, ts, validate});
     pFrame->rotation = getRotationClass(*pFrame);
     pFrame->position = getPositionClass(*pFrame);

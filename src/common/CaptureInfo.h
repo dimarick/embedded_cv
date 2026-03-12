@@ -1,9 +1,14 @@
 #ifndef EMBEDDED_CV_CAPTUREINFO_H
 #define EMBEDDED_CV_CAPTUREINFO_H
 
+#include <cstddef>
+#include <vector>
+#include <stdexcept>
+#include <format>
+
 namespace ecv {
     struct CaptureInfo {
-        int64_t created_at = 0;
+        long created_at = 0;
         size_t size = 0;
         short w = 0;
         short h = 0;

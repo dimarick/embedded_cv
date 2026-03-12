@@ -1,11 +1,9 @@
 #ifndef EMBEDDED_CV_CALIBRATIONSTRATEGY_H
 #define EMBEDDED_CV_CALIBRATIONSTRATEGY_H
 
-#include <queue>
 #include <thread>
 #include <condition_variable>
 #include <utility>
-#include <shared_mutex>
 #include "opencv2/core.hpp"
 #include "CalibrateFrameCollector.h"
 #include "Calibrator.h"
@@ -205,7 +203,7 @@ namespace ecv {
         CalibrateFrameCollector::FrameRef
         createFrame(int cameraId, const std::vector<cv::Point3d> &imagePoints,
                     const std::vector<cv::Point3d> &objectPoints,
-                    int w, int h, double cost, double ts);
+                    int w, int h, double cost, long ts);
 
         void addFrameSet(const FrameRefList &frameSet);
 

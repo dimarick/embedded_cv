@@ -27,7 +27,7 @@ namespace ecv {
             size_t w;
             size_t h;
             double cost;
-            double ts;
+            long ts;
             bool validate;
         };
         typedef std::shared_ptr<const Frame> FrameRef;
@@ -63,7 +63,7 @@ namespace ecv {
         cv::Point3d getRotationClass(const CalibrateFrameCollector::Frame &frame) const;
         cv::Point3d getPositionClass(const Frame &frame) const;
         int getClass(cv::Point3d point3, Dim dimX, Dim dimY, Dim dimZ);
-        FrameRef createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, double ts, bool validate = std::rand() % 2 == 0);
+        FrameRef createFrame(const std::vector<cv::Point3d> &imageGrid, const std::vector<cv::Point3d> &objectGrid, size_t w, size_t h, double cost, long ts, bool validate = std::rand() % 2 == 0);
         bool addFrame(GridPreferredSizeProvider &gridPreferredSizeProvider, const FrameRef &frameRef);
         bool addMulticamFrameSet(const std::vector<CalibrateFrameCollector::FrameRef> &f);
         double getProgress() const;

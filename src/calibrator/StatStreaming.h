@@ -5,8 +5,8 @@
 
 namespace ecv {
     /**
-     * Класс для потокового статистичекого анализа
-     * Все операции O(1) по времени и по памяти
+     * Класс для потокового статистического анализа
+     * Все операции O(1) по времени и по памяти.
      * Допускается неточность вычисления стддев из-за того что среднее считается не по всей последовательности,
      * а только по "увиденной" ее части
      */
@@ -17,7 +17,7 @@ namespace ecv {
         int count = 0;
     public:
         /**
-         * Для работы с значениями
+         * Для работы со значениями
          */
         void addFirstValue(double v) {
             prev = std::nan("1");
@@ -27,7 +27,7 @@ namespace ecv {
         }
 
         /**
-         * Для работы с значениями
+         * Для работы со значениями
          */
         void addValue(double v) {
             if (!(v > -std::numeric_limits<double>::max() && v < std::numeric_limits<double>::max())) {
@@ -57,17 +57,17 @@ namespace ecv {
             prev = v;
         }
 
-        /** размер последовательности */
+        /** Размер последовательности */
         [[nodiscard]] int n() const {
             return count;
         }
 
-        /** модуль производной (отклонение от предыдущего) */
+        /** Модуль производной (отклонение от предыдущего) */
         [[nodiscard]] double d(double v) const {
             return std::abs(v - prev);
         }
 
-        /** среднее */
+        /** Среднее */
         [[nodiscard]] double mean() const {
             if (count == 0) {
                 return 0;
@@ -75,22 +75,22 @@ namespace ecv {
             return sum / count;
         }
 
-        /** стандартное отклонение */
+        /** Стандартное отклонение */
         [[nodiscard]] double stddev() const {
             return sqrt(dispersion());
         }
 
-        /** дисперсия (квадрат стандартного отклонения) */
+        /** Дисперсия (квадрат стандартного отклонения) */
         [[nodiscard]] double dispersion() const {
             return sqSum / count;
         }
 
-        /** значение в "сигмах" */
+        /** Значение в "сигмах" */
         [[nodiscard]] double sigmaValue(double v) const {
             return std::abs(v - mean()) / stddev() + EPS;
         }
 
-        /** значение в "сигмах" */
+        /** Значение в "сигмах" */
         [[nodiscard]] double sigmaDValue(double v) const {
             return sigmaValue(d(v));
         }

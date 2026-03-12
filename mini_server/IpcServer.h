@@ -70,6 +70,10 @@ namespace mini_server {
         unsigned long getExpire(unsigned long ttl) const;
 
         size_t getClientsCount() const;
+
+        bool isRunning() {
+            return running;
+        }
     };
 }
 

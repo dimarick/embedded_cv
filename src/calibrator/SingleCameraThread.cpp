@@ -1,5 +1,9 @@
 #include <random>
 #include "SingleCameraThread.h"
+
+#include <iostream>
+
+#include "3d.hpp"
 #include "CalibrationStrategy.h"
 
 using namespace ecv;

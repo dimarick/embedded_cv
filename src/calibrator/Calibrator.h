@@ -1,11 +1,8 @@
 #ifndef EMBEDDED_CV_CALIBRATOR_H
 #define EMBEDDED_CV_CALIBRATOR_H
 
-#include <cstdlib>
 #include "opencv2/core.hpp"
-#include "opencv2/imgproc.hpp"
 #include "opencv2/calib.hpp"
-#include "opencv2/3d.hpp"
 #include "CalibrateFrameCollector.h"
 
 namespace ecv {

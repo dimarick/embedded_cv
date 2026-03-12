@@ -248,11 +248,6 @@ void MultiCameraCalibration::multicamThreadCallback(const std::vector<FrameRefLi
  * Поэтому если мы возьмем  несколько самых близких точек, то получим близкое к нулю значение
  * если кадры хорошо сопоставлены, и огромное значение, если есть большой сдвиг или поворот.
  *
- * @param imagePoints
- * @param cameraMatrix
- * @param distCoeff
- * @param R
- * @param P
  * @return average of shortest 10 distances between undistorted and image point
  */
 double MultiCameraCalibration::verifyParamsUsingGridMatch(const std::vector<cv::Mat> &imagePoints, const CalibrationData &calibrationData) const {

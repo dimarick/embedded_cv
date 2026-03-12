@@ -41,7 +41,8 @@ void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
                 StringHeader str{};
                 str.nameSize = (short)viewName.size();
                 auto frame = Encapsulation::encapsulate(viewName.data(), viewName.size(), str);
-                auto matMessage = createMessageFromMat(mat, cv::Rect(s.x, s.y, s.w, s.h), s.viewW, s.viewH);
+                auto header = createMessageHeaderFromMat(mat, cv::Rect(s.x, s.y, s.w, s.h), s.viewW, s.viewH);
+                auto matMessage = createMessageFromMat(header, mat, cv::Rect(s.x, s.y, s.w, s.h), s.viewW, s.viewH);
 
                 auto nameBufferSize = frame.size();
                 frame.resize(nameBufferSize + matMessage.size());
@@ -50,6 +51,11 @@ void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
 
                 settingsCache[key] = server->createFrame(frame.data(), frame.size(), expire,
                                                          mini_server::IpcServer::MessageTypeEnum::TYPE_MAT);
+
+                {
+                    std::shared_lock lock(viewsMutex);
+                    views.insert_or_assign(viewName, header);
+                }
             }
             const auto &f = settingsCache[key];
 
@@ -146,7 +152,36 @@ void RemoteView::initializeServer() {
     }
 }
 
-std::vector<char> RemoteView::createMessageFromMat(const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH) {
+std::vector<char> RemoteView::createMessageFromMat(CvMatHeader header, const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH) {
+    cv::Mat crop;
+
+    if (rect.width > 0 && rect.height > 0) {
+        crop = mat(rect).clone();
+    } else {
+        crop = mat;
+    }
+
+    if (viewW != 0 || viewH != 0) { // autofit
+        auto scaleW = viewW > 0 ? (double)viewW / (double)crop.cols : 1.;
+        auto scaleH = viewH > 0 ? (double)viewH / (double)crop.rows : 1.;
+        auto scale = std::min(1., std::min(scaleW, scaleH));
+
+        cv::resize(crop, crop, cv::Size(0, 0), scale, scale);
+    }
+
+    std::vector<char> frame;
+
+    if (header.codec == JPEG) {
+        std::vector<uchar> buffer;
+        cv::imencode(".jpg", crop, buffer, {
+            cv::ImwriteFlags::IMWRITE_JPEG_QUALITY, 50,
+        });
+        return Encapsulation::encapsulate(buffer.data(), buffer.size(), header);
+    }
+    return Encapsulation::encapsulate(crop.datastart, crop.dataend - crop.datastart, header);
+}
+
+RemoteView::CvMatHeader RemoteView::createMessageHeaderFromMat(const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH) {
     CvMatHeader header{};
     header.channels = (short)mat.channels();
     header.viewW = (short)(viewW & 0xFFFF);
@@ -155,29 +190,29 @@ std::vector<char> RemoteView::createMessageFromMat(const cv::Mat &mat, const cv:
     header.y = (short)(rect.y & 0xFFFF);
     header.w = (short)(rect.width & 0xFFFF);
     header.h = (short)(rect.height & 0xFFFF);
-    header.codec = CvMatCodecEnum::RAW;
+    header.codec = RAW;
 
     switch (mat.type() & CV_MAT_DEPTH_MASK) {
         case CV_8U:
-            header.type = CvMatTypeEnum::TYPE_8U;
+            header.type = TYPE_8U;
             break;
         case CV_8S:
-            header.type = CvMatTypeEnum::TYPE_8S;
+            header.type = TYPE_8S;
             break;
         case CV_16S:
-            header.type = CvMatTypeEnum::TYPE_16S;
+            header.type = TYPE_16S;
             break;
         case CV_16U:
-            header.type = CvMatTypeEnum::TYPE_16U;
+            header.type = TYPE_16U;
             break;
         case CV_16BF:
-            header.type = CvMatTypeEnum::TYPE_16F;
+            header.type = TYPE_16F;
             break;
         case CV_32F:
-            header.type = CvMatTypeEnum::TYPE_32F;
+            header.type = TYPE_32F;
             break;
         case CV_64F:
-            header.type = CvMatTypeEnum::TYPE_64F;
+            header.type = TYPE_64F;
             break;
         default:
             throw std::runtime_error(std::format("Unsupported mat type {}", mat.type()));
@@ -202,16 +237,11 @@ std::vector<char> RemoteView::createMessageFromMat(const cv::Mat &mat, const cv:
     std::vector<char> frame;
 
     if (header.type == TYPE_8U || header.type == TYPE_8S) {
-        std::vector<uchar> buffer;
-        cv::imencode(".jpg", crop, buffer, {
-            cv::ImwriteFlags::IMWRITE_JPEG_QUALITY, 50,
-        });
-
-        header.codec = CvMatCodecEnum::JPEG;
-        return Encapsulation::encapsulate(buffer.data(), buffer.size(), header);
+        header.codec = JPEG;
+        return header;
     }
-    header.codec = CvMatCodecEnum::RAW;
-    return Encapsulation::encapsulate(crop.datastart, crop.dataend - crop.datastart, header);
+    header.codec = RAW;
+    return header;
 }
 
 RemoteView::~RemoteView() {

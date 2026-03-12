@@ -13,8 +13,8 @@
 namespace ecv {
     class SingleCameraThread {
     public:
-        static const int TRAIN_SAMPLE_SIZE = 50;
-        static const int VALIDATE_SAMPLE_SIZE = 100;
+        static constexpr int TRAIN_SAMPLE_SIZE = 50;
+        static constexpr int VALIDATE_SAMPLE_SIZE = 100;
         typedef std::vector<CalibrateFrameCollector::FrameRef> FrameRefList;
 
     private:

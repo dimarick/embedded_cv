@@ -1,6 +1,5 @@
 #include "Calibrator.h"
 #include <opencv2/calib3d.hpp>
-#include <iomanip>
 #include <random>
 
 namespace ecv {
@@ -67,7 +66,7 @@ namespace ecv {
                                          data.distCoeff, data.rvecs, data.tvecs, stdDeviationsIntrinsics,
                                          stdDeviationsExtrinsics, perViewErrors, baseFlags | flags, term);
         } catch (const std::exception &e) {
-            std::cerr << "cv::calibrateCamera failed" << std::endl;
+            std::cerr << "cv::calibrateCamera failed: " << e.what() << std::endl;
 
             return 1. / 0.;
         }

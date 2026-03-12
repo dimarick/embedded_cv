@@ -8,7 +8,6 @@
 #include <cpptrace/cpptrace.hpp>
 #include <CommandServer.h>
 #include <IpcServer.h>
-#include <unistd.h>
 #include <thread>
 #include <atomic>
 #include <SocketFactory.h>
@@ -16,20 +15,13 @@
 #include <core/opencl/ocl_defs.hpp>
 #include <core/ocl.hpp>
 #include <common/RemoteView.h>
-#include <common/CaptureInfo.h>
 
 #include "DisparityEvaluator.h"
-#include "common/Defer.h"
+#include "capture/SocketCapture.h"
 #include "common/MatStorage.h"
+#include "common/Telemetry.h"
 
 using namespace mini_server;
-
-static std::atomic running = true;
-
-static IpcServer tmServer;
-static IpcServer streamingServer;
-static IpcServer commandServer;
-static IpcServer captureServer;
 
 void invMap(const cv::Mat &src, cv::Mat &dest) {
     if (dest.empty()) {
@@ -48,6 +40,8 @@ void invMap(const cv::Mat &src, cv::Mat &dest) {
     }
 }
 
+static std::atomic running = true;
+
 int main(int argc, const char **argv) {
     cpptrace::register_terminate_handler();
     std::cerr << "Built with OpenCV " << CV_VERSION << std::endl;
@@ -59,28 +53,82 @@ int main(int argc, const char **argv) {
         return -1;
     }
 
-    tmServer.setSocket(SocketFactory::createServerSocket("/tmp/cv_tm", 10));
+    cv::ocl::setUseOpenCL(true);
+
+    std::shared_ptr<IpcServer> tmServer;
+    IpcServer commandServer;
+    IpcServer streamingServer;
+
     streamingServer.setSocket(SocketFactory::createServerSocket("/tmp/cv_stream", 10));
     commandServer.setSocket(SocketFactory::createServerSocket("/tmp/cv_ctl", 1));
-    commandServer.setOnMessage([] (int socket, const std::string &message) {});
+    commandServer.setOnMessage([&remoteView, &commandServer] (int socket, const std::string &message) {
+        std::istringstream is(message);
+        std::ostringstream os;
+        char c;
+        std::string command;
+        is >> c;
+        assert(c == '[');
+        is >> std::quoted(command);
+        if (command == "GET_VIEWS") {
+            os << std::quoted("VIEWS") << "{";
+            auto views = remoteView.getViews();
+            for (const auto &[viewName, view] : views) {
+                if (viewName != views.begin()->first) os << ",";
+                os << std::quoted(viewName) << ":" << "{";
+                    os << "type" << ":" << view.type << ",",
+                    os << "codec" << ":" << view.codec << ",",
+                    os << "channels" << ":" << view.channels << ",",
+                    os << "w" << ":" << view.w << ",",
+                    os << "h" << ":" << view.h,
+                os << "}";
+            }
+            os << "}";
+            commandServer.send(socket, os.str(), IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
+        } else if (command == "MOVE") {
+            std::string direction;
+            is >> std::quoted(direction);
+            os << "[" << std::quoted("MOVING") << "," << std::quoted(direction) << "]";
+
+            commandServer.send(socket, os.str(), IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
+        } else if (command == "MOVE_TO") {
+            int x, y;
+            is >> x;
+            is >> y;
+            os << "[" << std::quoted("MOVING_TO") << "," << x <<"," << y << "]";
+
+            commandServer.send(socket, os.str(), IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
+        } else {
+            ecv::Telemetry::error(std::format("command {} is not supported", command));
+        }
+    });
+
+    ecv::Telemetry::setLogLevel(ecv::Telemetry::DEBUG);
+    tmServer = std::make_shared<IpcServer>();
+    tmServer->setSocket(SocketFactory::createServerSocket("/tmp/cv_tm", 10));
+    ecv::Telemetry::setServer(tmServer);
+
+    ecv::SocketCapture socketCapture(argv[1]);
+    while (!socketCapture.run()) {
+        ecv::Telemetry::error(std::format("Failed to connect to {}. Error is {}", argv[1], strerror(errno)));
+        sleep(5);
+    }
 
     signal(SIGINT, [](int signal) {
         running = false;
-        captureServer.stop();
-        streamingServer.stop();
-        tmServer.stop();
-        commandServer.stop();
     });
 
-    std::thread commandServerThread = std::thread([]() {
+    std::thread commandServerThread = std::thread([&commandServer]() {
         commandServer.serve();
     });
 
-    std::thread tmServerThread = std::thread([]() {
-        tmServer.serve();
+    std::thread tmServerThread = std::thread([&tmServer]() {
+        tmServer->serve();
     });
 
-    std::thread streamingServerThread = std::thread([]() {
+    std::thread streamingServerThread = std::thread([&streamingServer]() {
         streamingServer.serve();
     });
 
@@ -88,45 +136,6 @@ int main(int argc, const char **argv) {
     double avgFps = 0.;
     double avgTime = 0.;
     double avgTime2 = 0.;
-
-    std::mutex readerLock;
-    std::atomic nextFrame = 0l;
-    long frameCount = 0l;
-
-    std::vector<cv::Mat> frameSet;
-    std::vector<cv::Mat> readingFrames;
-
-    auto onFrameSetReceived =
-            [&readingFrames, &nextFrame, &readerLock](int socket, const void *buffer, size_t size) {
-                auto header = ecv::CaptureBuffer::getHeader(buffer, size);
-                if (header == nullptr) {
-                    return;
-                }
-                auto info = header->getFirstCaptureInfo();
-                if (info == nullptr) {
-                    return;
-                }
-                auto imageData = info->getImageData();
-                std::lock_guard lock(readerLock);
-
-                readingFrames.resize(header->nCaptures);
-
-                for (int i = 0; i < header->nCaptures; i++) {
-                    readingFrames[i] = cv::Mat(info->h, info->w, CV_8UC(info->channels), (void *)imageData);
-                    info = info->getNextCaptureInfo();
-                    imageData = info->getImageData();
-                }
-
-                nextFrame++;
-            };
-
-    auto captureSocket = mini_server::SocketFactory::createClientSocket(argv[1]);
-    captureServer.setSocket(captureSocket);
-    captureServer.setOnMessage(onFrameSetReceived);
-
-    auto captureThread = std::thread([&captureServer]() {captureServer.runClient();});
-
-    cv::ocl::setUseOpenCL(true);
 
 #ifndef HAVE_OPENCL
     throw std::runtime_error("OpenCV built without opencl");
@@ -136,14 +145,7 @@ int main(int argc, const char **argv) {
         throw std::runtime_error("OpenCL is not available");
     }
 
-    cv::UMat calibLeft, calibRight;
-
-    cv::UMat lFrame, rFrame;
-    cv::UMat lDispMap, rDispMap, leftDispMap, rightDispMap;
-
-    std::vector<cv::UMat> frames(2);
-    std::vector<cv::Mat> invMaps(frames.size()), invBestMap2(frames.size());
-
+    // std::vector<cv::Mat> invMaps;
     std::vector<cv::UMat> maps;
 
     for (int i = 0; i < 10; i++) {
@@ -154,9 +156,9 @@ int main(int argc, const char **argv) {
         maps.emplace_back(map);
     }
 
-    for (int i = 0; i < maps.size(); ++i) {
-        invMap(maps[i].getMat(cv::ACCESS_READ), invMaps[i]);
-    }
+    // for (int i = 0; i < maps.size(); ++i) {
+    //     invMap(maps[i].getMat(cv::ACCESS_READ), invMaps[i]);
+    // }
 
 #ifdef HAVE_OPENCV_HIGHGUI
     cv::namedWindow("Disparity", cv::WINDOW_AUTOSIZE);
@@ -182,7 +184,6 @@ int main(int argc, const char **argv) {
     cv::Mat preview;
     std::mutex sendingLock;
     std::ostringstream tm;
-    std::vector<cv::UMat> result(frames.size());
     cv::FileStorage fs;
     cv::FileStorage fs_write;
     auto clahe = cv::createCLAHE(1, cv::Size(3,3));
@@ -190,31 +191,19 @@ int main(int argc, const char **argv) {
     auto prev = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; running; i++) {
-        if (nextFrame == frameCount || readingFrames.empty()) {
-            usleep(1);
+        auto frames = socketCapture.getNewFrames();
+
+        if (frames.empty()) {
             continue;
         }
 
-        frameCount = nextFrame;
+        std::vector<cv::UMat> result(frames.size());
 
         auto start = std::chrono::high_resolution_clock::now();
         std::chrono::system_clock::time_point startDisp;
         std::chrono::system_clock::time_point endDisp;
 
-        readerLock.lock();
-
-        frames.resize(readingFrames.size());
-        frameSet.resize(readingFrames.size());
-
-        for (int j = 0; j < readingFrames.size(); j++) {
-            readingFrames[j].copyTo(frames[j]);
-            readingFrames[j].copyTo(frameSet[j]);
-        }
-
-        readerLock.unlock();
-
         cv::rotate(frames[1], frames[1], cv::ROTATE_180);
-        cv::rotate(frameSet[1], frameSet[1], cv::ROTATE_180);
 
         auto now = std::chrono::high_resolution_clock::now();
         auto us = (double) (now - prev).count();
@@ -250,11 +239,11 @@ int main(int argc, const char **argv) {
             result[j].getMat(cv::ACCESS_RW).copyTo(result2[j]);
         }
         cv::drawMarker(frames[0], mouseSrc, cv::Scalar(255, 0, 255), cv::MarkerTypes::MARKER_CROSS, 30, 2);
-        auto plainMap1 = invMaps[0].ptr<cv::Point2f>(mouseSrc.y, mouseSrc.x);
-        auto plainMap2 = maps[0].getMat(cv::ACCESS_READ).ptr<cv::Point2f>((int)plainMap1->y, (int)plainMap1->x);
-        cv::drawMarker(result2[0], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
-        cv::drawMarker(frames[1], cv::Point2i((int) plainMap2->x, (int) plainMap2->y), cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_CROSS, 30, 2);
-        cv::drawMarker(result2[1], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
+        // auto plainMap1 = invMaps[0].ptr<cv::Point2f>(mouseSrc.y, mouseSrc.x);
+        // auto plainMap2 = maps[0].getMat(cv::ACCESS_READ).ptr<cv::Point2f>((int)plainMap1->y, (int)plainMap1->x);
+        // cv::drawMarker(result2[0], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
+        // cv::drawMarker(frames[1], cv::Point2i((int) plainMap2->x, (int) plainMap2->y), cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_CROSS, 30, 2);
+        // cv::drawMarker(result2[1], cv::Point2i((int) plainMap1->x, (int) plainMap1->y), cv::Scalar(0, 255, 0), cv::MarkerTypes::MARKER_TILTED_CROSS, 30, 2);
 
         cv::Mat varianceFp;
         cv::Mat variance8;
@@ -342,15 +331,14 @@ int main(int argc, const char **argv) {
     cv::destroyAllWindows();
 #endif
 
-    captureServer.stop();
     streamingServer.stop();
-    tmServer.stop();
+    tmServer->stop();
     commandServer.stop();
 
-    captureThread.join();
     streamingServerThread.join();
     tmServerThread.join();
     commandServerThread.join();
+    socketCapture.stop();
 
     return 0;
 }
