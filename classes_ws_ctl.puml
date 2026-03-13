@@ -1,0 +1,76 @@
+@startuml
+
+
+
+
+
+/' Objects '/
+
+class ConnectionHandler {
+	+ConnectionHandler(WebSocket* connection, int socketFd, int outputWidth, int outputHeight, int sendingQueueDepth)
+	+onData(const uint8_t* data, size_t dataSize) : void
+	+selfStop() : void
+	+start() : void
+	+stop() : void
+}
+
+
+class SocketProxy {
+	+SocketProxy(std::string socketName, int sendingQueueDepth)
+	+onConnect(WebSocket* connection) : void
+	+onData(WebSocket* connection, const char*) : void
+	+onData(WebSocket* connection, const uint8_t* data, size_t) : void
+	+onDisconnect(WebSocket* connection) : void
+}
+
+
+enum ConnectionHandler::MessageTypeEnum {
+	TYPE_ACK
+	TYPE_CONTROL
+	TYPE_MAT
+	TYPE_TELEMETRY
+}
+
+
+class ConnectionHandler::MessageHeader {
+	+type : MessageTypeEnum
+	+magick : unsigned int
+	+size : unsigned int
+	+ttl : unsigned long
+}
+
+
+
+
+
+/' Inheritance relationships '/
+
+
+
+
+/' Aggregation relationships '/
+
+SocketProxy o-- ConnectionHandler
+
+
+
+
+
+
+/' Dependency relationships '/
+
+
+
+
+
+/' Nested objects '/
+
+ConnectionHandler +-- ConnectionHandler::MessageHeader
+
+
+ConnectionHandler +-- ConnectionHandler::MessageTypeEnum
+
+
+
+
+@enduml

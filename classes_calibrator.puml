@@ -1,0 +1,249 @@
+@startuml
+/' Objects '/
+namespace ecv {
+	class CalibrateFrameCollector {
+		+CalibrateFrameCollector(cv::Size frameSize)
+		+createFrame(const std::vector<cv::Point3d>& imageGrid, const std::vector<cv::Po
+		+loadFrame(const cv::FileNode& frame) : FrameRef
+		+addFrame(GridPreferredSizeProvider& gridPreferredSizeProvider, const FrameRef& 
+		+addMulticamFrameSet(const std::vector<CalibrateFrameCollector::FrameRef>& f) : 
+		+TOTAL_VOLUME : const int
+		+getPositionClass(Frame frame) : cv::Point3d {query}
+		+getRotationClass(const CalibrateFrameCollector::Frame& frame) : cv::Point3d {qu
+		+getProgress() : double {query}
+		+getClass(cv::Point3d point3, Dim dimX, Dim dimY, Dim dimZ) : int
+		+getDatasetVolume() : int {query}
+		+getFrameCount() : size_t {query}
+		+getFrameSetCount() : size_t {query}
+		+getFramesSampleFrom(int n, size_t w, size_t h, bool validate, const std::unorde
+		+getFramesSample(int n, size_t w, size_t h, bool validate) : std::vector<FrameRe
+		+getFrameSetsSample(int n, size_t w, size_t h, bool validate) : std::vector<std:
+		+getCollectedImageGridsSample(const std::vector<FrameRef>& sample) : std::vector
+		+getCollectedObjectGridsSample(const std::vector<FrameRef>& sample) : std::vecto
+		+load(GridPreferredSizeProvider& gridPreferredSizeProvider, const cv::FileStorag
+		+store(cv::FileStorage& fs) : void {query}
+	}
+	class CalibrateMapper {
+		+CalibrateMapper()
+		+isInsideQuadSimple(const Point3& p, BaseSquare quad) : bool
+		+detectBaseSquare(const cv::Size& frameSize, const std::vector<Point3>& peaks, B
+		+detectFrameImagePointsGrid(const cv::Size& frameSize, const std::vector<Point3>
+		+detectFrameImagePointsGrid(const cv::UMat& frame, const std::vector<Point3>& pe
+		+generateFrameObjectPointsGrid(std::vector<Point3>& objectGrid, int w, int h) : 
+		+{static} getGridCost(const std::vector<Point3>& grid, int w, int h, int top, in
+		+suggestSkew(const std::vector<Point3>& imageGrid, int w, int h) : double {query
+		+skew : float
+		+patternSize : size_t
+		+suggestPatternSize(const std::vector<Point3>& imageGrid, BaseSquare square, int
+		+detectPeaks(const cv::UMat& frame, std::vector<Point3>& peaks, size_t* size) : 
+		+drawBaseSquare(cv::Mat& target, BaseSquare square, const cv::Scalar& color) : v
+		+drawGrid(const cv::Mat& target, const std::vector<Point3>& grid, int w, int h, 
+		+drawPeaks(cv::Mat& target, const std::vector<Point3>& peaks, size_t size, const
+		+setPattern(size_t patternSize, float _skew) : void
+	}
+	class CalibrationStrategy {
+		+CalibrationStrategy(cv::Size frameSize, int numCameras, std::function<void ( in
+		+~CalibrationStrategy()
+		+createFrame(int cameraId, const std::vector<cv::Point3d>& imagePoints, const st
+		+getCalibrationData(int cameraId) : CalibrationData {query}
+		+getRectificationData(int cameraId) : CalibrationData {query}
+		+getGridSize() : auto {query}
+		+getMap(int cameraId) : cv::Mat {query}
+		+getRectifiedMap(int cameraId) : cv::Mat {query}
+		+getC(int cameraId) : cv::Point2d
+		+getF(int cameraId) : cv::Point2d
+		+getProgress(int cameraId) : double {query}
+		+getViewCosts(int cameraId) : double {query}
+		+getViewMulticamCosts(int cameraId) : double {query}
+		+getFrameCount(int cameraId) : size_t {query}
+		+getFrameSetCount(int cameraId) : size_t {query}
+		+{static} MAX_FRAMES_QUEUE : static const int
+		+addFrameSet(const FrameRefList& frameSet) : void
+		+{static} converPoints(const cv::Mat& pp, std::vector<ecv::CalibrateMapper::Poin
+		+{static} converPoints(const std::vector<ecv::CalibrateMapper::Point3>& points, 
+		+loadConfig() : void
+		+rectifyImagePoints(const std::vector<cv::Mat>& imagePoints, std::vector<cv::Mat
+		+rectifyImagePoints(const std::vector<ecv::CalibrateMapper::Point3>& imagePoints
+		+runCalibration() : void
+		+stopCalibration() : void
+		+undistortImagePoints(const std::vector<cv::Mat>& imagePoints, std::vector<cv::M
+		+undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3>& imagePoin
+	}
+	class Calibrator {
+		+calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Poi
+		+calibrateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Poi
+		+validateSingleCamera(cv::Size frameSize, const std::vector<std::vector<cv::Poin
+		+mergeIntrinsics(const CalibrationData& newData, double newDataDev, CalibrationD
+	}
+	class GridPreferredSizeProvider {
+		+getGridPreferredSize() : std::pair<size_t , size_t> {query}
+		+insertFrameStat(size_t w, size_t h) : void
+		+replaceFrameStat(size_t w1, size_t h1, size_t w0, size_t h0) : void
+	}
+	class MultiCameraCalibration {
+		+MultiCameraCalibration(const int numCameras, const cv::Size frameSize, std::fun
+		+getCalibrationData(int cameraId) : CalibrationData {query}
+		+getRectificationData(int cameraId) : CalibrationData {query}
+		+isValid(const FrameRefList& frameSet) : bool {query}
+		+getRectifiedMap(int cameraId) : cv::Mat {query}
+		+getViewMulticamCosts(int cameraId) : double {query}
+		+verifyParamsUsingGridMatch(const std::vector<cv::Mat>& imagePoints, const Calib
+		+getImagePointsFromFrameSets(const std::vector<FrameRefList>& frameSets) : std::
+		+multicamThreadCallback(const std::vector<FrameRefList>& pendingFramesPerCam) : 
+		+{static} rectifyImagePoints(const std::vector<ecv::CalibrateMapper::Point3>& im
+		+{static} rectifyImagePoints(const std::vector<cv::Mat>& imagePoints, std::vecto
+		+setCalibrationData(int cameraId, const CalibrationData& updatedData) : void
+		+setRectificationData(int cameraId, const CalibrationData& updatedData) : void
+	}
+	class SingleCameraThread {
+		+SingleCameraThread()
+		+SingleCameraThread(int cameraId, cv::Size frameSize, std::function<void ( const
+		+getCalibrationData() : CalibrationData {query}
+		+getMap() : cv::Mat {query}
+		+getC() : cv::Point2d
+		+getF() : cv::Point2d
+		+getProgress() : double {query}
+		+getViewCosts() : double {query}
+		+getFrameCount() : size_t {query}
+		+getFrameSetCount() : size_t {query}
+		+{static} TRAIN_SAMPLE_SIZE : static constexpr int
+		+{static} VALIDATE_SAMPLE_SIZE : static constexpr int
+		+camThreadCallback(const FrameRefList& frames) : void
+		+setCalibrationData(const CalibrationData& updatedData) : void
+		+setMap(const cv::Mat& m) : void
+		+{static} undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3>& 
+		+{static} undistortImagePoints(const std::vector<cv::Mat>& imagePoints, std::vec
+	}
+	class StatStreaming {
+		+EPS : const double
+		+d(double v) : double {query}
+		+dispersion() : double {query}
+		+mean() : double {query}
+		+sigmaDValue(double v) : double {query}
+		+sigmaValue(double v) : double {query}
+		+stddev() : double {query}
+		+n() : int {query}
+		+addDValue(double v) : void
+		+addFirstDValue(double v) : void
+		+addFirstValue(double v) : void
+		+addValue(double v) : void
+	}
+	class CalibrateFrameCollector::Dim {
+		+bias : double
+		+scale : double
+		+size : int
+	}
+	class CalibrateFrameCollector::Frame {
+		+validate : bool
+		+imageGrid : const std::vector<cv::Point3d>
+		+objectGrid : const std::vector<cv::Point3d>
+		+position : cv::Point3d
+		+rotation : cv::Point3d
+		+cost : double
+		+positionClass : int
+		+rotationClass : int
+		+ts : long
+		+h : size_t
+		+w : size_t
+	}
+	class CalibrateMapper::BaseSquare {
+		+bottomLeft : Point3
+		+bottomRight : Point3
+		+topLeft : Point3
+		+topRight : Point3
+	}
+	class CalibrateMapper::Point3Compare {
+		+operator()(const Point3& a, const Point3& b) : bool {query}
+	}
+	class CalibrationData {
+		+CalibrationData()
+		+CalibrationData(const cv::Size& frameSize)
+		+CalibrationData(const CalibrationData& other)
+		+operator=(const CalibrationData& other) : CalibrationData&
+		+E : cv::Mat
+		+F : cv::Mat
+		+Pi : cv::Mat
+		+R : cv::Mat
+		+Ri : cv::Mat
+		+Rs : cv::Mat
+		+T : cv::Mat
+		+Ts : cv::Mat
+		+cameraMatrix : cv::Mat
+		+rvecs : cv::Mat
+		+tvecs : cv::Mat
+		+frameCount : int
+		+distCoeff : std::vector<double>
+		+copyTo(CalibrationData& target) : void {query}
+		+store(cv::FileStorage& storage) : void {query}
+	}
+	class CalibrationStrategy::FrameCompare {
+		+operator()(const CalibrateFrameCollector::FrameRef& a, const CalibrateFrameColl
+	}
+	class CalibrationStrategy::FrameSetCompare {
+		+operator()(const FrameRefList& a, const FrameRefList& b) : bool {query}
+	}
+	class GridPreferredSizeProvider::GridStat {
+		+GridStat(size_t w, size_t h, int count)
+		+count : int
+		+h : size_t
+		+w : size_t
+	}
+}
+/' Inheritance relationships '/
+/' Aggregation relationships '/
+ecv.CalibrationStrategy *-- ecv.CalibrateFrameCollector
+ecv.CalibrationStrategy *-- ecv.Calibrator
+ecv.CalibrationStrategy *-- ecv.GridPreferredSizeProvider
+ecv.CalibrationStrategy o-- ecv.MultiCameraCalibration
+ecv.CalibrationStrategy *-- ecv.SingleCameraThread
+ecv.MultiCameraCalibration *-- ecv.CalibrateFrameCollector
+ecv.MultiCameraCalibration "2" *-- ecv.CalibrationData
+ecv.MultiCameraCalibration *-- ecv.GridPreferredSizeProvider
+ecv.SingleCameraThread "2" *-- ecv.CalibrateFrameCollector
+ecv.SingleCameraThread "2" *-- ecv.CalibrationData
+ecv.SingleCameraThread "2" *-- ecv.Calibrator
+ecv.SingleCameraThread "2" *-- ecv.GridPreferredSizeProvider
+/' Dependency relationships '/
+ecv.CalibrateFrameCollector <.. ecv.MultiCameraCalibration
+ecv.CalibrateFrameCollector <.. ecv.SingleCameraThread
+ecv.CalibrationData <.. ecv.CalibrationData
+ecv.CalibrationData <.. ecv.CalibrationData
+ecv.CalibrationData <.. ecv.CalibrationData
+ecv.CalibrationData <.. ecv.CalibrationStrategy
+ecv.CalibrationData <.. ecv.CalibrationStrategy
+ecv.CalibrationData <.. ecv.CalibrationStrategy
+ecv.CalibrationData <.. ecv.CalibrationStrategy
+ecv.CalibrationData <.. ecv.Calibrator
+ecv.CalibrationData <.. ecv.Calibrator
+ecv.CalibrationData <.. ecv.Calibrator
+ecv.CalibrationData <.. ecv.Calibrator
+ecv.CalibrationData <.. ecv.Calibrator
+ecv.CalibrationData <.. ecv.MultiCameraCalibration
+ecv.CalibrationData <.. ecv.MultiCameraCalibration
+ecv.CalibrationData <.. ecv.MultiCameraCalibration
+ecv.CalibrationData <.. ecv.MultiCameraCalibration
+ecv.CalibrationData <.. ecv.MultiCameraCalibration
+ecv.CalibrationData <.. ecv.SingleCameraThread
+ecv.CalibrationData <.. ecv.SingleCameraThread
+ecv.CalibrationData <.. ecv.SingleCameraThread
+ecv.CalibrationStrategy <.. ecv.CalibrationStrategy
+ecv.CalibrationStrategy <.. ecv.CalibrationStrategy
+ecv.Calibrator <.. ecv.SingleCameraThread
+ecv.GridPreferredSizeProvider <.. ecv.CalibrateFrameCollector
+ecv.GridPreferredSizeProvider <.. ecv.CalibrateFrameCollector
+ecv.GridPreferredSizeProvider <.. ecv.CalibrateFrameCollector
+ecv.GridPreferredSizeProvider <.. ecv.MultiCameraCalibration
+ecv.GridPreferredSizeProvider <.. ecv.SingleCameraThread
+ecv.MultiCameraCalibration <.. ecv.MultiCameraCalibration
+ecv.MultiCameraCalibration <.. ecv.MultiCameraCalibration
+ecv.SingleCameraThread <.. ecv.SingleCameraThread
+ecv.SingleCameraThread <.. ecv.SingleCameraThread
+/' Nested objects '/
+ecv.CalibrateFrameCollector +-- ecv.CalibrateFrameCollector.Dim
+ecv.CalibrateFrameCollector +-- ecv.CalibrateFrameCollector.Frame
+ecv.CalibrateMapper +-- ecv.CalibrateMapper.BaseSquare
+ecv.CalibrateMapper +-- ecv.CalibrateMapper.Point3Compare
+ecv.CalibrationStrategy +-- ecv.CalibrationStrategy.FrameCompare
+ecv.CalibrationStrategy +-- ecv.CalibrationStrategy.FrameSetCompare
+ecv.GridPreferredSizeProvider +-- ecv.GridPreferredSizeProvider.GridStat
+@enduml

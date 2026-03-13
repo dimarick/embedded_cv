@@ -1,0 +1,128 @@
+@startuml
+left to right direction
+/' Objects '/
+enum cl_mem_fence_flags {
+	CLK_GLOBAL_MEM_FENCE
+	CLK_LOCAL_MEM_FENCE
+}
+namespace ecv {
+	class Defer {
+		+Defer(std::function<void ( )> defer)
+		+~Defer()
+	}
+	class DisparityEvaluator {
+		+DisparityEvaluator(cl_context c)
+		+DisparityEvaluator()
+		+{static} DISPARITY_PRECISION : static constexpr const int
+		+evaluateDisparity(const std::vector<cv::UMat>& frames, cv::Mat& disparity, cv::
+		+lazyInitializeOcl() : void
+	}
+	class MatStorage {
+		+{static} matRead(const std::string& filename, cv::Mat& mat) : bool
+		+{static} matRead(const std::string& filename, cv::UMat& mat) : bool
+		+{static} matWrite(const std::string& filename, const cv::Mat& mat) : void
+		+{static} matWrite(const std::string& filename, const cv::UMat& mat) : void
+	}
+	class RemoteView {
+		+RemoteView(const std::string& socketPath)
+		+~RemoteView()
+		+createMessageHeaderFromMat(const cv::Mat& mat, const cv::Rect& rect, short view
+		+waitKey() : int
+		+getViews() : std::unordered_map<std::string , CvMatHeader> {query}
+		+createMessageFromMat(CvMatHeader header, const cv::Mat& mat, const cv::Rect& re
+		+showMat(const std::string& viewName, const cv::Mat& mat) : void
+		+showMat(const std::string& viewName, const cv::UMat& mat) : void
+	}
+	class SocketCapture {
+		+SocketCapture(std::string captureSocketName)
+		+isRunning() : bool
+		+run() : bool
+		+getNewFrames(std::vector<CaptureInfo>* captureInfo) : std::vector<cv::UMat>
+		+stop() : void
+	}
+	class Telemetry {
+		+{static} debug(const std::string& message) : void
+		+{static} error(const std::string& message) : void
+		+{static} info(const std::string& message) : void
+		+{static} log(LogLevel l, const std::string& message) : void
+		+{static} setLogLevel(LogLevel l) : void
+		+{static} setServer(std::shared_ptr<mini_server::IpcServer> s) : void
+		+{static} status(const std::string& component, const std::string& property, cons
+		+{static} status(const std::string& component, const std::string& property, T va
+		+{static} status(const std::string& component, const std::vector<std::string>& p
+		+{static} status(const std::string& component, const std::vector<std::string>& p
+		+{static} warn(const std::string& message) : void
+	}
+	enum RemoteView::CvMatCodecEnum {
+		JPEG
+		RAW
+	}
+	enum RemoteView::CvMatTypeEnum {
+		TYPE_16F
+		TYPE_16S
+		TYPE_16U
+		TYPE_32F
+		TYPE_64F
+		TYPE_8S
+		TYPE_8U
+	}
+	enum Telemetry::LogLevel {
+		DEBUG
+		ERROR
+		INFO
+		WARN
+	}
+	class CaptureBuffer {
+		+{static} getHeader(const std::vector<char>& buffer) : CaptureBuffer*
+		+{static} getHeader(const void* buffer, size_t size) : CaptureBuffer*
+		+getFirstCaptureInfo() : CaptureInfo* {query}
+		+bufferSize : int
+		+nCaptures : int
+	}
+	class CaptureInfo {
+		+getNextCaptureInfo() : CaptureInfo* {query}
+		+channels : char
+		+getImageData() : char* {query}
+		+created_at : long
+		+h : short
+		+w : short
+		+size : size_t
+	}
+	class RemoteView::ChannelSettings {
+		+channelId : int
+		+h : short
+		+viewH : short
+		+viewW : short
+		+w : short
+		+x : short
+		+y : short
+		+viewName : std::string
+	}
+	class RemoteView::CvMatHeader {
+		+codec : CvMatCodecEnum
+		+type : CvMatTypeEnum
+		+channels : short
+		+h : short
+		+viewH : short
+		+viewW : short
+		+w : short
+		+x : short
+		+y : short
+	}
+	class RemoteView::StringHeader {
+		+nameSize : short
+	}
+}
+/' Inheritance relationships '/
+/' Aggregation relationships '/
+ecv.SocketCapture *-- ecv.CaptureInfo
+/' Dependency relationships '/
+ecv.CaptureInfo <.. ecv.SocketCapture
+/' Nested objects '/
+ecv.RemoteView +-- ecv.RemoteView.ChannelSettings
+ecv.RemoteView +-- ecv.RemoteView.CvMatCodecEnum
+ecv.RemoteView +-- ecv.RemoteView.CvMatHeader
+ecv.RemoteView +-- ecv.RemoteView.CvMatTypeEnum
+ecv.RemoteView +-- ecv.RemoteView.StringHeader
+ecv.Telemetry +-- ecv.Telemetry.LogLevel
+@enduml
