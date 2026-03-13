@@ -97,9 +97,8 @@ target_link_libraries(tests PRIVATE Catch2::Catch2WithMain PUBLIC OpenCL::OpenCL
 
 include_directories( ${OpenCV_INCLUDE_DIRS} )
 
-include_directories(./mini_server)
+include_directories(src/mini_server)
 include_directories(./src)
-add_subdirectory(./mini_server)
 #add_subdirectory(./hw_ctl)
 add_subdirectory(./ws_ctl)
 
@@ -108,26 +107,19 @@ add_executable(calib
         src/calibrator/CalibrateFrameCollector.cpp
         src/calibrator/CalibrateMapper.cpp
         src/calibrator/Calibrator.cpp
-        src/calibrator/Calibrator.h
         src/common/MatStorage.cpp
-        src/common/MatStorage.h
         src/calibrator/GridPreferredSizeProvider.cpp
         src/calibrator/CalibrationStrategy.cpp
-        src/calibrator/CalibrationStrategy.h
         src/calibrator/SingleCameraThread.cpp
-        src/calibrator/StatStreaming.h
         src/calibrator/MultiCameraCalibration.cpp
-        src/calibrator/MultiCameraCalibration.h
         src/common/RemoteView.cpp
-        src/common/RemoteView.h
         src/common/Telemetry.cpp
-        src/common/Telemetry.h
-        src/common/CaptureInfo.h
         src/capture/SocketCapture.cpp
-        src/capture/SocketCapture.h
+        src/mini_server/IpcServer.cpp
+        src/mini_server/SocketFactory.cpp
 )
 
-target_link_libraries(calib PUBLIC mini_server OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
+target_link_libraries(calib PUBLIC OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
 
 install(TARGETS calib DESTINATION bin)
 
@@ -136,37 +128,37 @@ add_executable(cv
         src/cv/DisparityEvaluator.cpp
         src/common/MatStorage.cpp
         src/common/RemoteView.cpp
-        src/cv/DisparityEvaluator.h
         src/capture/SocketCapture.cpp
-        src/capture/SocketCapture.h
         src/common/Telemetry.cpp
+        src/mini_server/IpcServer.cpp
+        src/mini_server/SocketFactory.cpp
 )
 
-target_link_libraries(cv PUBLIC OpenCL::OpenCL mini_server cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
+target_link_libraries(cv PUBLIC OpenCL::OpenCL cpptrace::cpptrace Eigen3::Eigen ${OpenCV_LIBS})
 
 add_executable(benchmark
         benchmark/benchmark.cpp
         benchmark/KitDisparityBenchmark.cpp
         src/cv/DisparityEvaluator.cpp
-        src/cv/DisparityEvaluator.h
         src/calibrator/Calibrator.cpp
         src/calibrator/CalibrationStrategy.cpp
         src/calibrator/MultiCameraCalibration.cpp
         src/calibrator/CalibrateMapper.cpp
         src/calibrator/CalibrateFrameCollector.cpp
-        src/calibrator/CalibrateFrameCollector.h
         src/calibrator/GridPreferredSizeProvider.cpp
-        src/calibrator/GridPreferredSizeProvider.h
         src/calibrator/SingleCameraThread.cpp
-        src/calibrator/SingleCameraThread.h
+        src/mini_server/IpcServer.cpp
+        src/mini_server/SocketFactory.cpp
 )
 
 target_link_libraries(benchmark PUBLIC OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS})
 
 add_executable(capture
         src/capture/capture.cpp
+        src/mini_server/IpcServer.cpp
+        src/mini_server/SocketFactory.cpp
 )
 
-target_link_libraries(capture PUBLIC mini_server cpptrace::cpptrace)
+target_link_libraries(capture PUBLIC cpptrace::cpptrace)
 
 install(TARGETS cv DESTINATION bin)

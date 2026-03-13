@@ -11,7 +11,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cpptrace)
 
-include_directories(../mini_server)
+include_directories(../src/mini_server)
 
 add_executable(hw_ctl main.cpp)
 target_link_libraries(hw_ctl PRIVATE cpptrace::cpptrace mini_server)

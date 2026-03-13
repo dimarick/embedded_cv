@@ -40,7 +40,7 @@ void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
             if (!settingsCache.contains(key)) {
                 StringHeader str{};
                 str.nameSize = (short)viewName.size();
-                auto frame = Encapsulation::encapsulate(viewName.data(), viewName.size(), str);
+                auto frame = mini_server::Encapsulation::encapsulate(viewName.data(), viewName.size(), str);
                 auto header = createMessageHeaderFromMat(mat, cv::Rect(s.x, s.y, s.w, s.h), s.viewW, s.viewH);
                 auto matMessage = createMessageFromMat(header, mat, cv::Rect(s.x, s.y, s.w, s.h), s.viewW, s.viewH);
 
@@ -176,9 +176,9 @@ std::vector<char> RemoteView::createMessageFromMat(CvMatHeader header, const cv:
         cv::imencode(".jpg", crop, buffer, {
             cv::ImwriteFlags::IMWRITE_JPEG_QUALITY, 50,
         });
-        return Encapsulation::encapsulate(buffer.data(), buffer.size(), header);
+        return mini_server::Encapsulation::encapsulate(buffer.data(), buffer.size(), header);
     }
-    return Encapsulation::encapsulate(crop.datastart, crop.dataend - crop.datastart, header);
+    return mini_server::Encapsulation::encapsulate(crop.datastart, crop.dataend - crop.datastart, header);
 }
 
 RemoteView::CvMatHeader RemoteView::createMessageHeaderFromMat(const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH) {

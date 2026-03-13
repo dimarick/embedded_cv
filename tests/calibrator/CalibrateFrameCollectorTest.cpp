@@ -12,7 +12,7 @@ std::shared_ptr<CalibrateFrameCollector::Frame> makeFrame(
     for (size_t i = 0; i < w*h; ++i)
         objectGrid[i] = cv::Point3d(i % w, i / w, 0);
     auto frame = std::make_shared<CalibrateFrameCollector::Frame>(
-        CalibrateFrameCollector::Frame{{0,0,0}, {0,0,0}, 0, 0, imageGrid, objectGrid, w, h, cost, 0.0, false});
+        CalibrateFrameCollector::Frame{{0,0,0}, {0,0,0}, 0, 0, imageGrid, objectGrid, w, h, cost, 0, false});
     return frame;
 }
 

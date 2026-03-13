@@ -65,7 +65,7 @@ int main(int argc, const char **argv) {
     std::vector<size_t> captureInfoRef(0);
     std::vector<char> captureBuffer(0);
 
-    Defer run([&captures] () {
+    ecv::Defer run([&captures] () {
         for (const auto f : captures) {
             fclose(f);
         }
@@ -152,7 +152,7 @@ int main(int argc, const char **argv) {
     mini_server::IpcServer captureServer;
     captureServer.setSocket(mini_server::SocketFactory::createServerSocket(output, 10));
     auto captureServerThread = std::thread([&captureServer](){captureServer.serve();});
-    Defer stopServer([&captureServer, &captureServerThread]() {
+    ecv::Defer stopServer([&captureServer, &captureServerThread]() {
         captureServer.stop();
         captureServerThread.join();
     });

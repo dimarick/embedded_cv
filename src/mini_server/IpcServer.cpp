@@ -73,7 +73,7 @@ void IpcServer::runClient() {
 }
 
 void IpcServer::interactThread(int interactionSocket, IpcServer *server, int threadId) {
-    Defer removeThread([&server, threadId, interactionSocket]() {
+    ecv::Defer removeThread([&server, threadId, interactionSocket]() {
         std::lock_guard lock(server->mutex);
         server->deadThreads.insert(threadId);
         server->acceptedSockets.erase(interactionSocket);

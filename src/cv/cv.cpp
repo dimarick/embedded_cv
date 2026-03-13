@@ -6,7 +6,6 @@
 #include <iostream>
 #include <chrono>
 #include <cpptrace/cpptrace.hpp>
-#include <CommandServer.h>
 #include <IpcServer.h>
 #include <thread>
 #include <atomic>

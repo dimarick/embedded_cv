@@ -1,7 +1,6 @@
 #ifndef EMBEDDED_CV_CAPTUREINFO_H
 #define EMBEDDED_CV_CAPTUREINFO_H
 
-#include <cstddef>
 #include <vector>
 #include <stdexcept>
 #include <format>
