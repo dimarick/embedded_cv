@@ -183,7 +183,7 @@ int main(int argc, const char **argv) {
                         throw std::runtime_error(std::format("Error ffmpeg pipe: unexpected end of file"));
                     }
                     if (ferror(capture)) {
-                        throw std::runtime_error(std::format("Error reading test.bin: ", strerror(errno)));
+                        throw std::runtime_error(std::format("Error reading: ", strerror(errno)));
                     }
                 }
                 imageOffset += bytes;

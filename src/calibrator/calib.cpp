@@ -128,6 +128,8 @@ int main(int argc, const char **argv) {
         std::vector<ecv::CaptureInfo> captureInfo;
         frames = socketCapture.getNewFrames(&captureInfo);
 
+        cv::rotate(frames[1], frames[1], cv::ROTATE_180);
+
         if (frames.empty()) {
             continue;
         }

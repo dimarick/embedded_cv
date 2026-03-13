@@ -63,7 +63,7 @@ namespace ecv {
             std::normal_distribution<float> rngSkew(skew, 0.05);
             std::normal_distribution<float> rngSize((float)patternSize, 3);
             std::mt19937 r {std::random_device{}()};
-            setPattern(std::clamp((int)rngSize(r), 12, 256), std::clamp((float)rngSkew(r), -0.5f, 0.5f));
+            setPattern(std::clamp((int)rngSize(r), 24, 256), std::clamp((float)rngSkew(r), -0.5f, 0.5f));
             prevError = result;
         }
 
@@ -198,7 +198,7 @@ namespace ecv {
             }
         }
 
-        auto dSize = (m * 0.85f);
+        auto dSize = (m * 1.4f);
 
         auto ema = 2. / (3. + 1.);
         dSize = ema * dSize + (1 - ema) * (double)patternSize;
@@ -518,14 +518,14 @@ namespace ecv {
         for (const auto &p : pointsSet) {
             const auto &z = (p.z - zMin) / range;
 
-            if (z < 0.05) {
+            if (z < 0.001) {
                 continue;
             }
 
             auto i = stat.n();
 
             if (i > 5) {
-                if (stat.sigmaValue(z) > 5) {
+                if (stat.sigmaValue(z) > 6) {
                     continue;
                 }
             }
@@ -649,7 +649,7 @@ namespace ecv {
                     auto p3 = points[j];
                     if (p3.x > result.topLeft.x && p3.y > result.topLeft.y) {
                         if (isInsideQuadSimple(p3, quad)) {
-                            auto z = p3.z * 3;
+                            auto z = p3.z * 2;
                             if (z > result.topLeft.z || z > result.bottomRight.z) {
                                 q2 = 1. / 0.;
                             }

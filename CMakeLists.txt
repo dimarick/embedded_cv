@@ -99,7 +99,6 @@ include_directories( ${OpenCV_INCLUDE_DIRS} )
 
 include_directories(src/mini_server)
 include_directories(./src)
-#add_subdirectory(./hw_ctl)
 add_subdirectory(./ws_ctl)
 
 add_executable(calib
