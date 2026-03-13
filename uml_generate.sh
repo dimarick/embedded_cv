@@ -12,7 +12,7 @@ cat /tmp/classes.puml | grep -Ev '^\s+-' | grep -Ev '_DIM_' | grep -Eo '^\s*.{0,
 
 FILES=`ls src/mini_server/**/*.h | xargs -n 1 -I{} echo -i {}`
 hpp2plantuml $FILES -d -o /tmp/classes.puml
-cat /tmp/classes.puml | grep -Ev '^\s+-' | sed -e '/^@startuml$/a\left to right direction' > classes_mini_server.puml
+cat /tmp/classes.puml | grep -Ev '^\s+-' | grep -Eo '(^\s+.{0,80})|(\S.*)' | sed -e '/^@startuml$/a\left to right direction' > classes_mini_server.puml
 
 FILES=`ls ws_ctl/**/*.h | grep -Ev '.*build.*' | grep -Ev '.*web.*' | grep -Ev '.*3rdparty.*' | grep -Ev '.*release.*' | xargs -n 1 -I{} echo -i {}`
 hpp2plantuml $FILES -d -o /tmp/classes.puml

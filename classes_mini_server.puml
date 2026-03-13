@@ -1,33 +1,30 @@
 @startuml
 left to right direction
-
-
-
-
-
 /' Objects '/
-
 namespace mini_server {
 	class Encapsulation {
 		+{static} getHeader(std::vector<char>& frame) : T*
 		+{static} getBody(const std::vector<char>& frame) : char*
-		+{static} encapsulate(const void* buffer, size_t bufferSize, const T& header) : std::vector<char>
+		+{static} encapsulate(const void* buffer, size_t bufferSize, const T& header) : 
+std::vector<char>
 	}
-
 	abstract class HandlerInterface {
 		+{abstract} handle(int socket, const std::string& in, std::string& out) : void
 	}
-
 	class IpcServer {
 		+isRunning() : bool
 		+getClientsCount() : size_t {query}
-		+createFrame(const void* buffer, size_t bufferSize, unsigned long expire, const IpcServer::MessageTypeEnum& type) : std::vector<char> {query}
+		+createFrame(const void* buffer, size_t bufferSize, unsigned long expire, const 
+IpcServer::MessageTypeEnum& type) : std::vector<char> {query}
 		+getExpire(unsigned long ttl) : unsigned long {query}
 		+broadcast(const std::string& message) : void
-		+broadcast(const void* buffer, size_t bufferSize, unsigned long ttl, MessageTypeEnum type) : void
+		+broadcast(const void* buffer, size_t bufferSize, unsigned long ttl, MessageType
+Enum type) : void
 		+runClient() : void
-		+send(int s, const std::string& message, unsigned long ttl, MessageTypeEnum type) : void
-		+send(int s, const void* buffer, size_t bufferSize, unsigned long ttl, MessageTypeEnum type) : void
+		+send(int s, const std::string& message, unsigned long ttl, MessageTypeEnum type
+) : void
+		+send(int s, const void* buffer, size_t bufferSize, unsigned long ttl, MessageTy
+peEnum type) : void
 		+sendFrame(int s, const std::vector<char>& frame) : void
 		+serve() : void
 		+setOnClose(CloseHandler onClose) : void
@@ -36,19 +33,16 @@ namespace mini_server {
 		+setSocket(int _socket) : void
 		+stop() : void
 	}
-
 	class SocketFactory {
 		+{static} createClientSocket(const std::string& name) : int
 		+{static} createServerSocket(const std::string& name, int maxConnections) : int
 	}
-
 	enum IpcServer::MessageTypeEnum {
 		TYPE_ACK
 		TYPE_CONTROL
 		TYPE_MAT
 		TYPE_TELEMETRY
 	}
-
 	class IpcServer::MessageHeader {
 		+type : MessageTypeEnum
 		+magick : unsigned int
@@ -56,39 +50,11 @@ namespace mini_server {
 		+expire : unsigned long
 	}
 }
-
-
-
-
-
 /' Inheritance relationships '/
-
-
-
-
 /' Aggregation relationships '/
-
-
-
-
-
 /' Dependency relationships '/
-
 mini_server.IpcServer <.. mini_server.IpcServer
-
-
-
-
-
-
 /' Nested objects '/
-
 mini_server.IpcServer +-- mini_server.IpcServer.MessageHeader
-
-
 mini_server.IpcServer +-- mini_server.IpcServer.MessageTypeEnum
-
-
-
-
 @enduml
