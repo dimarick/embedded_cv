@@ -18,4 +18,4 @@ FILES=`ls ws_ctl/**/*.h | grep -Ev '.*build.*' | grep -Ev '.*web.*' | grep -Ev '
 hpp2plantuml $FILES -d -o /tmp/classes.puml
 cat /tmp/classes.puml | grep -Ev '^\s+-' > classes_ws_ctl.puml
 
-plantuml -tsvg classes_*.puml
+plantuml classes_*.puml

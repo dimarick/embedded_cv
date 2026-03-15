@@ -35,7 +35,7 @@ set(CMAKE_CXX_STANDARD 23)
 list(APPEND CMAKE_FIND_ROOT_PATH "/")
 find_package(OpenCV 5.0.0 REQUIRED)
 
-set(OPT_FLAGS "-O0 -g -ffast-math -no-pie -ftree-vectorize -pthread")
+set(OPT_FLAGS "-O3 -g -ffast-math -no-pie -ftree-vectorize -pthread")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OPT_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OPT_FLAGS}")
@@ -158,6 +158,12 @@ add_executable(capture
         src/mini_server/SocketFactory.cpp
 )
 
-target_link_libraries(capture PUBLIC cpptrace::cpptrace)
+target_link_libraries(capture PUBLIC cpptrace::cpptrace OpenCL::OpenCL ${OpenCV_LIBS})
+
+add_executable(v4l2grab
+        src/capture/v4l2grab.cpp
+)
+
+target_link_libraries(v4l2grab PUBLIC OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS})
 
 install(TARGETS cv DESTINATION bin)

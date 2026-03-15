@@ -42,7 +42,7 @@ int main(int argc, const char **argv) {
         running = false;
     });
 
-    auto remoteView = ecv::RemoteView("/cv_calib_stream");
+    auto remoteView = ecv::RemoteView("/tmp/cv_calib_stream");
 
     auto tm = std::make_shared<mini_server::IpcServer>();
     tm->setSocket(mini_server::SocketFactory::createServerSocket("/tmp/cv_calib_tm", 10));

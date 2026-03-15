@@ -7,13 +7,13 @@
 
 using namespace ecv;
 
-void RemoteView::showMat(const std::string& viewName, const cv::UMat& mat) {
-    showMat(viewName, mat.getMat(cv::ACCESS_READ));
+void RemoteView::showMat(const std::string& viewName, const cv::UMat& mat, long frameCreatedAt) {
+    showMat(viewName, mat.getMat(cv::ACCESS_READ), frameCreatedAt);
 }
 
-void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat) {
+void RemoteView::showMat(const std::string& viewName, const cv::Mat& mat, long frameCreatedAt) {
     initializeServer();
-    const auto expire = server->getExpire(200);
+    const auto expire = server->getExpire(200, frameCreatedAt);
 #ifdef HAVE_OPENCV_HIGHGUI
     cv::imshow(viewName, mat);
 #endif

@@ -54,7 +54,7 @@ namespace ecv {
             short h = 0;
         };
 
-        const std::string &socketPath;
+        std::string socketPath;
         std::shared_ptr<mini_server::IpcServer> server;
         std::thread serverThread;
         std::mutex channelsMutex;
@@ -63,9 +63,10 @@ namespace ecv {
         std::unordered_map<std::string, CvMatHeader> views;
         void initializeServer();
     public:
-        explicit RemoteView(const std::string &socketPath) : socketPath(socketPath) {}
+        explicit RemoteView(std::string socketPath) : socketPath(std::move(socketPath)) {}
 
-        void showMat(const std::string& viewName, const cv::Mat& mat);
+        void showMat(const std::string &viewName, const cv::UMat &mat, long frameCreatedAt = 0);
+        void showMat(const std::string &viewName, const cv::Mat  &mat, long frameCreatedAt = 0);
         int waitKey();
 
         CvMatHeader createMessageHeaderFromMat(const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH);
@@ -73,8 +74,6 @@ namespace ecv {
         virtual ~RemoteView();
 
         std::vector<char> createMessageFromMat(CvMatHeader header, const cv::Mat &mat, const cv::Rect &rect, short viewW, short viewH);
-
-        void showMat(const std::string &viewName, const cv::UMat &mat);
 
         std::unordered_map<std::string, CvMatHeader> getViews() const {
             decltype(views )tmp;

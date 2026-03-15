@@ -4,6 +4,7 @@
 #include <mutex>
 #include <set>
 #include <atomic>
+#include <condition_variable>
 #include <string>
 #include <unordered_map>
 #include <functional>
@@ -28,13 +29,22 @@ namespace mini_server {
             unsigned int size;
             unsigned long expire;
         };
+        struct SendingTask {
+            std::atomic<bool> ready = false;
+            std::atomic<bool> done = true;
+            std::vector<char> buffer;
+        };
 
         int socket = -1;
         mutable std::mutex mutex;
         std::set<int> acceptedSockets;
+        mutable std::mutex sendingMutex;
+        mutable std::condition_variable sendingCV;
+        std::unordered_map<int, SendingTask> sendingTasks;
+        std::unordered_map<int, std::thread> sendingThreads;
         std::unordered_map<int, std::thread> threads;
         std::set<int> deadThreads;
-        std::atomic<bool> running;
+        std::atomic<bool> running = false;
         StringMessageHandler onStringMessage;
         BinaryMessageHandler onBinaryMessage;
         CloseHandler onClose;
@@ -50,6 +60,8 @@ namespace mini_server {
         }
         void serve();
         void runClient();
+
+        static void sendingThread(int interactionSocket, IpcServer *server);
 
         void stop() {
             running = false;
@@ -67,7 +79,7 @@ namespace mini_server {
 
         void sendFrame(int s, const std::vector<char> &frame);
 
-        unsigned long getExpire(unsigned long ttl) const;
+        unsigned long getExpire(unsigned long ttl, long frameCreatedAt = 0) const;
 
         size_t getClientsCount() const;
 

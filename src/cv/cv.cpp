@@ -56,9 +56,7 @@ int main(int argc, const char **argv) {
 
     std::shared_ptr<IpcServer> tmServer;
     IpcServer commandServer;
-    IpcServer streamingServer;
 
-    streamingServer.setSocket(SocketFactory::createServerSocket("/tmp/cv_stream", 10));
     commandServer.setSocket(SocketFactory::createServerSocket("/tmp/cv_ctl", 1));
     commandServer.setOnMessage([&remoteView, &commandServer] (int socket, const std::string &message) {
         std::istringstream is(message);
@@ -127,10 +125,6 @@ int main(int argc, const char **argv) {
         tmServer->serve();
     });
 
-    std::thread streamingServerThread = std::thread([&streamingServer]() {
-        streamingServer.serve();
-    });
-
     double fps = 0.;
     double avgFps = 0.;
     double avgTime = 0.;
@@ -190,7 +184,8 @@ int main(int argc, const char **argv) {
     auto prev = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; running; i++) {
-        auto frames = socketCapture.getNewFrames();
+        std::vector<ecv::CaptureInfo> captureInfo;
+        auto frames = socketCapture.getNewFrames(&captureInfo);
 
         if (frames.empty()) {
             continue;
@@ -215,21 +210,17 @@ int main(int argc, const char **argv) {
         }
 
         for (int j = 0; j < frames.size(); ++j) {
-#ifdef HAVE_OPENCV_HIGHGUI
-            cv::UMat filtered;
-            cv::UMat original;
-            frames[0].copyTo(original);
+            remoteView.showMat(std::format("Source {}", j), frames[j], captureInfo[j].created_at);
+        }
 
-            cv::cvtColor(frames[0], original, cv::COLOR_RGB2GRAY);
 
-            clahe->apply(original, filtered);
-            clahe->apply(filtered, filtered);
-
-            remoteView.showMat("Original", original);
-            remoteView.showMat("Filtered", filtered);
-
+// #pragma omp parallel default(none) shared(frames, remoteView, result, maps)
+        for (int j = 0; j < frames.size(); ++j) {
             cv::remap(frames[j], result[j], maps[j], cv::noArray(), cv::INTER_NEAREST);
-#endif
+        }
+
+        for (int j = 0; j < frames.size(); ++j) {
+            remoteView.showMat(std::format("Plain {}", j), frames[j]);
         }
 
 #ifdef HAVE_OPENCV_HIGHGUI
@@ -330,11 +321,9 @@ int main(int argc, const char **argv) {
     cv::destroyAllWindows();
 #endif
 
-    streamingServer.stop();
     tmServer->stop();
     commandServer.stop();
 
-    streamingServerThread.join();
     tmServerThread.join();
     commandServerThread.join();
     socketCapture.stop();

@@ -11,6 +11,7 @@
 #include <IpcServer.h>
 #include <SocketFactory.h>
 #include <common/CaptureInfo.h>
+#include "highgui.hpp"
 
 std::atomic running = true;
 
@@ -35,7 +36,18 @@ template <class T> size_t reserveBuffer(std::vector<char> &buffer, size_t offset
     return sizeof (T) * size;
 }
 
+void closeAll(std::vector<FILE *> captures) {
+    for (auto & capture : captures) {
+        if (capture == nullptr) {
+            continue;
+        }
+        fclose(capture);
+        capture = nullptr;
+    }
+}
+
 int main(int argc, const char **argv) {
+    use_defer;
     cpptrace::register_terminate_handler();
 
     // Установка обработчика сигнала
@@ -59,17 +71,14 @@ int main(int argc, const char **argv) {
 
     const char *output = nullptr;
 
-    std::vector<FILE *> captures(0);
-    std::vector<size_t> imageOffsets(0);
-    std::vector<size_t> imageSizes(0);
-    std::vector<size_t> captureInfoRef(0);
-    std::vector<char> captureBuffer(0);
+    std::vector<FILE *> captures;
+    std::vector<std::string> captureCommands;
+    std::vector<size_t> imageOffsets;
+    std::vector<size_t> imageSizes;
+    std::vector<size_t> captureInfoRef;
+    std::vector<char> captureBuffer;
 
-    ecv::Defer run([&captures] () {
-        for (const auto f : captures) {
-            fclose(f);
-        }
-    });
+    defer(closeAll(captures));
 
     size_t offset = 0;
 
@@ -123,19 +132,15 @@ int main(int argc, const char **argv) {
             }
 
             const auto captureCommand = std::format(
-                    "ffmpeg -loglevel fatal -f v4l2 {} {} {} -hwaccel auto -re -i {} -f rawvideo -filter:v 'format=bgr24' -fflags nobuffer -avioflags direct -",
+                    "ffmpeg -loglevel error -f v4l2 {} {} {} -hwaccel auto -i {} -f rawvideo -filter:v 'format=bgr24' -flags low_delay -fflags nobuffer -avioflags direct -",
                     !format.empty() ? std::format("-input_format {}", format) : "",
                     !size.empty() ? std::format("-s {}", size) : "",
                     fps > 0 ? std::format("-framerate {}", fps) : "",
                     argv[i]
             );
 
-            auto file = popen(captureCommand.data(), "r");
-            if (file == nullptr) {
-                throw std::runtime_error(std::format("Error creating process {} {}", captureCommand, strerror(errno)));
-            }
-
-            captures.emplace_back(file);
+            captures.emplace_back(nullptr);
+            captureCommands.emplace_back(captureCommand);
             captureInfoRef.emplace_back(offset);
             auto imageSize = imageSizes.emplace_back(w * h * 3);
             offset += writeBuffer(captureBuffer, offset, ecv::CaptureInfo{0, imageSize, w, h, 3});
@@ -152,7 +157,8 @@ int main(int argc, const char **argv) {
     mini_server::IpcServer captureServer;
     captureServer.setSocket(mini_server::SocketFactory::createServerSocket(output, 10));
     auto captureServerThread = std::thread([&captureServer](){captureServer.serve();});
-    ecv::Defer stopServer([&captureServer, &captureServerThread]() {
+
+    defer({
         captureServer.stop();
         captureServerThread.join();
     });
@@ -165,12 +171,16 @@ int main(int argc, const char **argv) {
             // Дочерние процессы заблокируются на пайпе stdout и не будут потреблять ресурсы.
             usleep(300e3);
             captureCount = 0;
+            std::cout << "No active clients. Shutdown ffmpeg" << std::endl;
+            closeAll(captures);
             continue;
         }
-//        auto now = std::chrono::system_clock::now();
-//        std::cout << t(now) << "Waiting for coming frame" << std::endl;
-//#pragma omp parallel for default(none) shared(captures, captureInfoRef, imageOffsets, imageSizes, captureBuffer, std::cout, now, coutMutex)
+
+#pragma omp parallel for default(none) shared(captures, captureCommands, captureInfoRef, imageOffsets, imageSizes, captureBuffer)
         for (int i = 0; i < captures.size(); i++) {
+            if (captures[i] == nullptr) {
+                captures[i] = popen(captureCommands[i].data(), "r");
+            }
             const auto &capture = captures[i];
             auto captureInfo = reinterpret_cast<ecv::CaptureInfo *>(captureBuffer.data() + captureInfoRef[i]);
             auto imageOffset = imageOffsets[i];
@@ -179,12 +189,11 @@ int main(int argc, const char **argv) {
             while (imageSize > 0) {
                 auto bytes = fread(captureBuffer.data() + imageOffset, sizeof(char), imageSize, capture);
                 if (bytes == 0) {
-                    if (feof(capture)) {
-                        throw std::runtime_error(std::format("Error ffmpeg pipe: unexpected end of file"));
+                    if (feof(capture) || ferror(capture)) {
+                        fclose(captures[i]);
+                        captures[i] = nullptr;
                     }
-                    if (ferror(capture)) {
-                        throw std::runtime_error(std::format("Error reading: ", strerror(errno)));
-                    }
+                    break;
                 }
                 imageOffset += bytes;
                 imageSize -= bytes;

@@ -8,12 +8,20 @@ namespace ecv {
      * GO-style defer
      */
     class Defer {
-        std::function<void()> defer;
+        std::vector<std::function<void()>> fns;
     public:
-        explicit Defer(std::function<void()> defer) : defer(std::move(defer)) {}
+        void operator()(std::function<void()> fn) noexcept {
+            fns.emplace_back(std::move(fn));
+        }
         ~Defer() {
-            defer();
+            for (size_t i = fns.size(); i > 0; --i) {
+                fns.at(i - 1)();
+            }
         }
     };
 }
+
+#define use_defer ecv::Defer __defer__storage
+#define defer(code) __defer__storage([&]() {code;})
+
 #endif //EMBEDDED_CV_DEFER_H

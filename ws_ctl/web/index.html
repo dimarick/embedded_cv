@@ -60,7 +60,7 @@
                     <!-- Viewport 1 (Основной, всегда видим) -->
                     <div class="viewport active" id="viewport-1">
                         <div class="viewport-title">КАМЕРА 1</div>
-                        <canvas class="viewport-canvas-stream" data-name="Debug 0"></canvas>
+                        <canvas class="viewport-canvas-stream" data-name="Source 0"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
@@ -69,23 +69,23 @@
                     <!-- Следующие viewport'ы скрыты в лейауте "single" -->
                     <div class="viewport active" id="viewport-2">
                         <div class="viewport-title">КАМЕРА 2</div>
-                        <canvas class="viewport-canvas-stream" data-name="Debug 1"></canvas>
+                        <canvas class="viewport-canvas-stream" data-name="Source 1"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
                         </div>
                     </div>
                     <div class="viewport is-hidden" id="viewport-3">
-                        <div class="viewport-title">КАМЕРА 3</div>
-                        <canvas class="viewport-canvas-stream" data-name="Plain 0"></canvas>
+                        <div class="viewport-title">Разность</div>
+                        <canvas class="viewport-canvas-stream" data-name="Disparity"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
                         </div>
                     </div>
                     <div class="viewport is-hidden" id="viewport-4">
-                        <div class="viewport-title">КАРТА</div>
-                        <canvas class="viewport-canvas-stream" data-name="Plain 1"></canvas>
+                        <div class="viewport-title">Точность</div>
+                        <canvas class="viewport-canvas-stream" data-name="Variance"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>

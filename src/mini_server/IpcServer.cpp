@@ -41,7 +41,8 @@ extern "C++" void IpcServer::serve() {
 
             threadId++;
 
-            threads.insert({threadId, std::thread(IpcServer::interactThread, acceptedSocket, this, threadId)});
+            threads.insert({threadId, std::thread(interactThread, acceptedSocket, this, threadId)});
+            sendingThreads.insert({threadId, std::thread(sendingThread, acceptedSocket, this)});
         }
 
         std::cout << "socket accepted: " << acceptedSocket << ". Connections count: " << acceptedSockets.size() << std::endl;
@@ -68,12 +69,29 @@ extern "C++" void IpcServer::serve() {
 }
 
 void IpcServer::runClient() {
+    use_defer;
     running = true;
+    defer(running = false);
     interact(socket);
 }
 
+void IpcServer::sendingThread(int interactionSocket, IpcServer *server) {
+    while (server->running) {
+        auto &task = server->sendingTasks[interactionSocket];
+        if (!task.ready) {
+            std::unique_lock lock(server->sendingMutex);
+            server->sendingCV.wait_for(lock, std::chrono::milliseconds(200));
+            continue;
+        }
+        task.ready = false;
+        server->sendFrame(interactionSocket, task.buffer);
+        task.done = true;
+    }
+}
+
 void IpcServer::interactThread(int interactionSocket, IpcServer *server, int threadId) {
-    ecv::Defer removeThread([&server, threadId, interactionSocket]() {
+    use_defer;
+    defer ({
         std::lock_guard lock(server->mutex);
         server->deadThreads.insert(threadId);
         server->acceptedSockets.erase(interactionSocket);
@@ -133,19 +151,21 @@ void IpcServer::interact(int interactionSocket) const {
                     if (offset + sizeof (MessageHeader) > receivedSize) {
                         break;
                     }
-                    auto h = (MessageHeader *)(&buffer[offset]);
+                    std::cout << "Processing offset " << offset << std::endl;
+                    MessageHeader h = {};
+                    memcpy(&h, &buffer[offset], sizeof(h));
                     auto d = &buffer[sizeof (MessageHeader) + offset];
-                    auto frameSize = h->size + sizeof(MessageHeader);
+                    auto frameSize = h.size + sizeof(MessageHeader);
                     if (offset + frameSize > receivedSize) {
                         break;
                     }
                     offset += frameSize;
                     if (onStringMessage != nullptr) {
-                        const auto &message = std::string(reinterpret_cast<const char *>(d), h->size);
+                        const auto message = std::string(d, h.size);
                         onStringMessage(interactionSocket, message);
                     }
                     if (onBinaryMessage != nullptr) {
-                        onBinaryMessage(interactionSocket, d, h->size);
+                        onBinaryMessage(interactionSocket, d, h.size);
                     }
                 };
                 if (offset > 0 && receivedSize - offset > 0) {
@@ -173,9 +193,23 @@ extern "C++" void IpcServer::broadcast(const void *buffer, size_t bufferSize, un
     mutex.unlock();
 
     auto frame = createFrame(buffer, bufferSize, expire, type);
-#pragma omp parallel for default(none) shared(frame, threadSafeAcceptedSockets)
-    for (auto acceptedSocket : threadSafeAcceptedSockets) {
-        sendFrame(acceptedSocket, frame);
+
+    std::atomic<bool> hasReady = false;
+
+    for (int acceptedSocket : threadSafeAcceptedSockets) {
+        auto &t = sendingTasks[acceptedSocket];
+        if (t.done == false) {
+            continue;
+        }
+
+        t.done = false;
+        t.buffer = frame;
+        t.ready = true;
+        hasReady = true;
+    }
+
+    if (hasReady) {
+        sendingCV.notify_all();
     }
 }
 
@@ -187,13 +221,16 @@ std::vector<char> IpcServer::createFrame(const void *buffer, size_t bufferSize, 
     return frame;
 }
 
-unsigned long IpcServer::getExpire(unsigned long ttl) const {
+unsigned long IpcServer::getExpire(unsigned long ttl, long frameCreatedAt) const {
     if (ttl > 0) {
-        return std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::high_resolution_clock::now().time_since_epoch()).count() + ttl;
-    } else {
-        return 0;
+        auto now = frameCreatedAt == 0
+            ? std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()
+            : frameCreatedAt;
+
+        return now + ttl;
     }
+
+    return 0;
 }
 
 void IpcServer::sendFrame(int s, const std::vector<char> &frame) {
