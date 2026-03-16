@@ -4,6 +4,7 @@
 #include <vector>
 #include <stdexcept>
 #include <format>
+#include <cstring>
 
 namespace ecv {
     struct CaptureInfo {
@@ -24,8 +25,8 @@ namespace ecv {
     };
 
     struct CaptureBuffer {
-        int bufferSize;
-        int nCaptures;
+        int bufferSize = 0;
+        int nCaptures = 0;
 
         [[nodiscard]] static const CaptureBuffer *getHeader(const std::vector<char> &buffer) {
             return reinterpret_cast<const CaptureBuffer *>(buffer.data());

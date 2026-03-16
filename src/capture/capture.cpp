@@ -36,13 +36,14 @@ template <class T> size_t reserveBuffer(std::vector<char> &buffer, size_t offset
     return sizeof (T) * size;
 }
 
-void closeAll(std::vector<FILE *> captures) {
-    for (auto & capture : captures) {
+void closeAll(std::vector<FILE *> &captures) {
+    for (int i = 0; i < captures.size(); ++i) {
+        const auto capture = captures[i];
         if (capture == nullptr) {
             continue;
         }
         fclose(capture);
-        capture = nullptr;
+        captures[i] = nullptr;
     }
 }
 
@@ -132,7 +133,7 @@ int main(int argc, const char **argv) {
             }
 
             const auto captureCommand = std::format(
-                    "ffmpeg -loglevel error -f v4l2 {} {} {} -hwaccel auto -i {} -f rawvideo -filter:v 'format=bgr24' -flags low_delay -fflags nobuffer -avioflags direct -",
+                    "ffmpeg -loglevel fatal -f v4l2 {} {} {} -hwaccel auto -i {} -f rawvideo -filter:v 'format=bgr24' -flags low_delay -fflags nobuffer -avioflags direct -",
                     !format.empty() ? std::format("-input_format {}", format) : "",
                     !size.empty() ? std::format("-s {}", size) : "",
                     fps > 0 ? std::format("-framerate {}", fps) : "",

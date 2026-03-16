@@ -1,12 +1,13 @@
 #include "ConnectionHandler.h"
 #include <unistd.h>
 #include <semaphore>
+#include <poll.h>
 #include <seasocks/StringUtil.h>
 #include <seasocks/Connection.h>
 #include <netinet/tcp.h>
 
 void ConnectionHandler::start() {
-    readingThread = std::thread([](WebSocket *c, int _socketFd, ConnectionHandler *that) {
+    readingThread = std::thread([this](WebSocket *c, int _socketFd) {
         if (auto connection = dynamic_cast<seasocks::Connection *>(c); connection != nullptr) {
             auto socket = connection->getFd();
             int setTrue = 1;
@@ -21,10 +22,22 @@ void ConnectionHandler::start() {
 
         size_t receivedSize = 0;
         auto &_server = c->server();
-        while (that->running) {
+
+
+        struct pollfd fd = { .fd = _socketFd, .events = POLLIN };
+        while (running) {
+            int pollStatus = poll(&fd, 1, 50);
+            if (pollStatus < 0) {
+                throw std::runtime_error(strerror(errno));
+            }
+
+            if (pollStatus == 0) {
+                continue;
+            }
+
             auto n = recv(_socketFd, buffer + receivedSize, currentBufferSize - receivedSize, 0);
 
-            if (n < 0) {
+            if (n <= 0) {
                 perror("Unable to read socket");
                 auto err = errno;
                 std::mutex shudownMutex;
@@ -34,15 +47,15 @@ void ConnectionHandler::start() {
                 _server.execute(std::function{[&c, buffer, n, err, &shudownMutex]() {
                     c->send("Unable to read socket");
                     c->send(strerror(err));
+                    shudownMutex.unlock();
                     c->close();
                     std::cerr << "closing connection" << std::endl;
-                    shudownMutex.unlock();
                 }});
 
                 // Дожидаемся завершения _server.execute
                 shudownMutex.lock();
                 shudownMutex.unlock();
-                that->selfStop();
+                selfStop();
 
                 break;
             }
@@ -69,35 +82,35 @@ void ConnectionHandler::start() {
             }
 
             if (messageSize > 0) {
-                if (that->sendingQueueDepth != -1) {
-                    that->sendingMutex.try_acquire_until(std::chrono::time_point<std::chrono::system_clock>(std::chrono::milliseconds(header->ttl)));
+                if (sendingQueueDepth != -1) {
+                    sendingMutex.try_acquire_until(std::chrono::time_point<std::chrono::system_clock>(std::chrono::milliseconds(header->ttl)));
 
-                    auto now = duration_cast<std::chrono::milliseconds>(
+                    auto now = duration_cast<std::chrono::microseconds>(
                             std::chrono::high_resolution_clock::now().time_since_epoch()).count();
                     if (header->ttl == 0 || header->ttl > now) {
 
-                        std::cerr << "Sending frame size " << messageSize << " ttl remaining " << header->ttl - now << std::endl;
+                        std::cerr << "Sending frame size " << messageSize << " ttl remaining " << header->ttl - now << " us" << std::endl;
 
                         const uint8_t *copyOfData = (uint8_t *)malloc(messageSize);
                         memcpy((void *)copyOfData, data, messageSize);
 
-                        _server.execute(std::function{[c, copyOfData, messageSize, &that]() {
-                            if (!that->running) {
-                                that->sendingMutex.release();
+                        _server.execute(std::function{[c, copyOfData, messageSize, this]() {
+                            if (!running) {
+                                sendingMutex.release();
 
                                 return;
                             }
 
                             c->send(copyOfData, messageSize);
                             free((void *)copyOfData);
-                            that->sendingMutex.release();
+                            sendingMutex.release();
                         }});
                     } else {
                         std::cerr << "Dropped frame size " << messageSize << " ttl expired " << now - header->ttl << std::endl;
                     }
                 } else {
-                    _server.execute(std::function{[c, data, messageSize, &that]() {
-                        if (!that->running) {
+                    _server.execute(std::function{[c, data, messageSize, this]() {
+                        if (!running) {
                             return;
                         }
 
@@ -115,21 +128,12 @@ void ConnectionHandler::start() {
         shutdown(_socketFd, SHUT_RDWR);
         close(_socketFd);
         free((void *) buffer);
-    }, connection, socketFd, this);
+    }, connection, socketFd);
 
     running = true;
 }
 
 void ConnectionHandler::onData(const uint8_t *data, size_t dataSize) {
-//    if (this->sendingQueueDepth != -1) {
-//        if (dataSize == 3 && strncmp((const char *)(data), "ACK", 3) == 0) {
-//            std::cerr << "ACK received" << std::endl;
-//
-//            sendingMutex.release();
-//            return;
-//        }
-//    }
-
     auto *frame = new uint8_t[dataSize + sizeof(MessageHeader)];
     auto *header = reinterpret_cast<MessageHeader *>(frame);
     auto *body = (frame + sizeof(MessageHeader));
@@ -147,19 +151,23 @@ void ConnectionHandler::onData(const uint8_t *data, size_t dataSize) {
         connection->send("Unable to write to socket");
         connection->send(strerror(errno));
         connection->close();
-
-        return;
     }
 }
 
 void ConnectionHandler::stop() {
+    std::cerr << "Stopping connectionHandler" << std::endl;
     if (running) {
         running = false;
+        if (readingThread.joinable()) {
+            readingThread.join();
+        }
+        std::cerr << "Stopped connectionHandler" << std::endl;
         shutdown(socketFd, SHUT_RDWR);
         close(socketFd);
-    }
-    if (readingThread.joinable()) {
-        readingThread.join();
+    } else {
+        if (readingThread.joinable()) {
+            readingThread.join();
+        }
     }
 }
 

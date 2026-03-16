@@ -16,6 +16,7 @@ namespace mini_server {
         typedef std::function<void(int socket, const std::string &)> StringMessageHandler;
         typedef std::function<void(int socket, const void *buffer, size_t size)> BinaryMessageHandler;
         typedef std::function<void(int socket)> CloseHandler;
+        typedef std::function<int(int socket)> ReconnectHandler;
         enum MessageTypeEnum : unsigned int {
             TYPE_MAT = 0,
             TYPE_TELEMETRY = 1,
@@ -40,7 +41,7 @@ namespace mini_server {
         std::set<int> acceptedSockets;
         mutable std::mutex sendingMutex;
         mutable std::condition_variable sendingCV;
-        std::unordered_map<int, SendingTask> sendingTasks;
+        std::unordered_map<int, std::shared_ptr<SendingTask>> sendingTasks;
         std::unordered_map<int, std::thread> sendingThreads;
         std::unordered_map<int, std::thread> threads;
         std::set<int> deadThreads;
@@ -48,12 +49,14 @@ namespace mini_server {
         StringMessageHandler onStringMessage;
         BinaryMessageHandler onBinaryMessage;
         CloseHandler onClose;
+        ReconnectHandler onReconnect;
         static void interactThread(int socket, IpcServer *server, int threadId);
-        void interact(int socket) const;
+        void interact(int interactionSocket, int threadId) const;
     public:
         void setOnMessage(StringMessageHandler onMessage);
         void setOnMessage(BinaryMessageHandler onMessage);
         void setOnClose(CloseHandler onClose);
+        void setOnReconnect(ReconnectHandler handler);
 
         void setSocket(int _socket) {
             this->socket = _socket;
@@ -61,10 +64,17 @@ namespace mini_server {
         void serve();
         void runClient();
 
-        static void sendingThread(int interactionSocket, IpcServer *server);
+        static void sendingThread(int interactionSocket, IpcServer *server, int threadId);
 
         void stop() {
             running = false;
+            sendingCV.notify_all();
+            for (auto & thread : threads) {
+                thread.second.join();
+            }
+            for (auto & thread : sendingThreads) {
+                thread.second.join();
+            }
         }
 
         void broadcast(const std::string &message);

@@ -68,7 +68,7 @@ extern "C++" int SocketFactory::createClientSocket(const std::string &name) {
     name.copy(addr.sun_path, sizeof(addr.sun_path), 0);
 
     if (connect(sock, (sockaddr *)&addr, sizeof(addr)) < 0) {
-        if (errno != ECONNREFUSED) {
+        if (errno == ECONNREFUSED) {
             return -1;
         }
 

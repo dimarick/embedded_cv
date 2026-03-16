@@ -42,7 +42,8 @@ extern "C++" void IpcServer::serve() {
             threadId++;
 
             threads.insert({threadId, std::thread(interactThread, acceptedSocket, this, threadId)});
-            sendingThreads.insert({threadId, std::thread(sendingThread, acceptedSocket, this)});
+            sendingTasks[acceptedSocket] = std::make_shared<SendingTask>();
+            sendingThreads.insert({threadId, std::thread(sendingThread, acceptedSocket, this, threadId)});
         }
 
         std::cout << "socket accepted: " << acceptedSocket << ". Connections count: " << acceptedSockets.size() << std::endl;
@@ -55,10 +56,15 @@ extern "C++" void IpcServer::serve() {
                 if (it == threads.end()) {
                     continue;
                 }
-
                 it->second.join();
-                deadThreads.erase(tid);
+                const auto &it2 = sendingThreads.find(tid);
+                if (it2 == sendingThreads.end()) {
+                    continue;
+                }
+                it2->second.join();
                 threads.erase(tid);
+                sendingThreads.erase(tid);
+                deadThreads.erase(tid);
 
                 std::cout << tid << " thread stopped" << std::endl;
             }
@@ -72,20 +78,38 @@ void IpcServer::runClient() {
     use_defer;
     running = true;
     defer(running = false);
-    interact(socket);
+    interact(socket, 0);
 }
 
-void IpcServer::sendingThread(int interactionSocket, IpcServer *server) {
+void IpcServer::sendingThread(int interactionSocket, IpcServer *server, int threadId) {
+    use_defer;
+    defer ({
+        std::lock_guard lock(server->mutex);
+        server->sendingTasks.erase(interactionSocket);
+    });
+
     while (server->running) {
-        auto &task = server->sendingTasks[interactionSocket];
-        if (!task.ready) {
+        std::shared_ptr<SendingTask> task;
+        {
+            std::lock_guard lock(server->mutex);
+            if (server->deadThreads.contains(threadId)) {
+                break;
+            }
+
+            const auto &it = server->sendingTasks.find(interactionSocket);
+            if (it == server->sendingTasks.end()) {
+                break;
+            }
+            task = it->second;
+        }
+        if (!task->ready) {
             std::unique_lock lock(server->sendingMutex);
             server->sendingCV.wait_for(lock, std::chrono::milliseconds(200));
             continue;
         }
-        task.ready = false;
-        server->sendFrame(interactionSocket, task.buffer);
-        task.done = true;
+        task->ready = false;
+        server->sendFrame(interactionSocket, task->buffer);
+        task->done = true;
     }
 }
 
@@ -99,13 +123,13 @@ void IpcServer::interactThread(int interactionSocket, IpcServer *server, int thr
     });
 
     try {
-        server->interact(interactionSocket);
+        server->interact(interactionSocket, threadId);
     } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
     }
 }
 
-void IpcServer::interact(int interactionSocket) const {
+void IpcServer::interact(int interactionSocket, int threadId) const {
     struct pollfd fd = { .fd = interactionSocket, .events = POLLIN };
 
     size_t receivedSize = 0;
@@ -113,6 +137,13 @@ void IpcServer::interact(int interactionSocket) const {
     auto buffer = std::vector<char>(currentBufferSize);
 
     while (running) {
+        {
+            std::lock_guard lock(mutex);
+            if (threadId != 0 && deadThreads.contains(threadId)) {
+                break;
+            }
+        }
+
         int pollStatus = poll(&fd, 1, 50);
         if (pollStatus < 0) {
             throw std::runtime_error(strerror(errno));
@@ -124,12 +155,11 @@ void IpcServer::interact(int interactionSocket) const {
 
         auto n = recv(interactionSocket, buffer.data() + receivedSize, currentBufferSize - receivedSize, 0);
 
-        if (errno == EPIPE) {
-            break;
-        }
-
-        if (n == 0) {
-            break;
+        if (errno == EPIPE || errno == ENOENT || n == 0) {
+            auto socket = onReconnect(interactionSocket);
+            close(interactionSocket);
+            interactionSocket = socket;
+            fd.fd = interactionSocket;
         }
 
         if (n < 0) {
@@ -198,13 +228,13 @@ extern "C++" void IpcServer::broadcast(const void *buffer, size_t bufferSize, un
 
     for (int acceptedSocket : threadSafeAcceptedSockets) {
         auto &t = sendingTasks[acceptedSocket];
-        if (t.done == false) {
+        if (t->done == false) {
             continue;
         }
 
-        t.done = false;
-        t.buffer = frame;
-        t.ready = true;
+        t->done = false;
+        t->buffer = frame;
+        t->ready = true;
         hasReady = true;
     }
 
@@ -224,10 +254,10 @@ std::vector<char> IpcServer::createFrame(const void *buffer, size_t bufferSize, 
 unsigned long IpcServer::getExpire(unsigned long ttl, long frameCreatedAt) const {
     if (ttl > 0) {
         auto now = frameCreatedAt == 0
-            ? std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()
+            ? std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()
             : frameCreatedAt;
 
-        return now + ttl;
+        return now + ttl * 1000;
     }
 
     return 0;
@@ -274,6 +304,10 @@ void IpcServer::setOnMessage(BinaryMessageHandler handler) {
 
 void IpcServer::setOnClose(CloseHandler handler) {
     onClose = std::move(handler);
+}
+
+void IpcServer::setOnReconnect(ReconnectHandler handler) {
+    onReconnect = std::move(handler);
 }
 
 void IpcServer::send(int s, const void *buffer, size_t bufferSize, unsigned long ttl, IpcServer::MessageTypeEnum type) {

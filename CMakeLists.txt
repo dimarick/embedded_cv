@@ -160,10 +160,4 @@ add_executable(capture
 
 target_link_libraries(capture PUBLIC cpptrace::cpptrace OpenCL::OpenCL ${OpenCV_LIBS})
 
-add_executable(v4l2grab
-        src/capture/v4l2grab.cpp
-)
-
-target_link_libraries(v4l2grab PUBLIC OpenCL::OpenCL cpptrace::cpptrace ${OpenCV_LIBS})
-
 install(TARGETS cv DESTINATION bin)

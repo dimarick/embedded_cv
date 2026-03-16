@@ -5,6 +5,7 @@
 #include "core/mat.hpp"
 #include <atomic>
 #include <condition_variable>
+#include <iostream>
 #include <shared_mutex>
 #include <utility>
 
@@ -17,7 +18,7 @@ namespace ecv {
         mini_server::IpcServer captureServer;
 
         std::shared_mutex readerLock;
-        std::vector<cv::UMat> readingFrames;
+        std::vector<cv::Mat> readingFrames;
         std::vector<CaptureInfo> frameInfo;
         std::thread captureThread;
 
@@ -31,6 +32,7 @@ namespace ecv {
         bool run() {
             auto onFrameSetReceived =
                 [this](int socket, const void *buffer, size_t size) {
+                    auto bufferEnd = reinterpret_cast<const char *>(buffer) + size;
                     auto header = ecv::CaptureBuffer::getHeader(buffer, size);
                     if (header == nullptr) {
                         return;
@@ -47,15 +49,46 @@ namespace ecv {
 
                     for (int i = 0; i < header->nCaptures; i++) {
                         frameInfo[i] = *info;
+                        if (info->w * info->h * info->channels != info->size) {
+                            // throw std::runtime_error(std::format("Failed capture info size {}*{}*{}={}", info->w, info->h, info->channels, info->size));
+                            return;
+                        }
+
+                        auto captureEnd = imageData + info->size;
+                        if (captureEnd > bufferEnd) {
+                            // throw std::runtime_error(std::format("Buffer overflow {} {}", captureEnd, bufferEnd));
+                            return;
+                        }
+
                         auto mat = cv::Mat(info->h, info->w, CV_8UC(info->channels), (void *)imageData);
                         mat.copyTo(readingFrames[i]);
-                        info = info->getNextCaptureInfo();
-                        imageData = info->getImageData();
+                        if (i < header->nCaptures - 1) {
+                            info = info->getNextCaptureInfo();
+                            imageData = info->getImageData();
+                        }
                     }
 
                     hasNewFrames = true;
                     newFramesAvailable.notify_all();
             };
+
+            captureServer.setOnMessage(onFrameSetReceived);
+
+            auto reconnect = [this] (int socket) {
+                std::cerr << "Socket socket" << socket << " closed" << strerror(errno) << std::endl;
+                do {
+                    sleep(1);
+                    captureSocket = mini_server::SocketFactory::createClientSocket(captureSocketName);
+                } while (captureSocket == -1 && errno == ECONNREFUSED);
+
+                if (captureSocket == -1) {
+                    throw std::runtime_error(std::format("Socket creation failed {} {}", captureSocketName, strerror(errno)));
+                }
+
+                return captureSocket;
+            };
+
+            captureServer.setOnReconnect(reconnect);
 
             captureSocket = mini_server::SocketFactory::createClientSocket(captureSocketName);
 
@@ -64,7 +97,6 @@ namespace ecv {
             }
 
             captureServer.setSocket(captureSocket);
-            captureServer.setOnMessage(onFrameSetReceived);
             captureThread = std::thread([this]() {captureServer.runClient();});
 
             return true;
@@ -83,7 +115,7 @@ namespace ecv {
             return captureServer.isRunning();
         }
 
-        std::vector<cv::UMat> getNewFrames(std::vector<CaptureInfo> *captureInfo = nullptr) {
+        std::vector<cv::Mat> getNewFrames(std::vector<CaptureInfo> *captureInfo = nullptr) {
             if (!hasNewFrames) {
                 std::unique_lock lock(newFramesMutex);
                 newFramesAvailable.wait_for(lock, std::chrono::milliseconds(200));
@@ -93,8 +125,8 @@ namespace ecv {
                 }
             }
 
-            std::vector<cv::UMat> frames(readingFrames.size());
-            std::shared_lock lock(readerLock);
+            std::vector<cv::Mat> frames(readingFrames.size());
+            std::unique_lock lock(readerLock);
             frames.resize(readingFrames.size());
             for (int i = 0; i < readingFrames.size(); i++) {
                 frames[i] = readingFrames[i].clone();
