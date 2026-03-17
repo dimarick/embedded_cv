@@ -182,7 +182,7 @@ int main(int argc, const char **argv) {
                 }
 
                 cv::FileStorage fs;
-                fs.open(filename, cv::FileStorage::READ);
+                fs.open(std::format("config_{}.yaml", i), cv::FileStorage::READ);
                 if (fs.isOpened()) {
                     std::lock_guard lock(mapsMutex);
                     calibrationData[i].load(fs);
@@ -299,15 +299,55 @@ int main(int argc, const char **argv) {
         disparityEvaluator.evaluateDisparity(result, disparity, variance);
         endDisp = std::chrono::high_resolution_clock::now();
 
-        disparity.copyTo(disparityFp);
+        disparity.convertTo(disparityFp, CV_32F);
+        disparityFp /= ecv::DisparityEvaluator::DISPARITY_PRECISION;
+        cv::Mat depth;
+
+        const auto &d = calibrationData[0];
+        cv::reprojectImageTo3D(disparityFp, depth, d.Q, true, CV_32FC1);
+
+        std::vector<cv::Point3f> points;
+        std::vector<float> disps;
+
+        depth = depth.reshape(3, 1);
+        disparityFp = disparityFp.reshape(1, 1);
+        for (int j = 0; j < depth.total(); j++) {
+            const auto &p = depth.at<cv::Point3f>(j);
+            if (p.z < 1000 && p.z > -1000) {
+                points.emplace_back(p);
+            }
+        }
+        for (int j = 0; j < disparityFp.total(); j++) {
+            const auto &p = disparityFp.at<float>(j);
+            if (p != 0) {
+                disps.emplace_back(disparityFp.at<float>(j));
+            }
+        }
+
         if (minVal == 0 || maxVal == 0) {
             cv::minMaxLoc(disparityFp, &minVal, &maxVal);
-            maxVal = 300 * ecv::DisparityEvaluator::DISPARITY_PRECISION;
+            maxVal = 384;
             minVal = 0;
         }
 
+        depth = depth.reshape(3, disparity.rows);
+        disparityFp = disparityFp.reshape(1, disparity.rows);
+        std::vector<cv::Mat> depthChannels;
+        cv::split(depth, depthChannels);
+
         disparityFp -= minVal;
         disparityFp *= 255.0 / (maxVal - minVal);
+
+
+        if (minVal == 0 || maxVal == 0) {
+            cv::minMaxLoc(depthChannels[2], &minVal, &maxVal);
+        }
+
+        depthChannels[2] -= minVal;
+        depthChannels[2] *= 255.0 / (maxVal - minVal);
+        cv::Mat depth8;
+        depthChannels[2].convertTo(depth8, CV_8U);
+        cv::applyColorMap(depth8, depth8, cv::ColormapTypes::COLORMAP_JET);
 
 
         disparityFp.convertTo(disparity8, CV_8U);
@@ -329,14 +369,19 @@ int main(int argc, const char **argv) {
         cv::drawMarker(result2[0], mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
         cv::drawMarker(result2[1], mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
         cv::drawMarker(variance8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
+        cv::drawMarker(depth8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
         auto disparityAtPoint = disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
+        auto depthAtPoint = depthChannels[2].at<float>(mouseDisp.y, mouseDisp.x);
         auto varianceAtPoint = variance.at<float>(mouseDisp.y, mouseDisp.x);
         auto dispStr = std::to_string((float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION);
+        auto depthStr = std::to_string((float)depthAtPoint);
         auto varStr = std::to_string((float)varianceAtPoint);
         cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         cv::putText(variance8, varStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
+        cv::putText(depth8, depthStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         remoteView.showMat("Disparity", disparity8);
         remoteView.showMat("Variance", variance8);
+        remoteView.showMat("Depth", depth8);
         for (int j = 0; j < result2.size(); ++j) {
             remoteView.showMat("Plain best " + std::to_string(j), result2[j]);
         }
