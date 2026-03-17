@@ -26,10 +26,22 @@ namespace ecv {
         std::mutex newFramesMutex;
         std::condition_variable newFramesAvailable;
 
+        int reconnect() {
+            do {
+                std::cerr << "Connecting to " << captureSocketName << "..." << strerror(errno) << std::endl;
+                sleep(1);
+                captureSocket = mini_server::SocketFactory::createClientSocket(captureSocketName);
+            } while (captureSocket == -1 && errno == ECONNREFUSED);
+
+            std::cerr << "Connected to " << captureSocketName << "!" << std::endl;
+
+            return captureSocket;
+        };
+
     public:
         explicit SocketCapture(std::string captureSocketName) : captureSocketName(std::move(captureSocketName)) {}
 
-        bool run() {
+        void run() {
             auto onFrameSetReceived =
                 [this](int socket, const void *buffer, size_t size) {
                     auto bufferEnd = reinterpret_cast<const char *>(buffer) + size;
@@ -74,32 +86,18 @@ namespace ecv {
 
             captureServer.setOnMessage(onFrameSetReceived);
 
-            auto reconnect = [this] (int socket) {
+            captureServer.setOnReconnect([this] (int socket) {
                 std::cerr << "Socket socket" << socket << " closed" << strerror(errno) << std::endl;
-                do {
-                    sleep(1);
-                    captureSocket = mini_server::SocketFactory::createClientSocket(captureSocketName);
-                } while (captureSocket == -1 && errno == ECONNREFUSED);
+                captureSocket = reconnect();
 
                 if (captureSocket == -1) {
                     throw std::runtime_error(std::format("Socket creation failed {} {}", captureSocketName, strerror(errno)));
                 }
 
                 return captureSocket;
-            };
-
-            captureServer.setOnReconnect(reconnect);
-
-            captureSocket = mini_server::SocketFactory::createClientSocket(captureSocketName);
-
-            if (captureSocket == -1 && errno == ECONNREFUSED) {
-                return false;
-            }
-
-            captureServer.setSocket(captureSocket);
+            });
+            captureServer.setSocket(reconnect());
             captureThread = std::thread([this]() {captureServer.runClient();});
-
-            return true;
         }
 
         void stop() {
@@ -107,6 +105,7 @@ namespace ecv {
             captureThread.join();
 
             if (captureSocket > 0) {
+                shutdown(captureSocket, SHUT_RDWR);
                 close(captureSocket);
             }
         }
@@ -140,6 +139,10 @@ namespace ecv {
 
             return frames;
         }
+
+        ~SocketCapture() {
+            stop();
+        };
     };
 };
 

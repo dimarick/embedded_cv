@@ -54,10 +54,7 @@ int main(int argc, const char **argv) {
     ecv::Telemetry::setLogLevel(ecv::Telemetry::LogLevel::DEBUG);
 
     ecv::SocketCapture socketCapture(argv[1]);
-    while (!socketCapture.run()) {
-        ecv::Telemetry::error(std::format("Failed to connect to {}. Error is {}", argv[1], strerror(errno)));
-        sleep(5);
-    }
+    socketCapture.run();
 
     std::vector<cv::Mat> frames;
     std::vector<cv::UMat> uFrames;
@@ -128,6 +125,10 @@ int main(int argc, const char **argv) {
     while (true) {
         std::vector<ecv::CaptureInfo> captureInfo;
         frames = socketCapture.getNewFrames(&captureInfo);
+
+        if (frames.empty()) {
+            continue;
+        }
 
         cv::rotate(frames[1], frames[1], cv::ROTATE_180);
         uFrames.resize(frames.size());

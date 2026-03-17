@@ -108,10 +108,7 @@ int main(int argc, const char **argv) {
     ecv::Telemetry::setServer(tmServer);
 
     ecv::SocketCapture socketCapture(argv[1]);
-    while (!socketCapture.run()) {
-        ecv::Telemetry::error(std::format("Failed to connect to {}. Error is {}", argv[1], strerror(errno)));
-        sleep(5);
-    }
+    socketCapture.run();
 
     signal(SIGINT, [](int signal) {
         running = false;

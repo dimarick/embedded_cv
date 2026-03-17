@@ -130,7 +130,7 @@ void IpcServer::interactThread(int interactionSocket, IpcServer *server, int thr
 }
 
 void IpcServer::interact(int interactionSocket, int threadId) const {
-    struct pollfd fd = { .fd = interactionSocket, .events = POLLIN };
+   struct pollfd fd = { .fd = interactionSocket, .events = POLLIN };
 
     size_t receivedSize = 0;
     size_t currentBufferSize = sizeof (MessageHeader) + 100;

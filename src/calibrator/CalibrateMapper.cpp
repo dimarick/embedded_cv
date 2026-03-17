@@ -518,14 +518,10 @@ namespace ecv {
         for (const auto &p : pointsSet) {
             const auto &z = (p.z - zMin) / range;
 
-            if (z < 0.001) {
-                continue;
-            }
-
             auto i = stat.n();
 
             if (i > 5) {
-                if (stat.sigmaValue(z) > 6) {
+                if (stat.sigmaValue(z) > 5) {
                     continue;
                 }
             }
@@ -915,7 +911,7 @@ namespace ecv {
         auto i = findNearestPointId(point, points, searchRadius);
 
         if (i < 0) {
-            return {point.x, point.y, -1};
+            return {point.x, point.y, 0};
         }
 
         return points[i];
