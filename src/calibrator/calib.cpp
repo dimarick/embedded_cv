@@ -59,7 +59,8 @@ int main(int argc, const char **argv) {
         sleep(5);
     }
 
-    std::vector<cv::UMat> frames;
+    std::vector<cv::Mat> frames;
+    std::vector<cv::UMat> uFrames;
     do {
         frames = socketCapture.getNewFrames();
     } while (frames.empty());
@@ -129,6 +130,11 @@ int main(int argc, const char **argv) {
         frames = socketCapture.getNewFrames(&captureInfo);
 
         cv::rotate(frames[1], frames[1], cv::ROTATE_180);
+        uFrames.resize(frames.size());
+#pragma omp parallel for default(none) shared(frames, uFrames)
+        for (int i = 0; i < frames.size(); ++i) {
+            frames[i].copyTo(uFrames[i]);
+        }
 
         if (frames.empty()) {
             continue;
@@ -141,11 +147,11 @@ int main(int argc, const char **argv) {
         std::vector<cv::Mat> readFrames(frames.size());
 
         std::vector peaks(frames.size(), std::vector<ecv::CalibrateMapper::Point3>(500));
-#pragma omp parallel for default(none) shared(peaks, frames, calibrateMapper)
-        for (int i = 0; i < frames.size(); ++i) {
+#pragma omp parallel for default(none) shared(peaks, uFrames, calibrateMapper)
+        for (int i = 0; i < uFrames.size(); ++i) {
             size_t peaksSize;
 
-            calibrateMapper[i].detectPeaks(frames[i], peaks[i], &peaksSize);
+            calibrateMapper[i].detectPeaks(uFrames[i], peaks[i], &peaksSize);
             peaks[i].resize(peaksSize);
         }
 
@@ -159,7 +165,7 @@ int main(int argc, const char **argv) {
             std::vector<ecv::CalibrateMapper::Point3> rectifiedGrid(500);
             int w = 0, h = 0;
 
-            auto frameQuality = calibrateMapper[i].detectFrameImagePointsGrid(frames[i], peaks[i], imageGrid, &w, &h, debug);
+            auto frameQuality = calibrateMapper[i].detectFrameImagePointsGrid(frames[i].size(), peaks[i], imageGrid, &w, &h, debug);
 
             std::vector<ecv::CalibrateMapper::Point3> calibImageGrid(500), calibObjectGrid(500);
 

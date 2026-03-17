@@ -54,7 +54,8 @@ namespace ecv {
         void detectPeaks(const cv::UMat &frame, std::vector<Point3> &peaks, size_t *size);
         double detectBaseSquare(const cv::Size &frameSize, const std::vector<Point3> &peaks, BaseSquare &square);
         double detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks, const BaseSquare &square, std::vector<Point3> &imageGrid, int *w, int *h);
-        double detectFrameImagePointsGrid(const cv::UMat &frame, const std::vector<Point3>& peaks, std::vector<Point3> &imageGrid, int *w, int *h, cv::Mat &debugFrame);
+        double detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks, std::vector<Point3> &imageGrid, int *w, int *h, cv::Mat &
+                                          debugFrame);
         [[nodiscard]] size_t suggestPatternSize(const std::vector<Point3> &imageGrid, const BaseSquare &square, int w, int h) const;
         [[nodiscard]] double suggestSkew(const std::vector<Point3> &imageGrid, int w, int h) const;
 

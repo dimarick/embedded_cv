@@ -39,17 +39,17 @@ namespace ecv {
         }
     }
 
-    double CalibrateMapper::detectFrameImagePointsGrid(const cv::UMat &frame, const std::vector<Point3> &peaks,
+    double CalibrateMapper::detectFrameImagePointsGrid(const cv::Size &frameSize, const std::vector<Point3> &peaks,
                                                        std::vector<Point3> &imageGrid,
                                                        int *w, int *h, cv::Mat &debugFrame) {
         BaseSquare square;
         size_t size = peaks.size();
         drawPeaks(debugFrame, peaks, size, cv::Scalar(0, 255, 0));
-        auto squareRmse = detectBaseSquare(frame.size(), peaks , square);
+        auto squareRmse = detectBaseSquare(frameSize, peaks , square);
 
         drawBaseSquare(debugFrame, square, squareRmse < 0.2f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255));
 
-        auto result = detectFrameImagePointsGrid(frame.size(), peaks, square, imageGrid, w, h);
+        auto result = detectFrameImagePointsGrid(frameSize, peaks, square, imageGrid, w, h);
 
         if (result < 0.3 && !debugFrame.empty()) {
             drawBaseSquare(debugFrame, square, squareRmse < 0.2f ? cv::Scalar(0, 255, 255) : cv::Scalar(0, 0, 255));
