@@ -11,11 +11,13 @@
 #include <atomic>
 #include <SocketFactory.h>
 #include <csignal>
+#include <filesystem>
 #include <core/opencl/ocl_defs.hpp>
 #include <core/ocl.hpp>
 #include <common/RemoteView.h>
 
 #include "DisparityEvaluator.h"
+#include "calibrator/Calibrator.h"
 #include "capture/SocketCapture.h"
 #include "common/MatStorage.h"
 #include "common/Telemetry.h"
@@ -136,15 +138,59 @@ int main(int argc, const char **argv) {
     }
 
     // std::vector<cv::Mat> invMaps;
-    std::vector<cv::UMat> maps;
+    std::mutex mapsMutex;
+    std::vector<cv::UMat> maps, newMaps;
+    std::vector<std::filesystem::file_time_type> mapsMTime;
+    std::vector<bool> mapsUpdated;
+    std::vector<ecv::CalibrationData> calibrationData;
 
     for (int i = 0; i < 10; i++) {
         cv::UMat map;
-        if (!ecv::MatStorage::matRead(std::format("map{}.bin", i), map)) {
+        if (!ecv::MatStorage::matRead(std::format("map_{}.bin", i), map)) {
             break;
         }
+        newMaps.emplace_back(map);
         maps.emplace_back(map);
+
+        cv::FileStorage fs;
+        fs.open(std::format("config_{}.yaml", i), cv::FileStorage::READ);
+        if (fs.isOpened()) {
+            ecv::CalibrationData c;
+            c.load(fs);
+            calibrationData.emplace_back(c);
+            fs.release();
+        }
     }
+
+    mapsMTime.resize(newMaps.size());
+    mapsUpdated.resize(newMaps.size());
+
+    std::thread mapsWatch([&newMaps, &mapsMTime, &mapsUpdated, &mapsMutex, &calibrationData](){
+        while (running) {
+            sleep(5);
+            for (int i = 0; i < newMaps.size(); i++) {
+                auto filename = std::format("map_{}.bin", i);
+                auto ftime = std::filesystem::last_write_time(filename);
+
+                if (ftime > mapsMTime[i]) {
+                    std::lock_guard lock(mapsMutex);
+                    cv::UMat map;
+                    ecv::MatStorage::matRead(filename, map);
+                    newMaps[i] = map;
+                    mapsMTime[i] = ftime;
+                    mapsUpdated[i] = true;
+                }
+
+                cv::FileStorage fs;
+                fs.open(filename, cv::FileStorage::READ);
+                if (fs.isOpened()) {
+                    std::lock_guard lock(mapsMutex);
+                    calibrationData[i].load(fs);
+                    fs.release();
+                }
+            }
+        }
+    });
 
     // for (int i = 0; i < maps.size(); ++i) {
     //     invMap(maps[i].getMat(cv::ACCESS_READ), invMaps[i]);
@@ -186,6 +232,14 @@ int main(int argc, const char **argv) {
 
         if (frames.empty()) {
             continue;
+        }
+
+        for (int j = 0; j < frames.size(); j++) {
+            std::lock_guard lock(mapsMutex);
+            if (mapsUpdated[j] != false) {
+                mapsUpdated[j] = false;
+                maps[i] = newMaps[j].clone();
+            }
         }
 
         std::vector<cv::UMat> result(frames.size());

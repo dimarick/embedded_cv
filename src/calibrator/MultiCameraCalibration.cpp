@@ -195,10 +195,12 @@ void MultiCameraCalibration::multicamThreadCallback(const std::vector<FrameRefLi
         calibrationData.Pi = P2;
         calibrationData.Rs = Rs[i];
         calibrationData.Ts = Ts[i];
+        calibrationData.Q = Q;
         calibrationData0.Ri = R1;
         calibrationData0.Pi = P1;
         calibrationData0.Rs = Rs[0];
         calibrationData0.Ts = Ts[0];
+        calibrationData0.Q = Q;
 
         std::uniform_real_distribution<double> randomRange(0., 1.);
         std::mt19937 r {std::random_device{}()};
@@ -208,7 +210,7 @@ void MultiCameraCalibration::multicamThreadCallback(const std::vector<FrameRefLi
         auto gridCost0 = verifyParamsUsingGridMatch(imagePoints[0], calibrationData0);
 
         // оптимизация методом адаптивных ограничений
-        bool condition = (gridCost < gridDistanceCosts[i] || gridCost0 < gridDistanceCosts[0]) && cost < multicamCosts * 2;
+        bool condition = (gridCost < gridDistanceCosts[i] * 1.5 && gridCost0 < gridDistanceCosts[0] * 1.5) && cost < multicamCosts * 2;
         if (condition || randomRange(r) < std::pow(std::numbers::e, (gridDistanceCosts[i] - gridCost) / temperature)) {
             std::cout << (condition ? "Normal... " : "Annealing... ") << i << std::endl;
 

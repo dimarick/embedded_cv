@@ -104,29 +104,6 @@ namespace ecv {
             }
 
             auto callback = [this](int cameraId, const MultiCameraCalibration &that) {
-                cv::FileStorage storage;
-
-                storage.open(std::format("gridDataset{}.yaml", cameraId), cv::FileStorage::WRITE);
-
-                if (storage.isOpened()) {
-                    frameCollectors[cameraId].store(storage);
-                    storage.release();
-                }
-
-                storage.open(std::format("config_{}.yaml", cameraId), cv::FileStorage::WRITE);
-
-                if (storage.isOpened()) {
-                    getRectificationData(cameraId).store(storage);
-                    storage.release();
-                }
-
-                storage.open(std::format("config_0_{}.yaml", cameraId), cv::FileStorage::WRITE);
-
-                if (storage.isOpened()) {
-                    getRectificationData(0).store(storage);
-                    storage.release();
-                }
-
                 this->onUpdateCallback(cameraId, *this);
             };
             multicamThreadHandler = std::make_shared<MultiCameraCalibration>(

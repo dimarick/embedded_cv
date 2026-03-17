@@ -16,6 +16,7 @@ namespace ecv {
         cv::Mat T;
         cv::Mat E;
         cv::Mat F;
+        cv::Mat Q;
         cv::Mat Ts;
         cv::Mat Rs;
         cv::Mat Ri;
@@ -46,6 +47,7 @@ namespace ecv {
             target.T = T.clone();
             target.E = E.clone();
             target.F = F.clone();
+            target.Q = Q.clone();
             target.Rs = Rs.clone();
             target.Ts = Ts.clone();
             target.Ri = Ri.clone();
@@ -63,12 +65,29 @@ namespace ecv {
             return *this;
         }
 
+        void load(const cv::FileStorage &storage) {
+            const cv::FileNode &data = storage["data"];
+            cameraMatrix = data["cameraMatrix"].mat();
+            distCoeff.resize(data["distCoeff"].size());
+            for (int i = 0; i < data["distCoeff"].size(); ++i) {
+                distCoeff[i] = data["distCoeff"][i];
+            }
+            R = data["R"].mat();
+            T = data["T"].mat();
+            Q = data["Q"].mat();
+            Rs = data["Rs"].mat();
+            Ts = data["Ts"].mat();
+            Ri = data["Ri"].mat();
+            Pi = data["Pi"].mat();
+        }
+
         void store(cv::FileStorage &storage) const {
             storage << "data" << "{";
             storage << "cameraMatrix" << cameraMatrix;
             storage << "distCoeff" << distCoeff;
             storage << "R" << R;
             storage << "T" << T;
+            storage << "Q" << Q;
             storage << "Rs" << Rs;
             storage << "Ts" << Ts;
             storage << "Ri" << Ri;
@@ -78,7 +97,6 @@ namespace ecv {
     };
 
     class Calibrator {
-    private:
         void convertTo2dPoints(const std::vector<cv::Point3d> &points3d, std::vector<cv::Point2f> &points2d) const;
         void convertToPlain3dPoints(const std::vector<cv::Point3d> &points1, std::vector<cv::Point3f> &points2) const;
 

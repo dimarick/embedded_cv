@@ -16,6 +16,7 @@
 #include <common/Telemetry.h>
 
 #include "capture/SocketCapture.h"
+#include "common/MatStorage.h"
 
 static std::atomic running = true;
 
@@ -65,8 +66,8 @@ int main(int argc, const char **argv) {
     const cv::Size &size = frames[0].size();
     std::vector<ecv::CalibrateMapper> calibrateMapper(frames.size()), testCalibrateMapper(frames.size());
     std::vector<ecv::Calibrator> calibrator(frames.size());
-    std::vector<ecv::CalibrationData> calibrationData(frames.size(), ecv::CalibrationData(size));
-    std::vector<ecv::CalibrationData> rectificationData(frames.size(), ecv::CalibrationData(size));
+    std::vector calibrationData(frames.size(), ecv::CalibrationData(size));
+    std::vector rectificationData(frames.size(), ecv::CalibrationData(size));
 
     std::vector bestQ(frames.size(), 1. / 0.);
     std::vector bestPairQ(frames.size(), 1. / 0.);
@@ -89,6 +90,16 @@ int main(int argc, const char **argv) {
             calibrationData[cameraId] = that.getCalibrationData(cameraId);
             rectificationData[cameraId] = that.getRectificationData(cameraId);
         }
+        cv::FileStorage storage;
+
+        storage.open(std::format("config_{}.yaml", cameraId), cv::FileStorage::WRITE);
+
+        if (storage.isOpened()) {
+            rectificationData[cameraId].store(storage);
+            storage.release();
+        }
+
+        ecv::MatStorage::matWrite(std::format("map_{}.bin", cameraId), rectifiedMaps[cameraId]);
 
         std::cout << "Calibration updated " << cameraId << ",\t" << that.getProgress(cameraId) << "%\tcost " << that.getViewCosts(cameraId) << std::endl;
     });
