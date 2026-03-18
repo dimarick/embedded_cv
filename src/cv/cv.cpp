@@ -270,7 +270,7 @@ int main(int argc, const char **argv) {
             cv::remap(frames[j], result[j], maps[j], cv::noArray(), cv::INTER_NEAREST);
         }
 
-        for (int j = 0; j < frames.size(); ++j) {
+        for (int j = 1; j < frames.size(); ++j) {
             remoteView.showMat(std::format("Plain {}", j), frames[j]);
         }
 
@@ -315,6 +315,8 @@ int main(int argc, const char **argv) {
             const auto &p = depth.at<cv::Point3f>(j);
             if (p.z < 1000 && p.z > -1000) {
                 points.emplace_back(p);
+            } else {
+                depth.at<cv::Point3f>(j) = cv::Point3f(0, 0, 0);
             }
         }
         for (int j = 0; j < disparityFp.total(); j++) {
@@ -343,10 +345,10 @@ int main(int argc, const char **argv) {
             cv::minMaxLoc(depthChannels[2], &minVal, &maxVal);
         }
 
-        depthChannels[2] -= minVal;
-        depthChannels[2] *= 255.0 / (maxVal - minVal);
+        cv::Mat depthFp = depthChannels[2] - minVal;
+        depthFp *= 255.0 / (maxVal - minVal);
         cv::Mat depth8;
-        depthChannels[2].convertTo(depth8, CV_8U);
+        depthFp.convertTo(depth8, CV_8U);
         cv::applyColorMap(depth8, depth8, cv::ColormapTypes::COLORMAP_JET);
 
 
@@ -371,10 +373,10 @@ int main(int argc, const char **argv) {
         cv::drawMarker(variance8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
         cv::drawMarker(depth8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
         auto disparityAtPoint = disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
-        auto depthAtPoint = depthChannels[2].at<float>(mouseDisp.y, mouseDisp.x);
+        auto depthAtPoint = depthChannels[2].at<float>(mouseDisp.y, mouseDisp.x) * 4;
         auto varianceAtPoint = variance.at<float>(mouseDisp.y, mouseDisp.x);
         auto dispStr = std::to_string((float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION);
-        auto depthStr = std::to_string((float)depthAtPoint);
+        auto depthStr = std::format("{}\n{}", depthAtPoint, (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION * depthAtPoint);
         auto varStr = std::to_string((float)varianceAtPoint);
         cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         cv::putText(variance8, varStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
@@ -382,9 +384,9 @@ int main(int argc, const char **argv) {
         remoteView.showMat("Disparity", disparity8);
         remoteView.showMat("Variance", variance8);
         remoteView.showMat("Depth", depth8);
-        for (int j = 0; j < result2.size(); ++j) {
-            remoteView.showMat("Plain best " + std::to_string(j), result2[j]);
-        }
+
+        cv::putText(depth8, depthStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
+        remoteView.showMat(std::format("Result {}", 0), result2[0]);
 
 #endif
 
