@@ -28,7 +28,7 @@ namespace ecv {
 		+isInsideQuadSimple(const Point3& p, BaseSquare quad) : bool
 		+detectBaseSquare(const cv::Size& frameSize, const std::vector<Point3>& peaks, B
 		+detectFrameImagePointsGrid(const cv::Size& frameSize, const std::vector<Point3>
-		+detectFrameImagePointsGrid(const cv::UMat& frame, const std::vector<Point3>& pe
+		+detectFrameImagePointsGrid(const cv::Size& frameSize, const std::vector<Point3>
 		+generateFrameObjectPointsGrid(std::vector<Point3>& objectGrid, int w, int h) : 
 		+{static} getGridCost(const std::vector<Point3>& grid, int w, int h, int top, in
 		+suggestSkew(const std::vector<Point3>& imageGrid, int w, int h) : double {query
@@ -163,6 +163,7 @@ namespace ecv {
 		+E : cv::Mat
 		+F : cv::Mat
 		+Pi : cv::Mat
+		+Q : cv::Mat
 		+R : cv::Mat
 		+Ri : cv::Mat
 		+Rs : cv::Mat
@@ -174,6 +175,7 @@ namespace ecv {
 		+frameCount : int
 		+distCoeff : std::vector<double>
 		+copyTo(CalibrationData& target) : void {query}
+		+load(const cv::FileStorage& storage) : void
 		+store(cv::FileStorage& storage) : void {query}
 	}
 	class CalibrationStrategy::FrameCompare {

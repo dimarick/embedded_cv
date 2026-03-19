@@ -7,8 +7,8 @@ enum cl_mem_fence_flags {
 }
 namespace ecv {
 	class Defer {
-		+Defer(std::function<void ( )> defer)
 		+~Defer()
+		+operator()(std::function<void ( )> fn) : void
 	}
 	class DisparityEvaluator {
 		+DisparityEvaluator(cl_context c)
@@ -24,20 +24,21 @@ namespace ecv {
 		+{static} matWrite(const std::string& filename, const cv::UMat& mat) : void
 	}
 	class RemoteView {
-		+RemoteView(const std::string& socketPath)
+		+RemoteView(std::string socketPath)
 		+~RemoteView()
 		+createMessageHeaderFromMat(const cv::Mat& mat, const cv::Rect& rect, short view
 		+waitKey() : int
 		+getViews() : std::unordered_map<std::string , CvMatHeader> {query}
 		+createMessageFromMat(CvMatHeader header, const cv::Mat& mat, const cv::Rect& re
-		+showMat(const std::string& viewName, const cv::Mat& mat) : void
-		+showMat(const std::string& viewName, const cv::UMat& mat) : void
+		+showMat(const std::string& viewName, const cv::UMat& mat, long frameCreatedAt) 
+		+showMat(const std::string& viewName, const cv::Mat& mat, long frameCreatedAt) :
 	}
 	class SocketCapture {
 		+SocketCapture(std::string captureSocketName)
+		+~SocketCapture()
 		+isRunning() : bool
-		+run() : bool
-		+getNewFrames(std::vector<CaptureInfo>* captureInfo) : std::vector<cv::UMat>
+		+getNewFrames(std::vector<CaptureInfo>* captureInfo) : std::vector<cv::Mat>
+		+run() : void
 		+stop() : void
 	}
 	class Telemetry {

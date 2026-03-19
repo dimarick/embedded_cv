@@ -16,7 +16,7 @@ std::vector<char>
 		+getClientsCount() : size_t {query}
 		+createFrame(const void* buffer, size_t bufferSize, unsigned long expire, const 
 IpcServer::MessageTypeEnum& type) : std::vector<char> {query}
-		+getExpire(unsigned long ttl) : unsigned long {query}
+		+getExpire(unsigned long ttl, long frameCreatedAt) : unsigned long {query}
 		+broadcast(const std::string& message) : void
 		+broadcast(const void* buffer, size_t bufferSize, unsigned long ttl, MessageType
 Enum type) : void
@@ -26,10 +26,13 @@ Enum type) : void
 		+send(int s, const void* buffer, size_t bufferSize, unsigned long ttl, MessageTy
 peEnum type) : void
 		+sendFrame(int s, const std::vector<char>& frame) : void
+		+{static} sendingThread(int interactionSocket, IpcServer* server, int threadId) 
+: void
 		+serve() : void
 		+setOnClose(CloseHandler onClose) : void
 		+setOnMessage(StringMessageHandler onMessage) : void
 		+setOnMessage(BinaryMessageHandler onMessage) : void
+		+setOnReconnect(ReconnectHandler handler) : void
 		+setSocket(int _socket) : void
 		+stop() : void
 	}
@@ -49,12 +52,19 @@ peEnum type) : void
 		+size : unsigned int
 		+expire : unsigned long
 	}
+	class IpcServer::SendingTask {
+		+done : std::atomic<bool>
+		+ready : std::atomic<bool>
+		+buffer : std::vector<char>
+	}
 }
 /' Inheritance relationships '/
 /' Aggregation relationships '/
 /' Dependency relationships '/
 mini_server.IpcServer <.. mini_server.IpcServer
+mini_server.IpcServer <.. mini_server.IpcServer
 /' Nested objects '/
 mini_server.IpcServer +-- mini_server.IpcServer.MessageHeader
 mini_server.IpcServer +-- mini_server.IpcServer.MessageTypeEnum
+mini_server.IpcServer +-- mini_server.IpcServer.SendingTask
 @enduml
