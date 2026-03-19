@@ -1,0 +1,23 @@
+@startuml
+skinparam componentStyle uml2
+
+component "ПУ" as UI
+component "WebSocket Адаптер" as WS
+component "Калибровка" as CALIB
+component "Захват" as CAPTURE
+component "CV" as CV
+
+UI --> WS : команды
+WS --> UI : данные визуализации
+
+WS --> CALIB : команды
+CALIB --> WS : данные визуализации
+
+WS --> CV : команды
+CV --> WS : данные визуализации
+
+CAPTURE --> CALIB : видеопоток
+CAPTURE --> CV : видеопоток
+CALIB --> CV : результаты калибровки
+
+@enduml
