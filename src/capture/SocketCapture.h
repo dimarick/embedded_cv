@@ -102,7 +102,9 @@ namespace ecv {
 
         void stop() {
             captureServer.stop();
-            captureThread.join();
+            if (captureThread.joinable()) {
+                captureThread.join();
+            }
 
             if (captureSocket > 0) {
                 shutdown(captureSocket, SHUT_RDWR);

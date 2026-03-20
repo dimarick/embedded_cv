@@ -141,7 +141,6 @@ int main(int argc, const char **argv) {
             continue;
         }
 
-        cv::rotate(frames[1], frames[1], cv::ROTATE_180);
         uFrames.resize(frames.size());
 #pragma omp parallel for default(none) shared(frames, uFrames)
         for (int i = 0; i < frames.size(); ++i) {
@@ -276,6 +275,8 @@ int main(int argc, const char **argv) {
     commandServer.stop();
     streamingServer.stop();
     socketCapture.stop();
+
+    tmThread.join();
 
     return 0;
 }

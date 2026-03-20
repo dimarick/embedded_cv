@@ -210,7 +210,7 @@ void MultiCameraCalibration::multicamThreadCallback(const std::vector<FrameRefLi
         auto gridCost0 = verifyParamsUsingGridMatch(imagePoints[0], calibrationData0);
 
         // оптимизация методом адаптивных ограничений
-        bool condition = (gridCost < gridDistanceCosts[i] * 1.5 && gridCost0 < gridDistanceCosts[0] * 1.5) && cost < multicamCosts * 2;
+        bool condition = (gridCost < gridDistanceCosts[i] * 1.5 && gridCost0 < gridDistanceCosts[0] * 1.5) && cost < multicamCosts * 1.5;
         if (condition || randomRange(r) < std::pow(std::numbers::e, (gridDistanceCosts[i] - gridCost) / temperature)) {
             std::cout << (condition ? "Normal... " : "Annealing... ") << i << std::endl;
 

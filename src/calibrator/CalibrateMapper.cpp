@@ -61,7 +61,7 @@ namespace ecv {
             setPattern(suggestPatternSize(imageGrid, square, *w, *h), (float) suggestSkew(imageGrid, *w, *h));
         } else if (result > 5 * prevError || result > 0.5) {
             std::normal_distribution<float> rngSkew(skew, 0.05);
-            std::normal_distribution<float> rngSize((float)patternSize, 3);
+            std::normal_distribution<float> rngSize((float)patternSize, 10);
             std::mt19937 r {std::random_device{}()};
             setPattern(std::clamp((int)rngSize(r), 24, 256), std::clamp((float)rngSkew(r), -0.5f, 0.5f));
             prevError = result;
@@ -428,12 +428,13 @@ namespace ecv {
      *   0 0 0 0 0
      */
     void CalibrateMapper::findPeaks(const cv::Mat &mat, std::vector<Point3> &points, size_t *size, size_t kernel) {
+        cv::imshow("Peaks", mat);
         const auto data = (float *)mat.data;
 
         const cv::Mat mask = cv::Mat::zeros(mat.size(), CV_8SC1);
 
         const int kernelRadius = (int)kernel / 2;
-        const int granule = (int)kernel / 2;
+        const int granule = (int)kernel / 4;
         const int granule2 = granule / 2;
         const int w = mat.cols;
         const auto step = 3;
@@ -443,8 +444,8 @@ namespace ecv {
         int noiseTolerance = 2;
 
 #pragma omp parallel for default(none) shared(kernelRadius, mat, kernel, w, mask, granule, granule2, data, noiseTolerance, pointsSet, pointsSetLock, points)
-        for (int i = kernelRadius; i < mat.rows - kernel; i += step) {
-            for (int j = kernelRadius; j < w - kernel; j += step) {
+        for (int i = granule2; i < mat.rows - granule2; i += step) {
+            for (int j = granule2; j < w - granule2; j += step) {
                 if (mask.at<char>(i, j) != 0) {
                     continue;
                 }
@@ -520,12 +521,13 @@ namespace ecv {
 
             auto i = stat.n();
 
-            if (i > 5) {
-                if (stat.sigmaValue(z) > 5) {
-                    continue;
-                }
-            }
             stat.addValue(z);
+
+            // if (i > 5) {
+            //     if (stat.sigmaValue(z) > 10) {
+            //         continue;
+            //     }
+            // }
 
             points[i].z = z;
             points[i].x = p.x + (double)kernel / 2;
