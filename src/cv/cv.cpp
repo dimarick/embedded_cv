@@ -248,8 +248,6 @@ int main(int argc, const char **argv) {
         std::chrono::system_clock::time_point startDisp;
         std::chrono::system_clock::time_point endDisp;
 
-        cv::rotate(frames[1], frames[1], cv::ROTATE_180);
-
         auto now = std::chrono::high_resolution_clock::now();
         auto us = (double) (now - prev).count();
         prev = now;
@@ -375,17 +373,16 @@ int main(int argc, const char **argv) {
         auto disparityAtPoint = disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
         auto depthAtPoint = depthChannels[2].at<float>(mouseDisp.y, mouseDisp.x) * 4;
         auto varianceAtPoint = variance.at<float>(mouseDisp.y, mouseDisp.x);
-        auto dispStr = std::to_string((float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION);
-        auto depthStr = std::format("{}\n{}", depthAtPoint, (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION * depthAtPoint);
+        auto dispStr = std::format("{} пикс\n{} см", (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION, depthAtPoint);
+        // auto depthStr = std::format("{}\n{}", depthAtPoint, (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION * depthAtPoint);
         auto varStr = std::to_string((float)varianceAtPoint);
         cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         cv::putText(variance8, varStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
-        cv::putText(depth8, depthStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
+        // cv::putText(depth8, depthStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         remoteView.showMat("Disparity", disparity8);
         remoteView.showMat("Variance", variance8);
         remoteView.showMat("Depth", depth8);
 
-        cv::putText(depth8, depthStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         remoteView.showMat(std::format("Result {}", 0), result2[0]);
 
 #endif
@@ -419,12 +416,14 @@ int main(int argc, const char **argv) {
     cv::destroyAllWindows();
 #endif
 
+    running = false;
     tmServer->stop();
     commandServer.stop();
 
     tmServerThread.join();
     commandServerThread.join();
     socketCapture.stop();
+    mapsWatch.join();
 
     return 0;
 }
