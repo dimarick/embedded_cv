@@ -12,6 +12,7 @@
 #include <SocketFactory.h>
 #include <csignal>
 #include <filesystem>
+#include <libgen.h>
 #include <core/opencl/ocl_defs.hpp>
 #include <core/ocl.hpp>
 #include <common/RemoteView.h>
@@ -20,6 +21,7 @@
 #include "calibrator/Calibrator.h"
 #include "capture/SocketCapture.h"
 #include "common/MatStorage.h"
+#include "common/Process.h"
 #include "common/Telemetry.h"
 
 using namespace mini_server;
@@ -59,8 +61,15 @@ int main(int argc, const char **argv) {
     std::shared_ptr<IpcServer> tmServer;
     IpcServer commandServer;
 
+    std::atomic calibrating = false;
+    char path[strlen(argv[0])];
+    strcpy(path, argv[0]);
+    const auto dir =  dirname(path);
+
+    Process calibProcess(std::format("{}/calib", dir).c_str(), {argv[1]});
+
     commandServer.setSocket(SocketFactory::createServerSocket("/tmp/cv_ctl", 1));
-    commandServer.setOnMessage([&remoteView, &commandServer] (int socket, const std::string &message) {
+    commandServer.setOnMessage([&remoteView, &commandServer, argv, &calibProcess, &calibrating] (int socket, const std::string &message) {
         std::istringstream is(message);
         std::ostringstream os;
         char c;
@@ -84,6 +93,21 @@ int main(int argc, const char **argv) {
             os << "}";
             commandServer.send(socket, os.str(), IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
+        } else if (command == "START_CALIBRATION") {
+            calibrating = true;
+            calibProcess.run([&](int pid, int status) {
+                calibrating = false;
+                auto strStatus = calibProcess.strExitStatus();
+                commandServer.send(socket, std::format("[\"STOPPED_CALIBRATION\", {}, \"{}\"]", status, strStatus), IpcServer::MessageTypeEnum::TYPE_CONTROL);
+                ecv::Telemetry::info(std::format("Calibration stopped with status {} ({})", status, strStatus));
+            });
+
+            commandServer.send(socket, "[\"STARTED_CALIBRATION\"]", IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            ecv::Telemetry::info(std::format("Calibration started", message, os.str()));
+        } else if (command == "STOP_CALIBRATION") {
+            calibProcess.stop();
+            commandServer.send(socket, "[\"STOPPING_CALIBRATION\"]", IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            ecv::Telemetry::info(std::format("Calibration stopping", message, os.str()));
         } else if (command == "MOVE") {
             std::string direction;
             is >> std::quoted(direction);
@@ -262,14 +286,21 @@ int main(int argc, const char **argv) {
             remoteView.showMat(std::format("Source {}", j), frames[j], captureInfo[j].created_at);
         }
 
-
 // #pragma omp parallel default(none) shared(frames, remoteView, result, maps)
         for (int j = 0; j < frames.size(); ++j) {
+            if (maps[j].empty()) {
+                frames[j].copyTo(result[j]);
+                continue;
+            }
             cv::remap(frames[j], result[j], maps[j], cv::noArray(), cv::INTER_NEAREST);
         }
 
         for (int j = 1; j < frames.size(); ++j) {
             remoteView.showMat(std::format("Plain {}", j), frames[j]);
+        }
+
+        if (calibrating) {
+            continue;
         }
 
 #ifdef HAVE_OPENCV_HIGHGUI
@@ -302,53 +333,53 @@ int main(int argc, const char **argv) {
         cv::Mat depth;
 
         const auto &d = calibrationData[0];
-        cv::reprojectImageTo3D(disparityFp, depth, d.Q, true, CV_32FC1);
+        cv::Mat depth8, depthFp;
+        std::vector<cv::Mat> depthChannels;
+        if (!d.Q.empty()) {
+            cv::reprojectImageTo3D(disparityFp, depth, d.Q, true, CV_32FC1);
 
-        std::vector<cv::Point3f> points;
-        std::vector<float> disps;
+            std::vector<cv::Point3f> points;
 
-        depth = depth.reshape(3, 1);
-        disparityFp = disparityFp.reshape(1, 1);
-        for (int j = 0; j < depth.total(); j++) {
-            const auto &p = depth.at<cv::Point3f>(j);
-            if (p.z < 1000 && p.z > -1000) {
-                points.emplace_back(p);
-            } else {
-                depth.at<cv::Point3f>(j) = cv::Point3f(0, 0, 0);
+            depth = depth.reshape(3, 1);
+            for (int j = 0; j < depth.total(); j++) {
+                const auto &p = depth.at<cv::Point3f>(j);
+                if (p.z < 1000 && p.z > -1000) {
+                    points.emplace_back(p);
+                } else {
+                    depth.at<cv::Point3f>(j) = cv::Point3f(0, 0, 0);
+                }
             }
+            depth = depth.reshape(3, disparity.rows);
+            cv::split(depth, depthChannels);
+
+            if (minVal == 0 || maxVal == 0) {
+                cv::minMaxLoc(depthChannels[2], &minVal, &maxVal);
+            }
+
+            depthFp = depthChannels[2] - minVal;
+            depthFp *= 255.0 / (maxVal - minVal);
+            depthFp.convertTo(depth8, CV_8U);
+            cv::applyColorMap(depth8, depth8, cv::ColormapTypes::COLORMAP_JET);
+
         }
+
+        std::vector<float> disps;
+        disparityFp = disparityFp.reshape(1, 1);
         for (int j = 0; j < disparityFp.total(); j++) {
             const auto &p = disparityFp.at<float>(j);
             if (p != 0) {
                 disps.emplace_back(disparityFp.at<float>(j));
             }
         }
-
         if (minVal == 0 || maxVal == 0) {
             cv::minMaxLoc(disparityFp, &minVal, &maxVal);
             maxVal = 384;
             minVal = 0;
         }
-
-        depth = depth.reshape(3, disparity.rows);
         disparityFp = disparityFp.reshape(1, disparity.rows);
-        std::vector<cv::Mat> depthChannels;
-        cv::split(depth, depthChannels);
 
         disparityFp -= minVal;
         disparityFp *= 255.0 / (maxVal - minVal);
-
-
-        if (minVal == 0 || maxVal == 0) {
-            cv::minMaxLoc(depthChannels[2], &minVal, &maxVal);
-        }
-
-        cv::Mat depthFp = depthChannels[2] - minVal;
-        depthFp *= 255.0 / (maxVal - minVal);
-        cv::Mat depth8;
-        depthFp.convertTo(depth8, CV_8U);
-        cv::applyColorMap(depth8, depth8, cv::ColormapTypes::COLORMAP_JET);
-
 
         disparityFp.convertTo(disparity8, CV_8U);
         cv::applyColorMap(disparity8, disparity8, cv::ColormapTypes::COLORMAP_JET);
@@ -369,19 +400,26 @@ int main(int argc, const char **argv) {
         cv::drawMarker(result2[0], mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
         cv::drawMarker(result2[1], mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
         cv::drawMarker(variance8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
-        cv::drawMarker(depth8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
         auto disparityAtPoint = disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
-        auto depthAtPoint = depthChannels[2].at<float>(mouseDisp.y, mouseDisp.x) * 4;
+        if (!depth8.empty()) {
+            cv::drawMarker(depth8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
+            auto depthAtPoint = depthChannels[2].at<float>(mouseDisp.y, mouseDisp.x) * 4;
+            auto dispStr = std::format("{} пикс\n{} см", (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION, depthAtPoint);
+            cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
+        } else {
+            auto dispStr = std::format("{} пикс", (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION);
+            cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
+        }
         auto varianceAtPoint = variance.at<float>(mouseDisp.y, mouseDisp.x);
-        auto dispStr = std::format("{} пикс\n{} см", (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION, depthAtPoint);
         // auto depthStr = std::format("{}\n{}", depthAtPoint, (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION * depthAtPoint);
         auto varStr = std::to_string((float)varianceAtPoint);
-        cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         cv::putText(variance8, varStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         // cv::putText(depth8, depthStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         remoteView.showMat("Disparity", disparity8);
         remoteView.showMat("Variance", variance8);
-        remoteView.showMat("Depth", depth8);
+        if (!depth8.empty()) {
+            remoteView.showMat("Depth", depth8);
+        }
 
         remoteView.showMat(std::format("Result {}", 0), result2[0]);
 

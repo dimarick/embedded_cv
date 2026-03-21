@@ -32,7 +32,16 @@
             <ul class="menu-list">
                 <li><a><i class="fas fa-sliders-h"></i><span class="menu-text">&nbsp;Параметры робота</span></a></li>
                 <li><a><i class="fas fa-network-wired"></i><span class="menu-text">&nbsp;Сеть</span></a></li>
-                <li><a><i class="fas fa-save"></i><span class="menu-text">&nbsp;Сохранить профиль</span></a></li>
+                <li class="calibration-item">
+                    <div class="calibration-toggle">
+                        <i class="fas fa-dice-d6"></i>
+                        <span class="menu-text">&nbsp;Режим калибровки</span>
+                        <label class="switch">
+                            <input type="checkbox" id="calibration-switch">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </li>
             </ul>
 
             <div class="is-flex is-justify-content-center mt-auto">
@@ -44,6 +53,12 @@
 
         <!-- ЦЕНТРАЛЬНАЯ ПАНЕЛЬ (Видео и главный контент) -->
         <main class="main-panel">
+            <div class="calibration-panel calibration-mode is-hidden">
+                <span class="calibration-title">🔧 РЕЖИМ КАЛИБРОВКИ</span>
+                <button class="calibration-btn" id="calibrate-start">Начать</button>
+                <button class="calibration-btn" id="calibrate-reset">Сброс</button>
+                <button class="calibration-btn" id="calibrate-save">Завершить и сохранить</button>
+            </div>
             <!-- Панель выбора лейаута -->
             <div class="layout-controls">
                 <button class="layout-btn active" data-layout="dual" title="Одна колонка">

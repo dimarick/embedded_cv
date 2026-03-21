@@ -181,7 +181,6 @@ void IpcServer::interact(int interactionSocket, int threadId) const {
                     if (offset + sizeof (MessageHeader) > receivedSize) {
                         break;
                     }
-                    std::cout << "Processing offset " << offset << std::endl;
                     MessageHeader h = {};
                     memcpy(&h, &buffer[offset], sizeof(h));
                     auto d = &buffer[sizeof (MessageHeader) + offset];

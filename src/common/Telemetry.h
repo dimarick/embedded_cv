@@ -3,7 +3,6 @@
 
 #include <string>
 #include <chrono>
-#include <any>
 #include <iostream>
 #include <IpcServer.h>
 
@@ -22,13 +21,13 @@ namespace ecv {
         }
         static const char *level(LogLevel l) {
             switch (l) {
-                case LogLevel::DEBUG:
+                case DEBUG:
                     return "debug";
-                case LogLevel::INFO:
+                case INFO:
                     return "info";
-                case LogLevel::WARN:
+                case WARN:
                     return "warn";
-                case LogLevel::ERROR:
+                case ERROR:
                     return "error";
             };
             return "";

@@ -520,3 +520,136 @@ body {
     border-bottom: 1px solid var(--pastel-lavender);
     padding-bottom: 10px;
 }
+
+/* Переключатель (toggle switch) */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 56px;
+    height: 20px;
+    margin-left: auto; /* прижимаем вправо */
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.4s;
+    border-radius: 34px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: 0.4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #9b59b6; /* пастельный фиолетовый, подходящий к сиреневой теме */
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+/* Стили для пункта меню с переключателем */
+.calibration-item {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+}
+
+.calibration-toggle {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.calibration-toggle .menu-text {
+    flex-grow: 1;
+}
+
+/* Сохраняем стили для обычных пунктов меню, чтобы не ломались */
+.menu-list li a {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.menu-list li.calibration-item a {
+    display: flex;
+    width: 100%;
+}
+
+/* Панель калибровки – заметная, крупная */
+.calibration-panel {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: #f0e6ff; /* пастельный фиолетовый фон */
+    padding: 6px 20px;
+    border-radius: 40px;
+    border: 2px solid var(--pastel-lavender-dark);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    transition: all 0.2s ease;
+    margin-bottom: 10px;
+}
+
+.calibration-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #9b59b6;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.05);
+}
+
+.calibration-btn {
+    background: var(--pastel-lavender);
+    border: none;
+    padding: 6px 14px;
+    border-radius: 30px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    color: var(--pastel-text);
+}
+
+.calibration-btn:hover {
+    background: var(--pastel-lavender-dark);
+    transform: scale(1.02);
+}
+
+.calibration-close {
+    background: none;
+    border: none;
+    font-size: 1.3rem;
+    cursor: pointer;
+    color: #a0a0c0;
+    padding: 4px 8px;
+    transition: color 0.2s;
+}
+
+.calibration-close:hover {
+    color: #b33a3a;
+    transform: scale(1.1);
+}
