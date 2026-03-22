@@ -662,9 +662,7 @@ input:checked + .slider:before {
 }
 
 /* Общий контейнер калибровочного вьюпорта — грид с двумя колонками */
-.viewport.calibration-mode-enabled {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+.viewport.calibration-results {
     gap: 12px;
     padding: 12px;
     background-color: #fefefe;
@@ -672,21 +670,10 @@ input:checked + .slider:before {
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* Заголовок вьюпорта — занимает всю ширину */
-.viewport-title {
-    grid-column: 1 / -1;
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: #4a4a6d;
-    margin: 0 0 8px 0;
-    padding-bottom: 6px;
-    border-bottom: 1px solid #e6e1ff;
-}
-
 /* Блок статистики (число камер, размер датасета) — тоже на всю ширину */
-.calibration-stats {
-    grid-column: 1 / -1;
-    display: flex;
+.viewport.calibration-results .calibration-stats {
+    display: grid;
+    grid-template-columns: 1fr;
     flex-wrap: wrap;
     gap: 24px;
     background: #f9f8ff;
@@ -695,6 +682,10 @@ input:checked + .slider:before {
     margin-bottom: 4px;
     font-size: 0.85rem;
     color: #5a5a7a;
+}
+
+.layout-single .viewport.calibration-results .calibration-stats {
+    grid-template-columns: 1fr 1fr;
 }
 
 .calib-multicam-item {
@@ -718,6 +709,7 @@ input:checked + .slider:before {
     border: 1px solid #e6e1ff;
     padding: 10px 12px;
     transition: box-shadow 0.1s;
+    box-sizing: border-box;
 }
 
 .calib-cam-items:hover {
@@ -758,42 +750,9 @@ input:checked + .slider:before {
     white-space: nowrap;
 }
 
-/* Кнопки управления вьюпортом (звезда, развернуть) */
-.viewport-controls {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    display: flex;
-    gap: 8px;
-    opacity: 0.3;
-    transition: opacity 0.2s;
-    z-index: 10;
-}
-
-.viewport:hover .viewport-controls {
-    opacity: 1;
-}
-
-.viewport-btn {
-    background: rgba(255, 255, 255, 0.85);
-    border: none;
-    border-radius: 6px;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    color: var(--pastel-text, #4a4a6d);
-}
-
-.viewport-btn:hover {
-    background: var(--pastel-lavender, #e6e1ff);
-}
-
 /* Адаптация для узких экранов — одна колонка */
 @media (max-width: 640px) {
-    .viewport.calibration-mode-enabled {
+    .viewport.calibration-results .calibration-stats {
         grid-template-columns: 1fr;
     }
 }
