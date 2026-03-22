@@ -108,10 +108,11 @@ int main(int argc, const char **argv) {
     mini_server::IpcServer commandServer;
     mini_server::IpcServer streamingServer;
 
-    std::atomic calibrating = false;
+    std::atomic enabled = false;
+    std::atomic started = false;
 
     commandServer.setSocket(mini_server::SocketFactory::createServerSocket("/tmp/cv_calib_ctl", 1));
-    commandServer.setOnMessage([&commandServer, &calibrating, &calibrationStrategy, &socketCapture] (int socket, const std::string &message) {
+    commandServer.setOnMessage([&commandServer, &enabled, &started, &calibrationStrategy, &socketCapture] (int socket, const std::string &message) {
         std::istringstream is(message);
         std::ostringstream os;
         char c;
@@ -120,30 +121,51 @@ int main(int argc, const char **argv) {
         assert(c == '[');
         is >> std::quoted(command);
         if (command == "START_CALIBRATION") {
+            if (!started) {
+                calibrationStrategy.runCalibration();
+                started = true;
+            }
             commandServer.send(socket, "[\"STARTED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
         } else if (command == "STOP_CALIBRATION") {
+            if (started) {
+                started = false;
+                calibrationStrategy.stopCalibration();
+            }
             commandServer.send(socket, "[\"STOPPED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
         } else if (command == "RESET_CALIBRATION") {
+            if (started) {
+                calibrationStrategy.stopCalibration();
+            }
+            calibrationStrategy.reset();
+            if (started) {
+                calibrationStrategy.runCalibration();
+            }
             commandServer.send(socket, "[\"RESET_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
         } else if (command == "SAVE_CALIBRATION") {
             commandServer.send(socket, "[\"SAVED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
         } else if (command == "ENABLE_CALIBRATION") {
-            if (!calibrating) {
-                calibrating = true;
-                calibrationStrategy.runCalibration();
+            if (!enabled) {
+                enabled = true;
+                if (started) {
+                    calibrationStrategy.stopCalibration();
+                    started = false;
+                }
                 socketCapture.run();
                 commandServer.send(socket, "[\"ENABLED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
                 ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
             }
         } else if (command == "DISABLE_CALIBRATION") {
-            if (calibrating) {
-                calibrating = false;
+            if (enabled) {
+                enabled = false;
+                if (started) {
+                    calibrationStrategy.stopCalibration();
+                    started = false;
+                }
                 socketCapture.stop();
-                calibrationStrategy.stopCalibration();
                 commandServer.send(socket, "[\"DISABLED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
                 ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
             }
@@ -157,7 +179,7 @@ int main(int argc, const char **argv) {
     });
 
     while (running) {
-        if (!calibrating) {
+        if (!enabled) {
             usleep(50000);
             continue;
         }
@@ -271,7 +293,6 @@ int main(int argc, const char **argv) {
             ecv::Telemetry::status("calib", {
                 std::format("cam.{}.multicam_repr_error", i),
                 std::format("cam.{}.repr_error", i),
-                std::format("cam.{}.dataset.size", i),
                 std::format("cam.{}.dataset.percent", i),
                 std::format("cam.{}.aligned_bias", i),
                 std::format("cam.{}.T.baseline", i),
@@ -291,7 +312,6 @@ int main(int argc, const char **argv) {
             }, std::vector<double>{
                 calibrationStrategy.getViewMulticamCosts(0),
                 calibrationStrategy.getViewCosts(i),
-                (double)calibrationStrategy.getFrameCount(i),
                 calibrationStrategy.getProgress(i),
                 calibrationStrategy.getAlignedBias(i),
                 baseline,
@@ -331,7 +351,9 @@ int main(int argc, const char **argv) {
 #endif
         }
 
-        calibrationStrategy.addFrameSet(frameSet);
+        if (started) {
+            calibrationStrategy.addFrameSet(frameSet);
+        }
 
         ecv::Telemetry::status("calib", {
             "multicam.count",

@@ -116,6 +116,13 @@ namespace ecv {
             return gridDistanceCosts[cameraId];
         }
 
+        void reset(int cameraId) {
+            std::unique_lock lock(dataMutex);
+            data[cameraId] = CalibrationData();
+            rectificationData[cameraId] = CalibrationData();
+            rectifiedMap[cameraId].release();
+        }
+
         double verifyParamsUsingGridMatch(const std::vector<cv::Mat> &imagePoints,
                                           const CalibrationData &calibrationData) const;
 

@@ -196,6 +196,8 @@ namespace ecv {
             stopCalibration();
         }
 
+        void reset();
+
         static void converPoints(const cv::Mat &pp, std::vector<ecv::CalibrateMapper::Point3> &points);
         static void converPoints(const std::vector<ecv::CalibrateMapper::Point3> &points, cv::Mat &pp);
 

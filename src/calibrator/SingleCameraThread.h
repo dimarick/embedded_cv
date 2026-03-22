@@ -69,6 +69,13 @@ namespace ecv {
             calibrator(calibrator) {}
 
         void camThreadCallback(const FrameRefList &frames);
+
+        void reset() {
+            std::unique_lock lock(dataMutex);
+            data = CalibrationData();
+            tmpData = CalibrationData();
+        }
+
         static void undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints, std::vector<ecv::CalibrateMapper::Point3> &plainPoints, const CalibrationData &calibrationData);
         static void undistortImagePoints(const std::vector<cv::Mat> &imagePoints, std::vector<cv::Mat> &plainPoints, const CalibrationData &calibrationData);
 

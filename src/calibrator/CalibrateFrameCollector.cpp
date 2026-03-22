@@ -444,3 +444,9 @@ size_t CalibrateFrameCollector::getFrameCount() const {
 size_t CalibrateFrameCollector::getFrameSetCount() const {
     return frameSets.size();
 }
+
+void CalibrateFrameCollector::reset() {
+    frameSets.clear();
+    rotationMap.clear();
+    positionMap.clear();
+}

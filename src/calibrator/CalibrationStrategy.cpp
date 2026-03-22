@@ -155,6 +155,25 @@ void CalibrationStrategy::rectifyImagePoints(const std::vector<ecv::CalibrateMap
     MultiCameraCalibration::rectifyImagePoints(imagePoints, plainPoints, calibrationData);
 }
 
+void CalibrationStrategy::reset() {
+    for (auto &f : frameCollectors) {
+        f.reset();
+    }
+    for (auto &c : cameraThread) {
+        c->reset();
+    }
+
+    gridPreferredSizeProvider.reset();
+
+    for (int i = 0; i < numCameras; ++i) {
+        multicamThreadHandler->reset(i);
+    }
+
+    for (int i = 0; i < numCameras; ++i) {
+        onUpdateCallback(i, *this);
+    }
+}
+
 void CalibrationStrategy::converPoints(const cv::Mat &pp, std::vector<ecv::CalibrateMapper::Point3> &points) {
     for (int i = 0; i < pp.total(); ++i) {
         const auto &p = pp.at<cv::Point2f>(i);

@@ -82,6 +82,8 @@ namespace ecv {
 
         size_t getFrameCount() const;
         size_t getFrameSetCount() const;
+
+        void reset();
     };
 };
 

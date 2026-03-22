@@ -82,6 +82,8 @@ namespace ecv {
             _registerFrameStat(w1, h1);
             _unregisterFrameStat(w0, h0);
         }
+
+        void reset();
     };
 }
 #endif //EMBEDDED_CV_GRIDPREFERREDSIZEPROVIDER_H
