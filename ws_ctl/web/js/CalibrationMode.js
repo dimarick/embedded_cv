@@ -5,8 +5,9 @@ export default class CalibrationMode {
     #calibCtlSocket;
     #cvCtlSocket;
 
-    constructor(cvCtlSocket) {
+    constructor(cvCtlSocket, calibCtlSocket) {
         this.#cvCtlSocket = cvCtlSocket;
+        this.#calibCtlSocket = calibCtlSocket;
 
         document.addEventListener('change', (event) => {
             if (event.target.id === 'calibration-switch') {
@@ -14,19 +15,24 @@ export default class CalibrationMode {
             }
         });
 
-        this.#calibCtlSocket = new Socket("/calib_ctl", (data) => {
-            document.addEventListener('socket.calibCtl.onmessage', new CustomEvent({detail: {data}}));
-        });
-
         document.addEventListener('socket.cvCtl.onmessage', (event) => {
             const message = JSON.parse(event.detail);
+            if (message[0] === 'SUSPENDED_CV') {
+                this.#toggleUiState(true);
+                console.log(message);
+            } else if (message[0] === 'RESUMED_CV') {
+                this.#toggleUiState(false);
+                console.log(message);
+            }
+        });
+
+        document.addEventListener('socket.calibCtl.onmessage', (event) => {
+            const message = JSON.parse(event.detail);
             if (message[0] === 'STARTED_CALIBRATION') {
-                this.#calibCtlSocket.connect();
-                this.#toggleElementsState(true);
+                this.#cvCtlSocket.sendMessage(JSON.stringify(['SUSPEND_CV']));
                 console.log(message);
             } else if (message[0] === 'STOPPED_CALIBRATION') {
-                this.#calibCtlSocket.disconnect();
-                this.#toggleElementsState(false);
+                this.#cvCtlSocket.sendMessage(JSON.stringify(['RESUME_CV']));
                 console.log(message);
             }
         });
@@ -34,14 +40,14 @@ export default class CalibrationMode {
 
     toggleState(toState) {
         if (!!toState) {
-            this.#cvCtlSocket.sendMessage(JSON.stringify(['START_CALIBRATION']))
+            this.#calibCtlSocket.sendMessage(JSON.stringify(['START_CALIBRATION']))
         } else {
-            this.#cvCtlSocket.sendMessage(JSON.stringify(['STOP_CALIBRATION']))
+            this.#calibCtlSocket.sendMessage(JSON.stringify(['STOP_CALIBRATION']))
         }
         this.#enabled = toState;
     }
 
-    #toggleElementsState(toState) {
+    #toggleUiState(toState) {
         const elements = document.getElementsByClassName('calibration-mode');
         if (toState) {
             for (const e of elements) {
@@ -52,5 +58,7 @@ export default class CalibrationMode {
                 e.classList.add('is-hidden');
             }
         }
+
+        document.getElementById('calibration-switch').checked = toState;
     }
 }

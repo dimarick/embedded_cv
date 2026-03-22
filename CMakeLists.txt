@@ -127,8 +127,8 @@ add_executable(cv
         src/cv/DisparityEvaluator.cpp
         src/common/MatStorage.cpp
         src/common/RemoteView.cpp
-        src/capture/SocketCapture.cpp
         src/common/Telemetry.cpp
+        src/capture/SocketCapture.cpp
         src/mini_server/IpcServer.cpp
         src/mini_server/SocketFactory.cpp
 )

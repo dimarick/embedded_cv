@@ -13,6 +13,7 @@ export default class Socket {
     #url;
     onmessage;
     #ws;
+    #enabled = false;
     #connected = false;
     #connecting = false;
     #receiveMessageQueue = [];
@@ -23,9 +24,10 @@ export default class Socket {
     constructor(url, onmessage) {
         this.#onmessage = onmessage || (() => {});
         this.#url = url;
-        this.connect();
         setInterval(() => {
-            this.connect();
+            if (this.#enabled) {
+                this.#connect();
+            }
         }, 2000);
 
         if (Socket.#bpsInterval === 0) {
@@ -35,6 +37,11 @@ export default class Socket {
     }
 
     connect() {
+        this.#enabled = true;
+        this.#connect();
+    }
+
+    #connect() {
         if (this.#connecting || this.#connected) {
             return;
         }
@@ -95,6 +102,7 @@ export default class Socket {
     }
 
     disconnect(code, reason) {
+        this.#enabled = false;
         this.#ws.close(code, reason);
     }
 

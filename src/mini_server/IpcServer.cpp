@@ -309,12 +309,17 @@ void IpcServer::setOnReconnect(ReconnectHandler handler) {
     onReconnect = std::move(handler);
 }
 
-void IpcServer::send(int s, const void *buffer, size_t bufferSize, unsigned long ttl, IpcServer::MessageTypeEnum type) {
+void IpcServer::send(int s, const void *buffer, size_t bufferSize, unsigned long ttl, MessageTypeEnum type) {
     const auto expire = getExpire(ttl);
     sendFrame(s, createFrame(buffer, bufferSize, expire, type));
 }
 
-void IpcServer::send(int s, const std::string &message, unsigned long ttl, IpcServer::MessageTypeEnum type) {
+void IpcServer::send(int s, const char *cString, unsigned long ttl, MessageTypeEnum type) {
+    const auto expire = getExpire(ttl);
+    sendFrame(s, createFrame(cString, strlen(cString), expire, type));
+}
+
+void IpcServer::send(int s, const std::string &message, unsigned long ttl, MessageTypeEnum type) {
     send(s, message.data(), message.size(), ttl, type);
 }
 

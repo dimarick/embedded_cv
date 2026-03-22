@@ -83,9 +83,21 @@ void ConnectionHandler::start() {
 
             if (messageSize > 0) {
                 if (sendingQueueDepth != -1) {
-                    sendingMutex.try_acquire_until(std::chrono::time_point<std::chrono::system_clock>(std::chrono::milliseconds(header->ttl)));
-
                     auto now = duration_cast<std::chrono::microseconds>(
+                            std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
+                    if (!(header->ttl == 0 || header->ttl > now)) {
+                        std::cerr << "Dropped2 frame size " << messageSize << " ttl expired " << now - header->ttl << std::endl;
+                        continue;
+                    }
+                    std::chrono::time_point<std::chrono::system_clock> atime(std::chrono::microseconds(header->ttl));
+                    auto acquired = sendingMutex.try_acquire_until(atime);
+
+                    if (!acquired) {
+                        std::cerr << "Warning try_acquire_until timed out" << std::endl;
+                    }
+
+                    now = duration_cast<std::chrono::microseconds>(
                             std::chrono::high_resolution_clock::now().time_since_epoch()).count();
                     if (header->ttl == 0 || header->ttl > now) {
 
@@ -102,8 +114,8 @@ void ConnectionHandler::start() {
                             }
 
                             c->send(copyOfData, messageSize);
-                            free((void *)copyOfData);
                             sendingMutex.release();
+                            free((void *)copyOfData);
                         }});
                     } else {
                         std::cerr << "Dropped frame size " << messageSize << " ttl expired " << now - header->ttl << std::endl;

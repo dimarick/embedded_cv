@@ -27,11 +27,16 @@ namespace ecv {
         std::condition_variable newFramesAvailable;
 
         int reconnect() {
-            do {
-                std::cerr << "Connecting to " << captureSocketName << "..." << strerror(errno) << std::endl;
-                sleep(1);
+            while (true) {
+                std::cerr << "Try connecting to " << captureSocketName << "..." << strerror(errno) << std::endl;
                 captureSocket = mini_server::SocketFactory::createClientSocket(captureSocketName);
-            } while (captureSocket == -1 && errno == ECONNREFUSED);
+
+                if (captureSocket == -1 && errno == ECONNREFUSED) {
+                    sleep(1);
+                    continue;
+                }
+                break;
+            }
 
             std::cerr << "Connected to " << captureSocketName << "!" << std::endl;
 
@@ -88,6 +93,7 @@ namespace ecv {
 
             captureServer.setOnReconnect([this] (int socket) {
                 std::cerr << "Socket socket" << socket << " closed" << strerror(errno) << std::endl;
+                sleep(1);
                 captureSocket = reconnect();
 
                 if (captureSocket == -1) {

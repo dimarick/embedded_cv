@@ -21,7 +21,6 @@
 #include "calibrator/Calibrator.h"
 #include "capture/SocketCapture.h"
 #include "common/MatStorage.h"
-#include "common/Process.h"
 #include "common/Telemetry.h"
 
 using namespace mini_server;
@@ -61,15 +60,16 @@ int main(int argc, const char **argv) {
     std::shared_ptr<IpcServer> tmServer;
     IpcServer commandServer;
 
-    std::atomic calibrating = false;
+    std::atomic suspended = false;
     char path[strlen(argv[0])];
     strcpy(path, argv[0]);
     const auto dir =  dirname(path);
 
-    Process calibProcess(std::format("{}/calib", dir).c_str(), {argv[1]});
+    ecv::SocketCapture socketCapture(argv[1]);
+    socketCapture.run();
 
     commandServer.setSocket(SocketFactory::createServerSocket("/tmp/cv_ctl", 1));
-    commandServer.setOnMessage([&remoteView, &commandServer, argv, &calibProcess, &calibrating] (int socket, const std::string &message) {
+    commandServer.setOnMessage([&remoteView, &commandServer, &suspended, &socketCapture] (int socket, const std::string &message) {
         std::istringstream is(message);
         std::ostringstream os;
         char c;
@@ -91,29 +91,28 @@ int main(int argc, const char **argv) {
                 os << "}";
             }
             os << "}";
-            commandServer.send(socket, os.str(), IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            commandServer.send(socket, os.str(), 0, IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
-        } else if (command == "START_CALIBRATION") {
-            calibrating = true;
-            calibProcess.run([&](int pid, int status) {
-                calibrating = false;
-                auto strStatus = calibProcess.strExitStatus();
-                commandServer.send(socket, std::format("[\"STOPPED_CALIBRATION\", {}, \"{}\"]", status, strStatus), IpcServer::MessageTypeEnum::TYPE_CONTROL);
-                ecv::Telemetry::info(std::format("Calibration stopped with status {} ({})", status, strStatus));
-            });
-
-            commandServer.send(socket, "[\"STARTED_CALIBRATION\"]", IpcServer::MessageTypeEnum::TYPE_CONTROL);
-            ecv::Telemetry::info(std::format("Calibration started", message, os.str()));
-        } else if (command == "STOP_CALIBRATION") {
-            calibProcess.stop();
-            commandServer.send(socket, "[\"STOPPING_CALIBRATION\"]", IpcServer::MessageTypeEnum::TYPE_CONTROL);
-            ecv::Telemetry::info(std::format("Calibration stopping", message, os.str()));
+        } else if (command == "SUSPEND_CV") {
+            if (!suspended) {
+                suspended = true;
+                socketCapture.stop();
+                commandServer.send(socket, "[\"SUSPENDED_CV\"]", 0, IpcServer::MessageTypeEnum::TYPE_CONTROL);
+                ecv::Telemetry::info(std::format("CV suspended", message, os.str()));
+            }
+        } else if (command == "RESUME_CV") {
+            if (suspended) {
+                suspended = false;
+                socketCapture.run();
+                commandServer.send(socket, "[\"RESUMED_CV\"]", 0, IpcServer::MessageTypeEnum::TYPE_CONTROL);
+                ecv::Telemetry::info(std::format("CV resumed", message, os.str()));
+            }
         } else if (command == "MOVE") {
             std::string direction;
             is >> std::quoted(direction);
             os << "[" << std::quoted("MOVING") << "," << std::quoted(direction) << "]";
 
-            commandServer.send(socket, os.str(), IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            commandServer.send(socket, os.str(), 0, IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
         } else if (command == "MOVE_TO") {
             int x, y;
@@ -121,7 +120,7 @@ int main(int argc, const char **argv) {
             is >> y;
             os << "[" << std::quoted("MOVING_TO") << "," << x <<"," << y << "]";
 
-            commandServer.send(socket, os.str(), IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            commandServer.send(socket, os.str(), 0, IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
         } else {
             ecv::Telemetry::error(std::format("command {} is not supported", command));
@@ -132,9 +131,6 @@ int main(int argc, const char **argv) {
     tmServer = std::make_shared<IpcServer>();
     tmServer->setSocket(SocketFactory::createServerSocket("/tmp/cv_tm", 10));
     ecv::Telemetry::setServer(tmServer);
-
-    ecv::SocketCapture socketCapture(argv[1]);
-    socketCapture.run();
 
     signal(SIGINT, [](int signal) {
         running = false;
@@ -299,7 +295,7 @@ int main(int argc, const char **argv) {
             remoteView.showMat(std::format("Plain {}", j), frames[j]);
         }
 
-        if (calibrating) {
+        if (suspended) {
             continue;
         }
 

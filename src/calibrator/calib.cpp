@@ -63,6 +63,8 @@ int main(int argc, const char **argv) {
         frames = socketCapture.getNewFrames();
     } while (frames.empty());
 
+    socketCapture.stop();
+
     const cv::Size &size = frames[0].size();
     std::vector<ecv::CalibrateMapper> calibrateMapper(frames.size()), testCalibrateMapper(frames.size());
     std::vector<ecv::Calibrator> calibrator(frames.size());
@@ -106,8 +108,10 @@ int main(int argc, const char **argv) {
     mini_server::IpcServer commandServer;
     mini_server::IpcServer streamingServer;
 
-    commandServer.setSocket(mini_server::SocketFactory::createServerSocket("/tmp/cv_ctl", 1));
-    commandServer.setOnMessage([&commandServer] (int socket, const std::string &message) {
+    std::atomic calibrating = false;
+
+    commandServer.setSocket(mini_server::SocketFactory::createServerSocket("/tmp/cv_calib_ctl", 1));
+    commandServer.setOnMessage([&commandServer, &calibrating, &calibrationStrategy, &socketCapture] (int socket, const std::string &message) {
         std::istringstream is(message);
         std::ostringstream os;
         char c;
@@ -116,24 +120,45 @@ int main(int argc, const char **argv) {
         assert(c == '[');
         is >> std::quoted(command);
         if (command == "RESET_DATASET") {
-            os << "[" << std::quoted("RESET_DATASET_OK") << "]";
-            commandServer.send(socket, os.str(), mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            commandServer.send(socket, "[\"RESET_DATASET_OK\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
         } else if (command == "RESET_PARAMS") {
-            std::string direction;
-            os << "[" << std::quoted("RESET_PARAMS_OK") << "]";
-
-            commandServer.send(socket, os.str(), mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            commandServer.send(socket, "[\"RESET_PARAMS_OK\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
+        } else if (command == "SAVE_PARAMS") {
+            commandServer.send(socket, "[\"SAVED_PARAMS_OK\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
+        } else if (command == "START_CALIBRATION") {
+            if (!calibrating) {
+                calibrating = true;
+                calibrationStrategy.runCalibration();
+                socketCapture.run();
+                commandServer.send(socket, "[\"STARTED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+                ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
+            }
+        } else if (command == "STOP_CALIBRATION") {
+            if (calibrating) {
+                calibrating = false;
+                socketCapture.stop();
+                calibrationStrategy.stopCalibration();
+                commandServer.send(socket, "[\"STOPPED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+                ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
+            }
         } else {
             ecv::Telemetry::error(std::format("command {} is not supported", command));
         }
     });
 
-//    calibrationStrategy.loadConfig();
-    calibrationStrategy.runCalibration();
+    std::thread commandServerThread = std::thread([&commandServer]() {
+        commandServer.serve();
+    });
 
-    while (true) {
+    while (running) {
+        if (!calibrating) {
+            usleep(50000);
+            continue;
+        }
+
         std::vector<ecv::CaptureInfo> captureInfo;
         frames = socketCapture.getNewFrames(&captureInfo);
 
@@ -277,6 +302,7 @@ int main(int argc, const char **argv) {
     socketCapture.stop();
 
     tmThread.join();
+    commandServerThread.join();
 
     return 0;
 }

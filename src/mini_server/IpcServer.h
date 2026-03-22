@@ -17,7 +17,7 @@ namespace mini_server {
         typedef std::function<void(int socket, const void *buffer, size_t size)> BinaryMessageHandler;
         typedef std::function<void(int socket)> CloseHandler;
         typedef std::function<int(int socket)> ReconnectHandler;
-        enum MessageTypeEnum : unsigned int {
+        enum class MessageTypeEnum : unsigned int {
             TYPE_MAT = 0,
             TYPE_TELEMETRY = 1,
             TYPE_ACK = 2,
@@ -78,10 +78,11 @@ namespace mini_server {
         }
 
         void broadcast(const std::string &message);
-        void broadcast(const void *buffer, size_t bufferSize, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
+        void broadcast(const void *buffer, size_t bufferSize, unsigned long ttl = 0, MessageTypeEnum type = MessageTypeEnum::TYPE_MAT);
 
-        void send(int s, const std::string &message, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
-        void send(int s, const void *buffer, size_t bufferSize, unsigned long ttl = 0, MessageTypeEnum type = TYPE_MAT);
+        void send(int s, const std::string &message, unsigned long ttl = 0, MessageTypeEnum type = MessageTypeEnum::TYPE_MAT);
+        void send(int s, const char *cString, unsigned long ttl = 0, MessageTypeEnum type = MessageTypeEnum::TYPE_MAT);
+        void send(int s, const void *buffer, size_t bufferSize, unsigned long ttl = 0, MessageTypeEnum type = MessageTypeEnum::TYPE_MAT);
 
         std::vector<char>
         createFrame(const void *buffer, size_t bufferSize, unsigned long expire,
