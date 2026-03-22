@@ -119,29 +119,32 @@ int main(int argc, const char **argv) {
         is >> c;
         assert(c == '[');
         is >> std::quoted(command);
-        if (command == "RESET_DATASET") {
-            commandServer.send(socket, "[\"RESET_DATASET_OK\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+        if (command == "START_CALIBRATION") {
+            commandServer.send(socket, "[\"STARTED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
-        } else if (command == "RESET_PARAMS") {
-            commandServer.send(socket, "[\"RESET_PARAMS_OK\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+        } else if (command == "STOP_CALIBRATION") {
+            commandServer.send(socket, "[\"STOPPED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
-        } else if (command == "SAVE_PARAMS") {
-            commandServer.send(socket, "[\"SAVED_PARAMS_OK\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+        } else if (command == "RESET_CALIBRATION") {
+            commandServer.send(socket, "[\"RESET_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
             ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
-        } else if (command == "START_CALIBRATION") {
+        } else if (command == "SAVE_CALIBRATION") {
+            commandServer.send(socket, "[\"SAVED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+            ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
+        } else if (command == "ENABLE_CALIBRATION") {
             if (!calibrating) {
                 calibrating = true;
                 calibrationStrategy.runCalibration();
                 socketCapture.run();
-                commandServer.send(socket, "[\"STARTED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+                commandServer.send(socket, "[\"ENABLED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
                 ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
             }
-        } else if (command == "STOP_CALIBRATION") {
+        } else if (command == "DISABLE_CALIBRATION") {
             if (calibrating) {
                 calibrating = false;
                 socketCapture.stop();
                 calibrationStrategy.stopCalibration();
-                commandServer.send(socket, "[\"STOPPED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
+                commandServer.send(socket, "[\"DISABLED_CALIBRATION\"]", 0, mini_server::IpcServer::MessageTypeEnum::TYPE_CONTROL);
                 ecv::Telemetry::debug(std::format("command {} processed with reply {}", message, os.str()));
             }
         } else {

@@ -43,21 +43,16 @@
                     </div>
                 </li>
             </ul>
-
-            <div class="is-flex is-justify-content-center mt-auto">
-                <button class="button is-danger is-rounded is-small">
-                    <i class="fas fa-power-off"></i><span class="menu-text">&nbsp;Аварийный стоп</span>
-                </button>
-            </div>
         </aside>
 
         <!-- ЦЕНТРАЛЬНАЯ ПАНЕЛЬ (Видео и главный контент) -->
         <main class="main-panel">
             <div class="calibration-panel calibration-mode-enabled is-hidden">
                 <span class="calibration-title">🔧 РЕЖИМ КАЛИБРОВКИ</span>
-                <button class="calibration-btn" id="calibrate-start">Начать</button>
-                <button class="calibration-btn" id="calibrate-reset">Сброс</button>
-                <button class="calibration-btn" id="calibrate-save">Завершить и сохранить</button>
+                <button class="calibration-btn calibration-mode-stopped" id="calibrate-start">Начать</button>
+                <button class="calibration-btn calibration-mode-started is-hidden" id="calibrate-stop">Стоп</button>
+                <button class="calibration-btn calibration-mode-started is-hidden" id="calibrate-reset">Сброс</button>
+                <button class="calibration-btn calibration-mode-started is-hidden" id="calibrate-save">Завершить и сохранить</button>
             </div>
             <!-- Панель выбора лейаута -->
             <div class="layout-controls">

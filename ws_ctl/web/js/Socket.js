@@ -111,14 +111,19 @@ export default class Socket {
     }
 
     async getNextMessage() {
-        if (this.#receiveMessageQueue.length > 0) {
-            return this.#receiveMessageQueue.shift();
-        }
-
         // Иначе создаём промис и сохраняем его resolve в очередь ожидания
         return new Promise((resolve) => {
             this.#waitingResolvers.push(resolve);
         });
+    }
+
+    async getNextMessageJson() {
+        // Иначе создаём промис и сохраняем его resolve в очередь ожидания
+        const message = await this.getNextMessage();
+        return JSON.parse(message instanceof Blob
+            ? await message.text()
+            : message
+        );
     }
 
     sendMessage(data) {

@@ -249,7 +249,7 @@ extern "C++" void IpcServer::broadcast(const void *buffer, size_t bufferSize, un
 
     for (int acceptedSocket : threadSafeAcceptedSockets) {
         auto t = threadSafeSendingTasks[acceptedSocket];
-        if (t->done == false) {
+        if (t == nullptr || t->done == false) {
             continue;
         }
 

@@ -263,6 +263,10 @@ namespace ecv {
         _h = std::min((_h - 3) * 2, (int)std::sqrt((double)imageGrid.size() / ratio));
         _w = std::min((_w - 3) * 2, (int)std::sqrt((double)imageGrid.size() * ratio));
 
+        if (_w <= 3 || _h <= 3) {
+            return 3.0;
+        }
+
         auto cH = _h / 2 - 1;
         auto cW = _w / 2 - 1;
         *w = _w;
