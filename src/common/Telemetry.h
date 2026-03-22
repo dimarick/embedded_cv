@@ -35,6 +35,7 @@ namespace ecv {
 
         static std::shared_ptr<mini_server::IpcServer> server;
         static LogLevel logLevel;
+        static std::unordered_map<std::string, std::string> valueCache;
 
         static std::string datetimeFromFloat(double ts) {
             using namespace std::chrono;
@@ -50,9 +51,23 @@ namespace ecv {
                 throw std::runtime_error("properties and values should have equal size");
             }
 
-            str << "[" << std::quoted("STATUS") << "," << std::quoted(component);
+            std::vector<std::string> filteredProps, filteredValues;
             for (int i = 0; i < properties.size(); ++i) {
-                str << "," << std::quoted(properties[i]) << "," << quotedStrings[i];
+                auto knownValueIt = valueCache.find(properties[i]);
+                if (knownValueIt == valueCache.end() || knownValueIt->second != quotedStrings[i]) {
+                    filteredProps.push_back(properties[i]);
+                    filteredValues.push_back(quotedStrings[i]);
+                    valueCache[properties[i]] = quotedStrings[i];
+                }
+            }
+
+            if (filteredProps.empty()) {
+                return;
+            }
+
+            str << "[" << std::quoted("STATUS") << "," << std::quoted(component);
+            for (int i = 0; i < filteredProps.size(); ++i) {
+                str << "," << std::quoted(filteredProps[i]) << "," << filteredValues[i];
             }
             str << "]";
 
@@ -93,13 +108,14 @@ namespace ecv {
         static void error(const std::string &message) {
             log(ERROR, message);
         }
+
         static void status(const std::string &component, const std::string &property, const std::string &string) {
             std::ostringstream s;
             s << std::quoted(string);
             _status(component, {property}, {s.str()});
         }
 
-        template<typename T> static void status(const std::string &component, const std::string &property, T value) {
+        template<typename T> requires std::is_arithmetic_v<T> static void status(const std::string &component, const std::string &property, T value) {
             _status(component, {property}, {std::to_string(value)});
         }
         static void status(const std::string &component, const std::vector<std::string> &properties, const std::vector<std::string> &strings) {

@@ -155,11 +155,12 @@ void IpcServer::interact(int interactionSocket, int threadId) const {
 
         auto n = recv(interactionSocket, buffer.data() + receivedSize, currentBufferSize - receivedSize, 0);
 
-        if (errno == EPIPE || errno == ENOENT || n == 0) {
-            auto socket = onReconnect(interactionSocket);
+        if ((errno == EPIPE || errno == ENOENT || errno == ECONNRESET) && n <= 0) {
+            auto s = onReconnect(interactionSocket);
             close(interactionSocket);
-            interactionSocket = socket;
+            interactionSocket = s;
             fd.fd = interactionSocket;
+            continue;
         }
 
         if (n < 0) {
@@ -183,6 +184,11 @@ void IpcServer::interact(int interactionSocket, int threadId) const {
                     }
                     MessageHeader h = {};
                     memcpy(&h, &buffer[offset], sizeof(h));
+
+                    if (sizeof (MessageHeader) + offset >= buffer.size()) {
+                        break;
+                    }
+
                     auto d = &buffer[sizeof (MessageHeader) + offset];
                     auto frameSize = h.size + sizeof(MessageHeader);
                     if (offset + frameSize > receivedSize) {

@@ -245,25 +245,89 @@ int main(int argc, const char **argv) {
             calibrateMapper[i].drawGrid(plainFrames[i], plainGrid, w, h, cv::Scalar(255, 0, 0));
             calibrateMapper[i].drawGrid(rectifiedFrames[i], rectifiedGrid, w, h, cv::Scalar(255, 0, 0));
 
-            const cv::String &text = std::format(
-                    "sz = {}x{} ({}x{})\nprogress = {}% (f={}, s={})\nq = {}\nbestQ = {}\nmcBestQ = {}\npatternSize = {}\npatternSkew = {}\nf = {}x{}\nc = {}x{}",
-                    w, h, calibrationStrategy.getGridSize().first,
-                    calibrationStrategy.getGridSize().second,
-                    calibrationStrategy.getProgress(i) * 100,
-                    calibrationStrategy.getFrameCount(i),
-                    calibrationStrategy.getFrameSetCount(0),
-                    frameQuality,
-                    calibrationStrategy.getViewCosts(i),
-                    calibrationStrategy.getViewMulticamCosts(i),
-                    calibrateMapper[i].patternSize,
-                    calibrateMapper[i].skew,
-                    std::round(calibrationStrategy.getF(i).x * 1000) / 1000,
-                    std::round(calibrationStrategy.getF(i).y * 1000) / 1000,
-                    std::round(calibrationStrategy.getC(i).x * 1000) / 1000,
-                    std::round(calibrationStrategy.getC(i).y * 1000) / 1000
-            );
+            ecv::Telemetry::status("calib", std::format("cam.{}.pos.text", i), "cam.0.pos.text");
+            ecv::Telemetry::status("calib", std::format("cam.{}.dataset.size", i), calibrationStrategy.getFrameCount(i));
 
-            cv::putText(debug, text, cv::Point2i(30, 30), 1, 2, cv::Scalar(0, 0, 255));
+            auto cam1 = calibrationDatum;
+
+            cv::Vec3d t;
+            if (cam1.Ts.rows == 3 && cam1.Ts.cols == 1) {
+                t = cv::Vec3d(cam1.Ts.at<double>(0,0), cam1.Ts.at<double>(1,0), cam1.Ts.at<double>(2,0));
+            } else if (cam1.Ts.rows == 1 && cam1.Ts.cols == 3) {
+                t = cv::Vec3d(cam1.Ts.at<double>(0,0), cam1.Ts.at<double>(0,1), cam1.Ts.at<double>(0,2));
+            } else {
+                t = cv::Vec3d(1. / 0., 1. / 0., 1. / 0.);
+            }
+            auto baseline = cv::norm(t);
+
+            cv::Vec3d rvec = !calibrationDatum.R.empty() ? calibrationDatum.R : cv::Vec3d(1. / 0., 1. / 0., 1. / 0.);
+            double angle = cv::norm(rvec);
+            double angle_deg = angle * 180.0 / CV_PI;
+            cv::Vec3d axis = rvec / (angle + 1e-12);
+
+            ecv::Telemetry::status("calib", {
+                std::format("cam.{}.multicam_repr_error", i),
+                std::format("cam.{}.repr_error", i),
+                std::format("cam.{}.dataset.size", i),
+                std::format("cam.{}.dataset.percent", i),
+                std::format("cam.{}.aligned_bias", i),
+                std::format("cam.{}.T.baseline", i),
+                std::format("cam.{}.T.x", i),
+                std::format("cam.{}.T.y", i),
+                std::format("cam.{}.T.z", i),
+                std::format("cam.{}.R.angle", i),
+                std::format("cam.{}.R.axis.x", i),
+                std::format("cam.{}.R.axis.y", i),
+                std::format("cam.{}.R.axis.z", i),
+                std::format("cam.{}.R.x", i),
+                std::format("cam.{}.R.y", i),
+                std::format("cam.{}.R.z", i),
+                std::format("cam.{}.Fx", i),
+                std::format("cam.{}.Сx", i),
+                std::format("cam.{}.Cy", i)
+            }, std::vector<double>{
+                calibrationStrategy.getViewMulticamCosts(0),
+                calibrationStrategy.getViewCosts(i),
+                (double)calibrationStrategy.getFrameCount(i),
+                calibrationStrategy.getProgress(i),
+                0.0,
+                baseline,
+                t[0],
+                t[1],
+                t[2],
+                angle_deg,
+                axis[0],
+                axis[1],
+                axis[2],
+                rvec[0] * 180.0 / CV_PI,
+                rvec[1] * 180.0 / CV_PI,
+                rvec[2] * 180.0 / CV_PI,
+                calibrationStrategy.getF(i).x,
+                calibrationStrategy.getC(i).x,
+                calibrationStrategy.getC(i).y
+            });
+
+
+
+            // const cv::String &text = std::format(
+            //         "sz = {}x{} ({}x{})\nprogress = {}% (f={}, s={})\nq = {}\nbestQ = {}\nmcBestQ = {}\npatternSize = {}\npatternSkew = {}\nf = {}x{}\nc = {}x{}",
+            //         w, h, calibrationStrategy.getGridSize().first,
+            //         calibrationStrategy.getGridSize().second,
+            //         calibrationStrategy.getProgress(i) * 100,
+            //         calibrationStrategy.getFrameCount(i),
+            //         calibrationStrategy.getFrameSetCount(0),
+            //         frameQuality,
+            //         calibrationStrategy.getViewCosts(i),
+            //         calibrationStrategy.getViewMulticamCosts(i),
+            //         calibrateMapper[i].patternSize,
+            //         calibrateMapper[i].skew,
+            //         std::round(calibrationStrategy.getF(i).x * 1000) / 1000,
+            //         std::round(calibrationStrategy.getF(i).y * 1000) / 1000,
+            //         std::round(calibrationStrategy.getC(i).x * 1000) / 1000,
+            //         std::round(calibrationStrategy.getC(i).y * 1000) / 1000
+            // );
+
+            // cv::putText(debug, text, cv::Point2i(30, 30), 1, 2, cv::Scalar(0, 0, 255));
 
 #ifdef HAVE_OPENCV_HIGHGUI
             if (!plainFrames[i].empty()) {
@@ -274,19 +338,27 @@ int main(int argc, const char **argv) {
                     cv::line(rectifiedFrames[i], cv::Point(0, y), cv::Point(rectifiedFrames[i].cols - 1, y), cv::Scalar(0, 255, 0), 1);
                 }
 
-                remoteView.showMat(std::format("Plain {}", i), plainFrames[i]);
+                remoteView.showMat(std::format("Flat {}", i), plainFrames[i]);
             }
             if (!rectifiedFrames[i].empty()) {
-                remoteView.showMat(std::format("Rectified {}", i), rectifiedFrames[i]);
+                remoteView.showMat(std::format("Aligned {}", i), rectifiedFrames[i]);
             }
 
             if (!debug.empty()) {
-                remoteView.showMat(std::format("Debug {}", i), debug);
+                remoteView.showMat(std::format("Source {}", i), debug);
             }
 #endif
         }
 
         calibrationStrategy.addFrameSet(frameSet);
+
+        ecv::Telemetry::status("calib", {
+            "multicam.count",
+            "multicam.dataset.size",
+        }, {
+            std::to_string(frames.size()),
+            std::to_string(calibrationStrategy.getFrameSetCount(0)),
+        });
 
 #ifdef HAVE_OPENCV_HIGHGUI
         if (remoteView.waitKey() != -1) {
