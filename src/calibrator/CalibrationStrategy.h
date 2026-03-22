@@ -153,6 +153,10 @@ namespace ecv {
             return multicamThreadHandler->getRectifiedMap(cameraId);
         }
 
+        [[nodiscard]] double getAlignedBias(int cameraId) const {
+            return multicamThreadHandler->getAlignedBias(cameraId);
+        }
+
         [[nodiscard]] double getProgress(int cameraId) const {
             return cameraThread[cameraId]->getProgress();
         }

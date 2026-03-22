@@ -290,7 +290,7 @@ int main(int argc, const char **argv) {
                 calibrationStrategy.getViewCosts(i),
                 (double)calibrationStrategy.getFrameCount(i),
                 calibrationStrategy.getProgress(i),
-                0.0,
+                calibrationStrategy.getAlignedBias(i),
                 baseline,
                 t[0],
                 t[1],
@@ -306,28 +306,6 @@ int main(int argc, const char **argv) {
                 calibrationStrategy.getC(i).x,
                 calibrationStrategy.getC(i).y
             });
-
-
-
-            // const cv::String &text = std::format(
-            //         "sz = {}x{} ({}x{})\nprogress = {}% (f={}, s={})\nq = {}\nbestQ = {}\nmcBestQ = {}\npatternSize = {}\npatternSkew = {}\nf = {}x{}\nc = {}x{}",
-            //         w, h, calibrationStrategy.getGridSize().first,
-            //         calibrationStrategy.getGridSize().second,
-            //         calibrationStrategy.getProgress(i) * 100,
-            //         calibrationStrategy.getFrameCount(i),
-            //         calibrationStrategy.getFrameSetCount(0),
-            //         frameQuality,
-            //         calibrationStrategy.getViewCosts(i),
-            //         calibrationStrategy.getViewMulticamCosts(i),
-            //         calibrateMapper[i].patternSize,
-            //         calibrateMapper[i].skew,
-            //         std::round(calibrationStrategy.getF(i).x * 1000) / 1000,
-            //         std::round(calibrationStrategy.getF(i).y * 1000) / 1000,
-            //         std::round(calibrationStrategy.getC(i).x * 1000) / 1000,
-            //         std::round(calibrationStrategy.getC(i).y * 1000) / 1000
-            // );
-
-            // cv::putText(debug, text, cv::Point2i(30, 30), 1, 2, cv::Scalar(0, 0, 255));
 
 #ifdef HAVE_OPENCV_HIGHGUI
             if (!plainFrames[i].empty()) {

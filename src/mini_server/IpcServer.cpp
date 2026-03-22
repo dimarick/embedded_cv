@@ -48,25 +48,40 @@ extern "C++" void IpcServer::serve() {
 
         std::cout << "socket accepted: " << acceptedSocket << ". Connections count: " << acceptedSockets.size() << std::endl;
 
+        std::set<int> _deadThreads;
         {
             std::lock_guard lock(mutex);
-            auto _deadThreads = deadThreads;
+            _deadThreads = deadThreads;
+        }
+
+        for (auto tid : _deadThreads) {
+            std::unordered_map<int, std::thread>::iterator it;
+            std::unordered_map<int, std::thread>::iterator it2;
+
+            {
+                std::lock_guard lock(mutex);
+                it = threads.find(tid);
+                it2 = sendingThreads.find(tid);
+            }
+
+            if (it == threads.end()) {
+                continue;
+            }
+            it->second.join();
+            if (it2 == sendingThreads.end()) {
+                continue;
+            }
+            it2->second.join();
+
+            std::cout << tid << " thread stopped" << std::endl;
+        }
+        {
+            std::lock_guard lock(mutex);
+
             for (auto tid : _deadThreads) {
-                const auto &it = threads.find(tid);
-                if (it == threads.end()) {
-                    continue;
-                }
-                it->second.join();
-                const auto &it2 = sendingThreads.find(tid);
-                if (it2 == sendingThreads.end()) {
-                    continue;
-                }
-                it2->second.join();
                 threads.erase(tid);
                 sendingThreads.erase(tid);
                 deadThreads.erase(tid);
-
-                std::cout << tid << " thread stopped" << std::endl;
             }
         }
     }
@@ -155,7 +170,7 @@ void IpcServer::interact(int interactionSocket, int threadId) const {
 
         auto n = recv(interactionSocket, buffer.data() + receivedSize, currentBufferSize - receivedSize, 0);
 
-        if ((errno == EPIPE || errno == ENOENT || errno == ECONNRESET) && n <= 0) {
+        if ((fd.revents & POLLHUP || errno == EPIPE || errno == ENOENT || errno == ECONNRESET) && n <= 0) {
             auto s = onReconnect(interactionSocket);
             close(interactionSocket);
             interactionSocket = s;
@@ -224,15 +239,16 @@ extern "C++" void IpcServer::broadcast(const void *buffer, size_t bufferSize, un
     const auto expire = getExpire(ttl);
     mutex.lock();
     std::vector<int> threadSafeAcceptedSockets(acceptedSockets.size());
+    auto threadSafeSendingTasks = sendingTasks;
     std::copy(acceptedSockets.begin(), acceptedSockets.end(), threadSafeAcceptedSockets.begin());
     mutex.unlock();
 
     auto frame = createFrame(buffer, bufferSize, expire, type);
 
-    std::atomic<bool> hasReady = false;
+    std::atomic hasReady = false;
 
     for (int acceptedSocket : threadSafeAcceptedSockets) {
-        auto &t = sendingTasks[acceptedSocket];
+        auto t = threadSafeSendingTasks[acceptedSocket];
         if (t->done == false) {
             continue;
         }

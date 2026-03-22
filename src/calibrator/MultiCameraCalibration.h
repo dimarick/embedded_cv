@@ -112,6 +112,10 @@ namespace ecv {
             return viewMulticamCosts[cameraId];
         }
 
+        [[nodiscard]] double getAlignedBias(int cameraId) const {
+            return gridDistanceCosts[cameraId];
+        }
+
         double verifyParamsUsingGridMatch(const std::vector<cv::Mat> &imagePoints,
                                           const CalibrationData &calibrationData) const;
 
