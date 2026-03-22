@@ -273,7 +273,7 @@ int main(int argc, const char **argv) {
             ecv::Telemetry::status("calib", std::format("cam.{}.pos.text", i), "cam.0.pos.text");
             ecv::Telemetry::status("calib", std::format("cam.{}.dataset.size", i), calibrationStrategy.getFrameCount(i));
 
-            auto cam1 = calibrationDatum;
+            auto cam1 = rectificationDatum;
 
             cv::Vec3d t;
             if (cam1.Ts.rows == 3 && cam1.Ts.cols == 1) {
@@ -285,7 +285,7 @@ int main(int argc, const char **argv) {
             }
             auto baseline = cv::norm(t);
 
-            cv::Vec3d rvec = !calibrationDatum.R.empty() ? calibrationDatum.R : cv::Vec3d(1. / 0., 1. / 0., 1. / 0.);
+            cv::Vec3d rvec = !rectificationDatum.Rs.empty() ? rectificationDatum.Rs : cv::Vec3d(1. / 0., 1. / 0., 1. / 0.);
             double angle = cv::norm(rvec);
             double angle_deg = angle * 180.0 / CV_PI;
             cv::Vec3d axis = rvec / (angle + 1e-12);
@@ -310,7 +310,7 @@ int main(int argc, const char **argv) {
                 std::format("cam.{}.Сx", i),
                 std::format("cam.{}.Cy", i)
             }, std::vector<double>{
-                calibrationStrategy.getViewMulticamCosts(0),
+                calibrationStrategy.getViewMulticamCosts(i),
                 calibrationStrategy.getViewCosts(i),
                 calibrationStrategy.getProgress(i),
                 calibrationStrategy.getAlignedBias(i),

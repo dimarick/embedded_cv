@@ -31,7 +31,7 @@ namespace ecv {
                 std::cerr << "Try connecting to " << captureSocketName << "..." << strerror(errno) << std::endl;
                 captureSocket = mini_server::SocketFactory::createClientSocket(captureSocketName);
 
-                if (captureSocket == -1 && errno == ECONNREFUSED) {
+                if (captureSocket == -1 && (errno == ECONNREFUSED || errno == ENOENT)) {
                     sleep(1);
                     continue;
                 }

@@ -68,8 +68,33 @@ int main(int argc, const char **argv) {
     ecv::SocketCapture socketCapture(argv[1]);
     socketCapture.run();
 
+    std::mutex mapsMutex;
+    std::vector<cv::UMat> maps, newMaps;
+    std::vector<bool> mapsUpdated;
+    std::vector<ecv::CalibrationData> calibrationData;
+
+    for (int i = 0; i < 10; i++) {
+        cv::UMat map;
+        if (!ecv::MatStorage::matRead(std::format("map_{}.bin", i), map)) {
+            break;
+        }
+        newMaps.emplace_back(map);
+        maps.emplace_back(map);
+
+        cv::FileStorage fs;
+        fs.open(std::format("config_{}.yaml", i), cv::FileStorage::READ);
+        if (fs.isOpened()) {
+            ecv::CalibrationData c;
+            c.load(fs);
+            calibrationData.emplace_back(c);
+            fs.release();
+        }
+    }
+
+    mapsUpdated.resize(newMaps.size());
+
     commandServer.setSocket(SocketFactory::createServerSocket("/tmp/cv_ctl", 1));
-    commandServer.setOnMessage([&remoteView, &commandServer, &suspended, &socketCapture] (int socket, const std::string &message) {
+    commandServer.setOnMessage([&remoteView, &commandServer, &suspended, &socketCapture, &newMaps, &mapsUpdated, &mapsMutex, &calibrationData] (int socket, const std::string &message) {
         std::istringstream is(message);
         std::ostringstream os;
         char c;
@@ -103,6 +128,25 @@ int main(int argc, const char **argv) {
         } else if (command == "RESUME_CV") {
             if (suspended) {
                 suspended = false;
+
+                for (int i = 0; i < newMaps.size(); i++) {
+                    std::lock_guard lock(mapsMutex);
+
+                    cv::UMat map;
+                    ecv::MatStorage::matRead(std::format("map_{}.bin", i), map);
+                    newMaps[i] = map;
+                    mapsUpdated[i] = true;
+
+                    cv::FileStorage fs;
+                    fs.open(std::format("config_{}.yaml", i), cv::FileStorage::READ);
+                    if (fs.isOpened()) {
+                        ecv::CalibrationData config;
+                        config.load(fs);
+                        calibrationData[i] = config;
+                        fs.release();
+                    }
+                }
+
                 socketCapture.run();
                 commandServer.send(socket, "[\"RESUMED_CV\"]", 0, IpcServer::MessageTypeEnum::TYPE_CONTROL);
                 ecv::Telemetry::info(std::format("CV resumed", message, os.str()));
@@ -157,65 +201,6 @@ int main(int argc, const char **argv) {
         throw std::runtime_error("OpenCL is not available");
     }
 
-    // std::vector<cv::Mat> invMaps;
-    std::mutex mapsMutex;
-    std::vector<cv::UMat> maps, newMaps;
-    std::vector<std::filesystem::file_time_type> mapsMTime;
-    std::vector<bool> mapsUpdated;
-    std::vector<ecv::CalibrationData> calibrationData;
-
-    for (int i = 0; i < 10; i++) {
-        cv::UMat map;
-        if (!ecv::MatStorage::matRead(std::format("map_{}.bin", i), map)) {
-            break;
-        }
-        newMaps.emplace_back(map);
-        maps.emplace_back(map);
-
-        cv::FileStorage fs;
-        fs.open(std::format("config_{}.yaml", i), cv::FileStorage::READ);
-        if (fs.isOpened()) {
-            ecv::CalibrationData c;
-            c.load(fs);
-            calibrationData.emplace_back(c);
-            fs.release();
-        }
-    }
-
-    mapsMTime.resize(newMaps.size());
-    mapsUpdated.resize(newMaps.size());
-
-    std::thread mapsWatch([&newMaps, &mapsMTime, &mapsUpdated, &mapsMutex, &calibrationData](){
-        while (running) {
-            sleep(5);
-            for (int i = 0; i < newMaps.size(); i++) {
-                auto filename = std::format("map_{}.bin", i);
-                auto ftime = std::filesystem::last_write_time(filename);
-
-                if (ftime > mapsMTime[i]) {
-                    std::lock_guard lock(mapsMutex);
-                    cv::UMat map;
-                    ecv::MatStorage::matRead(filename, map);
-                    newMaps[i] = map;
-                    mapsMTime[i] = ftime;
-                    mapsUpdated[i] = true;
-                }
-
-                cv::FileStorage fs;
-                fs.open(std::format("config_{}.yaml", i), cv::FileStorage::READ);
-                if (fs.isOpened()) {
-                    std::lock_guard lock(mapsMutex);
-                    calibrationData[i].load(fs);
-                    fs.release();
-                }
-            }
-        }
-    });
-
-    // for (int i = 0; i < maps.size(); ++i) {
-    //     invMap(maps[i].getMat(cv::ACCESS_READ), invMaps[i]);
-    // }
-
 #ifdef HAVE_OPENCV_HIGHGUI
     cv::namedWindow("Disparity", cv::WINDOW_AUTOSIZE);
     cv::namedWindow("src " + std::to_string(0), cv::WINDOW_AUTOSIZE);
@@ -258,7 +243,7 @@ int main(int argc, const char **argv) {
             std::lock_guard lock(mapsMutex);
             if (mapsUpdated[j] != false) {
                 mapsUpdated[j] = false;
-                maps[i] = newMaps[j].clone();
+                maps[j] = newMaps[j].clone();
             }
         }
 
@@ -457,7 +442,6 @@ int main(int argc, const char **argv) {
     tmServerThread.join();
     commandServerThread.join();
     socketCapture.stop();
-    mapsWatch.join();
 
     return 0;
 }

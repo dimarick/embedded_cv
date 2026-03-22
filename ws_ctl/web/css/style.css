@@ -673,7 +673,6 @@ input:checked + .slider:before {
 /* Блок статистики (число камер, размер датасета) — тоже на всю ширину */
 .viewport.calibration-results .calibration-stats {
     display: grid;
-    grid-template-columns: 1fr;
     flex-wrap: wrap;
     gap: 24px;
     background: #f9f8ff;
@@ -684,8 +683,12 @@ input:checked + .slider:before {
     color: #5a5a7a;
 }
 
-.layout-single .viewport.calibration-results .calibration-stats {
+.layout-single .viewport.calibration-results .calibration-stats, .layout-dual .viewport.calibration-results .calibration-stats {
     grid-template-columns: 1fr 1fr;
+}
+
+.layout-quad .viewport.calibration-results .calibration-stats {
+    grid-template-columns: 1fr;
 }
 
 .calib-multicam-item {
