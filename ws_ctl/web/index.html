@@ -53,7 +53,7 @@
 
         <!-- ЦЕНТРАЛЬНАЯ ПАНЕЛЬ (Видео и главный контент) -->
         <main class="main-panel">
-            <div class="calibration-panel calibration-mode is-hidden">
+            <div class="calibration-panel calibration-mode-enabled is-hidden">
                 <span class="calibration-title">🔧 РЕЖИМ КАЛИБРОВКИ</span>
                 <button class="calibration-btn" id="calibrate-start">Начать</button>
                 <button class="calibration-btn" id="calibrate-reset">Сброс</button>
@@ -72,51 +72,155 @@
             <!-- Контейнер для viewport'ов. layout-single активен по умолчанию -->
             <div class="viewport-container layout-single">
                 <div id="app-viewports" class="viewport-grid">
-                    <!-- Viewport 1 (Основной, всегда видим) -->
-                    <div class="viewport active" id="viewport-1">
+                    <div class="viewport calibration-mode-disabled" id="viewport-1">
                         <div class="viewport-title">КАМЕРА 1</div>
-                        <canvas class="viewport-canvas-stream" data-name="Source 0"></canvas>
+                        <canvas class="viewport-canvas-stream" data-service="cv" data-name="Source 0"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
                         </div>
                     </div>
-                    <!-- Следующие viewport'ы скрыты в лейауте "single" -->
-                    <div class="viewport active" id="viewport-2">
+                    <div class="viewport calibration-mode-disabled" id="viewport-2">
                         <div class="viewport-title">КАМЕРА 2</div>
-                        <canvas class="viewport-canvas-stream" data-name="Source 1"></canvas>
+                        <canvas class="viewport-canvas-stream" data-service="cv" data-name="Source 1"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
                         </div>
                     </div>
-                    <div class="viewport is-hidden" id="viewport-3">
-                        <div class="viewport-title">Разность</div>
-                        <canvas class="viewport-canvas-stream" data-name="Disparity"></canvas>
+                    <div class="viewport calibration-mode-disabled" id="viewport-3">
+                        <div class="viewport-title">Карта глубины</div>
+                        <canvas class="viewport-canvas-stream" data-service="cv" data-name="Disparity"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
                         </div>
                     </div>
-                    <div class="viewport is-hidden" id="viewport-4">
+                    <div class="viewport calibration-mode-disabled" id="viewport-4">
                         <div class="viewport-title">Точность</div>
-                        <canvas class="viewport-canvas-stream" data-name="Variance"></canvas>
+                        <canvas class="viewport-canvas-stream" data-service="cv" data-name="Variance"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
                         </div>
                     </div>
-                    <div class="viewport is-hidden" id="viewport-5">
-                        <div class="viewport-title">КАМЕРА 3</div>
-                        <canvas class="viewport-canvas-stream" data-name="Rectified 0"></canvas>
+                    <div class="viewport calibration-mode-enabled" id="viewport-5">
+                        <div class="viewport-title">КАМЕРА 1</div>
+                        <canvas class="viewport-canvas-stream" data-service="calib" data-name="Source 0"></canvas>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
                         </div>
                     </div>
-                    <div class="viewport is-hidden" id="viewport-6">
-                        <div class="viewport-title">КАРТА</div>
-                        <canvas class="viewport-canvas-stream" data-name="Rectified 1"></canvas>
+                    <div class="viewport calibration-mode-enabled" id="viewport-6">
+                        <div class="viewport-title">КАМЕРА 2</div>
+                        <canvas class="viewport-canvas-stream" data-service="calib" data-name="Source 1"></canvas>
+                        <div class="viewport-controls">
+                            <button class="viewport-btn"><i class="fas fa-star"></i></button>
+                            <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
+                        </div>
+                    </div>
+                    <div class="viewport calibration-mode-enabled" id="viewport-7">
+                        <div class="viewport-title">Flat 1</div>
+                        <canvas class="viewport-canvas-stream" data-service="calib" data-name="Flat 0"></canvas>
+                        <div class="viewport-controls">
+                            <button class="viewport-btn"><i class="fas fa-star"></i></button>
+                            <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
+                        </div>
+                    </div>
+                    <div class="viewport calibration-mode-enabled" id="viewport-8">
+                        <div class="viewport-title">Flat 2</div>
+                        <canvas class="viewport-canvas-stream" data-service="calib" data-name="Flat 1"></canvas>
+                        <div class="viewport-controls">
+                            <button class="viewport-btn"><i class="fas fa-star"></i></button>
+                            <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
+                        </div>
+                    </div>
+                    <div class="viewport calibration-mode-enabled" id="viewport-9">
+                        <div class="viewport-title">Aligned 1</div>
+                        <canvas class="viewport-canvas-stream" data-service="calib" data-name="Aligned 0"></canvas>
+                        <div class="viewport-controls">
+                            <button class="viewport-btn"><i class="fas fa-star"></i></button>
+                            <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
+                        </div>
+                    </div>
+                    <div class="viewport calibration-mode-enabled" id="viewport-10">
+                        <div class="viewport-title">Aligned 2</div>
+                        <canvas class="viewport-canvas-stream" data-service="calib" data-name="Aligned 1"></canvas>
+                        <div class="viewport-controls">
+                            <button class="viewport-btn"><i class="fas fa-star"></i></button>
+                            <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
+                        </div>
+                    </div>
+                    <div class="viewport calibration-mode-enabled" id="viewport-11">
+                        <div class="viewport-title">Результаты калибровки</div>
+                        <div class="calibration-stats">
+                            <div class="calib-multicam-items">
+                                <div class="calib-multicam-item"><span class="telemetry-label">Число камер: </span><span class="telemetry-value" name="calib.multicam.count">0</span></div>
+                                <div class="calib-multicam-item"><span class="telemetry-label">Размер датасета: </span>
+                                    <span class="telemetry-value" name="calib.multicam.dataset.size">0</span>
+                                </div>
+                            </div>
+
+                            <div class="calib-cam-items">
+                                <div class="calib-cam-title">Камера 1</div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Позиция: </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.0.pos.text">н/д</span></span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Ошибка репроекции (общая): </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.0.multicam_repr_error">0</span></span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Ошибка репроекции (камеры): </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.0.repr_error">0</span></span></div>
+                                <div class="calib-multicam-item"><span class="telemetry-label">Размер датасета: </span>&nbsp;<span class="telemetry-values">
+                                    <span class="telemetry-value" name="calib.cam.0.dataset.size">0</span>
+                                    (<span class="telemetry-value" name="calib.cam.0.dataset.percent">0</span> %)
+                                </span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Искажение исправления: </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.0.aligned_bias">0</span></span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Сдвиг от первой камеры (x,y,z): </span>&nbsp;<span class="telemetry-values">
+                                    (<span class="telemetry-value" name="calib.cam.0.T.x">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.0.T.y">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.0.T.z">0</span>)
+                                </span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Несоосность: </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.0.R.angle">0</span></span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Несоосность, направление: </span>&nbsp;<span class="telemetry-values">
+                                    <span class="telemetry-value" name="calib.cam.0.R.axis.x">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.0.R.axis.y">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.0.R.axis.z">0</span>
+                                </span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Несоосность по x,y,z: </span>&nbsp;<span class="telemetry-values">
+                                    <span class="telemetry-value" name="calib.cam.0.R.x">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.0.R.y">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.0.R.z">0</span>
+                                </span></div>
+                                <div class="calib-cam-item"><span>Фокусное расстояние: </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.0.Fx">0</span></span></div>
+                                <div class="calib-cam-item"><span>Оптический центр: </span>&nbsp;<span class="telemetry-values">(<span class="telemetry-value" name="calib.cam.0.Сx">0</span>;<span class="telemetry-value" name="calib.cam.0.Cy">0</span>)</span></div>
+                            </div>
+                            <div class="calib-cam-items">
+                                <div class="calib-cam-title">Камера 2</div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Позиция: </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.1.pos.text">н/д</span></span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Ошибка репроекции (общая): </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.1.multicam_repr_error">0</span></span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Ошибка репроекции (камеры): </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.1.repr_error">0</span></span></div>
+                                <div class="calib-multicam-item"><span class="telemetry-label">Размер датасета: </span>&nbsp;<span class="telemetry-values">
+                                    <span class="telemetry-value" name="calib.cam.1.dataset.size">0</span>
+                                    (<span class="telemetry-value" name="calib.cam.1.dataset.percent">0</span> %)
+                                </span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Искажение исправления: </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.1.aligned_bias">0</span></span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Сдвиг от первой камеры (x,y,z): </span>&nbsp;<span class="telemetry-values">
+                                    (<span class="telemetry-value" name="calib.cam.1.T.x">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.1.T.y">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.1.T.z">0</span>)
+                                </span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Несоосность: </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.1.repr_error">0</span></span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Несоосность, направление: </span>&nbsp;<span class="telemetry-values">
+                                    <span class="telemetry-value" name="calib.cam.1.R.axis.x">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.1.R.axis.y">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.1.R.axis.z">0</span>
+                                </span></div>
+                                <div class="calib-cam-item"><span class="telemetry-label">Несоосность по x,y,z: </span>&nbsp;<span class="telemetry-values">
+                                    <span class="telemetry-value" name="calib.cam.1.R.x">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.1.R.y">0</span>,
+                                    <span class="telemetry-value" name="calib.cam.1.R.z">0</span>
+                                </span></div>
+                                <div class="calib-cam-item"><span>Фокусное расстояние: </span>&nbsp;<span class="telemetry-values"><span class="telemetry-value" name="calib.cam.1.Fx">0</span></span></div>
+                                <div class="calib-cam-item"><span>Оптический центр: </span>&nbsp;<span class="telemetry-values">(<span class="telemetry-value" name="calib.cam.1.Сx">0</span>;<span class="telemetry-value" name="calib.cam.1.Cy">0</span>)</span></div>
+                            <div>
+                        </div>
                         <div class="viewport-controls">
                             <button class="viewport-btn"><i class="fas fa-star"></i></button>
                             <button class="viewport-btn"><i class="fas fa-maximize"></i></button>
@@ -218,15 +322,6 @@
                     viewportContainer.classList.remove('layout-single', 'layout-dual', 'layout-quad');
                     // Добавляем нужный класс лейаута
                     viewportContainer.classList.add(`layout-${layout}`);
-
-                    // Показываем/скрываем viewport'ы в зависимости от лейаута
-                    if (layout === 'single') {
-                        viewports.forEach((vp, idx) => idx === 0 ? vp.classList.remove('is-hidden') : vp.classList.add('is-hidden'));
-                    } else if (layout === 'dual') {
-                        viewports.forEach((vp, idx) => idx < 2 ? vp.classList.remove('is-hidden') : vp.classList.add('is-hidden'));
-                    } else if (layout === 'quad') {
-                        viewports.forEach(vp => vp.classList.remove('is-hidden'));
-                    }
                 });
             });
 

@@ -7,15 +7,18 @@ export default class Viewports {
 
     #viewportsElement;
     #streamSocket;
+    #streamCalibSocket;
     #viewports = [];
 
     constructor(viewportsElement) {
         this.#viewportsElement = viewportsElement;
         this.#streamSocket = new Socket('/cv_stream', (data) => this.onMessage(data));
+        this.#streamCalibSocket = new Socket('/cv_calib_stream', (data) => this.onMessage(data));
         this.#streamSocket.connect();
+        this.#streamCalibSocket.connect();
 
         for (const element of viewportsElement.getElementsByClassName("viewport")) {
-            this.#viewports.push(new Viewport(element, this.#streamSocket));
+            this.#viewports.push(new Viewport(element, {cv: this.#streamSocket, calib: this.#streamCalibSocket}));
         }
     }
 

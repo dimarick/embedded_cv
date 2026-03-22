@@ -186,7 +186,7 @@ body {
     position: relative;
     background-color: #f0efff; /* Светлый фон для области видео */
     border-radius: 8px;
-    overflow: hidden;
+    overflow: scroll;
     min-height: 300px;
 }
 
@@ -652,4 +652,148 @@ input:checked + .slider:before {
 .calibration-close:hover {
     color: #b33a3a;
     transform: scale(1.1);
+}
+
+.calib-multicam-items {
+    white-space: nowrap;
+    display: block;
+    width: 100%;
+    margin-top: 30px;
+}
+
+/* Общий контейнер калибровочного вьюпорта — грид с двумя колонками */
+.viewport.calibration-mode-enabled {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 12px;
+    background-color: #fefefe;
+    overflow-y: auto;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Заголовок вьюпорта — занимает всю ширину */
+.viewport-title {
+    grid-column: 1 / -1;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #4a4a6d;
+    margin: 0 0 8px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #e6e1ff;
+}
+
+/* Блок статистики (число камер, размер датасета) — тоже на всю ширину */
+.calibration-stats {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    background: #f9f8ff;
+    border-radius: 10px;
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    font-size: 0.85rem;
+    color: #5a5a7a;
+}
+
+.calib-multicam-item {
+    white-space: nowrap;
+}
+
+.telemetry-label {
+    font-weight: 500;
+}
+
+.telemetry-value {
+    font-weight: 500;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    color: #6b4e9e;
+}
+
+/* Блоки каждой камеры — автоматически попадают в сетку по колонкам */
+.calib-cam-items {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e6e1ff;
+    padding: 10px 12px;
+    transition: box-shadow 0.1s;
+}
+
+.calib-cam-items:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+/* Заголовок камеры */
+.calib-cam-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #7b4cae;
+    margin-bottom: 10px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed #e6e1ff;
+}
+
+/* Строка параметра — без рамок, компактно */
+.calib-cam-item {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+    font-size: 0.75rem;
+    line-height: 1.3;
+    color: #5a5a7a;
+}
+
+/* Значения — моноширинный, без фона, но можно сделать полужирным */
+.calib-cam-item .telemetry-value {
+    font-weight: 500;
+    font-family: monospace;
+    color: #4a6fa5;
+}
+
+/* Для координат и списков — не ломать строку */
+.calib-cam-item span {
+    white-space: nowrap;
+}
+
+/* Кнопки управления вьюпортом (звезда, развернуть) */
+.viewport-controls {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    gap: 8px;
+    opacity: 0.3;
+    transition: opacity 0.2s;
+    z-index: 10;
+}
+
+.viewport:hover .viewport-controls {
+    opacity: 1;
+}
+
+.viewport-btn {
+    background: rgba(255, 255, 255, 0.85);
+    border: none;
+    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--pastel-text, #4a4a6d);
+}
+
+.viewport-btn:hover {
+    background: var(--pastel-lavender, #e6e1ff);
+}
+
+/* Адаптация для узких экранов — одна колонка */
+@media (max-width: 640px) {
+    .viewport.calibration-mode-enabled {
+        grid-template-columns: 1fr;
+    }
 }

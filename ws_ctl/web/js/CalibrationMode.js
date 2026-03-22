@@ -9,6 +9,8 @@ export default class CalibrationMode {
         this.#cvCtlSocket = cvCtlSocket;
         this.#calibCtlSocket = calibCtlSocket;
 
+        this.toggleState(document.getElementById('calibration-switch').checked);
+
         document.addEventListener('change', (event) => {
             if (event.target.id === 'calibration-switch') {
                 this.toggleState(event.target.checked);
@@ -48,14 +50,21 @@ export default class CalibrationMode {
     }
 
     #toggleUiState(toState) {
-        const elements = document.getElementsByClassName('calibration-mode');
+        const elementsEnabled = document.getElementsByClassName('calibration-mode-enabled');
+        const elementsDisabled = document.getElementsByClassName('calibration-mode-disabled');
         if (toState) {
-            for (const e of elements) {
+            for (const e of elementsEnabled) {
                 e.classList.remove('is-hidden');
             }
-        } else {
-            for (const e of elements) {
+            for (const e of elementsDisabled) {
                 e.classList.add('is-hidden');
+            }
+        } else {
+            for (const e of elementsEnabled) {
+                e.classList.add('is-hidden');
+            }
+            for (const e of elementsDisabled) {
+                e.classList.remove('is-hidden');
             }
         }
 

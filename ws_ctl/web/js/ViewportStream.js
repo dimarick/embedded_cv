@@ -11,10 +11,10 @@ export default class ViewportStream {
     #visible = false;
     #image = null;
 
-    constructor(canvas, socket) {
+    constructor(canvas, sockets) {
         this.#element = canvas;
         this.#name = canvas.dataset.name;
-        this.#socket = socket;
+        this.#socket = sockets[canvas.dataset.service];
         this.#ctx = canvas.getContext("2d");
         this.resize();
         setInterval(() => {
