@@ -1,11 +1,11 @@
 @startuml
 skinparam componentStyle uml2
 
-component "ПУ" as UI
+component "Панель управления" as UI
 component "WebSocket Адаптер" as WS
 component "Калибровка" as CALIB
-component "Захват" as CAPTURE
-component "CV" as CV
+component "Компонент видеозахвата" as CAPTURE
+component "Компьютерное зрение" as CV
 
 UI --> WS : команды
 WS --> UI : данные визуализации
