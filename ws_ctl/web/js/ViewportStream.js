@@ -1,21 +1,21 @@
 import Viewports from "./Viewports.js";
 
 export default class ViewportStream {
-    #ctx;
-    #element;
+    ctx;
+    element;
     #name;
-    #socket = null;
-    #imageData = null;
+    socket = null;
     #w = 0;
     #h = 0;
     #visible = false;
+    imageHeader = null;
     #image = null;
 
     constructor(canvas, sockets) {
-        this.#element = canvas;
+        this.element = canvas;
         this.#name = canvas.dataset.name;
-        this.#socket = sockets[canvas.dataset.service];
-        this.#ctx = canvas.getContext("2d");
+        this.socket = sockets[canvas.dataset.service];
+        this.ctx = canvas.getContext("2d");
         this.resize();
         setInterval(() => {
             this.resize();
@@ -28,14 +28,14 @@ export default class ViewportStream {
 
     resize() {
         const r = window.devicePixelRatio;
-        const rect = this.#element.getBoundingClientRect();
+        const rect = this.element.getBoundingClientRect();
         const w = rect.width * r
         const h = rect.height * r;
 
         const visible = this.isVisible();
         if (!visible) {
             if (this.#visible !== visible) {
-                this.#socket.sendMessage("DESTROY_CHANNEL " + this.#quote(this.#name) + " 0");
+                this.socket.sendMessage("DESTROY_CHANNEL " + this.quote(this.#name) + " 0");
                 this.#visible = visible;
             }
 
@@ -47,18 +47,18 @@ export default class ViewportStream {
 
         this.#visible = visible;
 
-        this.#socket.sendMessage("CHANNEL " + this.#quote(this.#name) + " 0 " + Math.round(w) + " " + Math.round(h) + " 0 0 0 0");
+        this.socket.sendMessage("CHANNEL " + this.quote(this.#name) + " 0 " + Math.round(w) + " " + Math.round(h) + " 0 0 0 0");
 
         this.#w = w;
         this.#h = h;
 
         const dpr = window.devicePixelRatio;
-        this.#element.width = Math.round(w * dpr);
-        this.#element.height = Math.round(h * dpr);
+        this.element.width = Math.round(w);
+        this.element.height = Math.round(h);
     }
 
     isVisible() {
-        return !document.hidden && this.#isElementVisibleByCSS(this.#element) && this.#isElementInViewPort(this.#element);
+        return !document.hidden && this.#isElementVisibleByCSS(this.element) && this.#isElementInViewPort(this.element);
     }
     #isElementVisibleByCSS(element) {
         const style = getComputedStyle(element)
@@ -90,6 +90,7 @@ export default class ViewportStream {
         if (event.detail.header.name !== this.#name) {
             return;
         }
+        this.imageHeader = event.detail.header
         this.#image = event.detail.image;
     }
 
@@ -99,10 +100,10 @@ export default class ViewportStream {
             return;
         }
 
-        const ctx = this.#ctx;
+        const ctx = this.ctx;
 
-        const w = this.#element.width;
-        const h = this.#element.height;
+        const w = this.element.width;
+        const h = this.element.height;
 
         const iw = this.#image.width;
         const ih = this.#image.height;
@@ -112,7 +113,7 @@ export default class ViewportStream {
         requestAnimationFrame(() => this.renderFrame());
     }
 
-    #quote(name) {
+    quote(name) {
         return '"' + name.replace(/"/, '\"') + '"';
     }
 }

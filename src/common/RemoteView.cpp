@@ -188,8 +188,8 @@ RemoteView::CvMatHeader RemoteView::createMessageHeaderFromMat(const cv::Mat &ma
     header.viewH = (short)(viewH & 0xFFFF);
     header.x = (short)(rect.x & 0xFFFF);
     header.y = (short)(rect.y & 0xFFFF);
-    header.w = (short)(rect.width & 0xFFFF);
-    header.h = (short)(rect.height & 0xFFFF);
+    header.w = (short)(rect.width != 0 ? rect.width : mat.cols & 0xFFFF);
+    header.h = (short)(rect.height != 0 ? rect.height : mat.rows & 0xFFFF);
     header.codec = RAW;
 
     switch (mat.type() & CV_MAT_DEPTH_MASK) {

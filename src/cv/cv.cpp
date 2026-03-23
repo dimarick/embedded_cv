@@ -397,6 +397,7 @@ int main(int argc, const char **argv) {
         cv::putText(variance8, varStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         // cv::putText(depth8, depthStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         remoteView.showMat("Disparity", disparity8);
+        remoteView.showMat("DisparityFp", disparityFp);
         remoteView.showMat("Variance", variance8);
         if (!depth8.empty()) {
             remoteView.showMat("Depth", depth8);
