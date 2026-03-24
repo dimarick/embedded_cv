@@ -10,6 +10,7 @@
 #include <common/Defer.h>
 #include <IpcServer.h>
 #include <SocketFactory.h>
+#include <sys/stat.h>
 #include <common/CaptureInfo.h>
 #include "highgui.hpp"
 
@@ -42,7 +43,12 @@ void closeAll(std::vector<FILE *> &captures) {
         if (capture == nullptr) {
             continue;
         }
-        fclose(capture);
+        int status = pclose(capture);
+
+        if (status != 0) {
+            std::cerr << std::format("pclose error: {}", status);
+        }
+
         captures[i] = nullptr;
     }
 }
@@ -181,6 +187,10 @@ int main(int argc, const char **argv) {
         for (int i = 0; i < captures.size(); i++) {
             if (captures[i] == nullptr) {
                 captures[i] = popen(captureCommands[i].data(), "r");
+
+                if (!captures[i]) {
+                    continue;
+                }
             }
             const auto &capture = captures[i];
             auto captureInfo = reinterpret_cast<ecv::CaptureInfo *>(captureBuffer.data() + captureInfoRef[i]);
@@ -191,7 +201,9 @@ int main(int argc, const char **argv) {
                 auto bytes = fread(captureBuffer.data() + imageOffset, sizeof(char), imageSize, capture);
                 if (bytes == 0) {
                     if (feof(capture) || ferror(capture)) {
-                        fclose(captures[i]);
+
+                        pclose(captures[i]);
+
                         captures[i] = nullptr;
                     }
                     break;
