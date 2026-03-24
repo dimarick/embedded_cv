@@ -121,6 +121,10 @@ namespace ecv {
             data[cameraId] = CalibrationData();
             rectificationData[cameraId] = CalibrationData();
             rectifiedMap[cameraId].release();
+            multicamCosts = 1. / 0.;
+            for (auto &c : gridDistanceCosts) {
+                c = 1. / 0.;
+            }
         }
 
         double verifyParamsUsingGridMatch(const std::vector<cv::Mat> &imagePoints,

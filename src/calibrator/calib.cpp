@@ -84,6 +84,25 @@ int main(int argc, const char **argv) {
     std::vector<cv::Mat> maps(frames.size());
     std::vector<cv::Mat> rectifiedMaps(frames.size());
 
+    for (int i = 0; i < 10; i++) {
+        cv::Mat map;
+        if (!ecv::MatStorage::matRead(std::format("map_{}.bin", i), map)) {
+            break;
+        }
+        maps[i] = map;
+        rectifiedMaps[i] = map;
+
+        cv::FileStorage fs;
+        fs.open(std::format("config_{}.yaml", i), cv::FileStorage::READ);
+        if (fs.isOpened()) {
+            ecv::CalibrationData c;
+            c.load(fs);
+            calibrationData[i] = c;
+            rectificationData[i] = c;
+            fs.release();
+        }
+    }
+
     ecv::CalibrationStrategy calibrationStrategy(size, (int)frames.size(), [&maps, &rectifiedMaps, &mapsMutex, &calibrationData, &rectificationData](int cameraId, const ecv::CalibrationStrategy &that) {
         {
             std::unique_lock lock(mapsMutex);

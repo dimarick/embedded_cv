@@ -74,6 +74,10 @@ namespace ecv {
             std::unique_lock lock(dataMutex);
             data = CalibrationData();
             tmpData = CalibrationData();
+
+            reprCost = 1. / 0.;
+            gridMaxCost = 1. / 0.;
+            viewCost = 1. / 0.;
         }
 
         static void undistortImagePoints(const std::vector<ecv::CalibrateMapper::Point3> &imagePoints, std::vector<ecv::CalibrateMapper::Point3> &plainPoints, const CalibrationData &calibrationData);
