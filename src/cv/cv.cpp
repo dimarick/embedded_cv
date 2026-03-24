@@ -306,6 +306,7 @@ int main(int argc, const char **argv) {
         variance.setTo(0);
 
         startDisp = std::chrono::high_resolution_clock::now();
+
         disparityEvaluator.evaluateDisparity(result, disparity, variance);
         endDisp = std::chrono::high_resolution_clock::now();
 
@@ -337,11 +338,11 @@ int main(int argc, const char **argv) {
                 cv::minMaxLoc(depthChannels[2], &minVal, &maxVal);
             }
 
+            remoteView.showMat("DepthFp", depthChannels[2] * 4);
             depthFp = depthChannels[2] - minVal;
             depthFp *= 255.0 / (maxVal - minVal);
             depthFp.convertTo(depth8, CV_8U);
             cv::applyColorMap(depth8, depth8, cv::ColormapTypes::COLORMAP_JET);
-
         }
 
         std::vector<float> disps;
@@ -397,7 +398,6 @@ int main(int argc, const char **argv) {
         cv::putText(variance8, varStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         // cv::putText(depth8, depthStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         remoteView.showMat("Disparity", disparity8);
-        remoteView.showMat("DisparityFp", disparityFp);
         remoteView.showMat("Variance", variance8);
         if (!depth8.empty()) {
             remoteView.showMat("Depth", depth8);
