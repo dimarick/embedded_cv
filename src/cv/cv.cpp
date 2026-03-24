@@ -377,26 +377,6 @@ int main(int argc, const char **argv) {
         varianceFp.convertTo(variance8, CV_8U);
         cv::applyColorMap(variance8, variance8, cv::ColormapTypes::COLORMAP_JET);
 
-        //TODO перенести на клиента
-        cv::drawMarker(disparity8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
-        cv::drawMarker(result2[0], mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
-        cv::drawMarker(result2[1], mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
-        cv::drawMarker(variance8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
-        auto disparityAtPoint = disparity.at<int16_t>(mouseDisp.y, mouseDisp.x);
-        if (!depth8.empty()) {
-            cv::drawMarker(depth8, mouseDisp, cv::Scalar(255, 128, 255), cv::MarkerTypes::MARKER_CROSS, 30, 3);
-            auto depthAtPoint = depthChannels[2].at<float>(mouseDisp.y, mouseDisp.x) * 4;
-            auto dispStr = std::format("{} пикс\n{} см", (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION, depthAtPoint);
-            cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
-        } else {
-            auto dispStr = std::format("{} пикс", (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION);
-            cv::putText(disparity8, dispStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
-        }
-        auto varianceAtPoint = variance.at<float>(mouseDisp.y, mouseDisp.x);
-        // auto depthStr = std::format("{}\n{}", depthAtPoint, (float)disparityAtPoint / ecv::DisparityEvaluator::DISPARITY_PRECISION * depthAtPoint);
-        auto varStr = std::to_string((float)varianceAtPoint);
-        cv::putText(variance8, varStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
-        // cv::putText(depth8, depthStr, mouseDisp, cv::FONT_HERSHEY_COMPLEX, 3, cv::Scalar(255, 192, 255));
         remoteView.showMat("Disparity", disparity8);
         remoteView.showMat("Variance", variance8);
         if (!depth8.empty()) {

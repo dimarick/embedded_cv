@@ -759,3 +759,8 @@ input:checked + .slider:before {
         grid-template-columns: 1fr;
     }
 }
+
+.interactive-viewport-value {
+    color: lightcyan;
+    opacity: 1;
+}
