@@ -20,6 +20,18 @@ export default class ViewportInteractiveStream extends ViewportStream {
             this.#showHoverValue(x, y);
         })
 
+        this.element.parentNode.addEventListener('click', (event) => {
+
+            if (event.target.classList.contains('interactive-viewport-value-tmp')) {
+                this.element.parentNode.removeChild(event.target);
+                return;
+            }
+
+            const x = event.offsetX;
+            const y = event.offsetY;
+            this.#addValue(x, y);
+        })
+
         canvas.addEventListener('mouseout', (event) => {
             this.#unloadHoverFragment();
         })
@@ -56,6 +68,35 @@ export default class ViewportInteractiveStream extends ViewportStream {
         if (!this.#infoImage) {
             return;
         }
+        const value = this.#getValue(x, y);
+        this.#valueElement.innerHTML = this.#formatValue(value);
+    }
+
+    #formatValue(value) {
+        return !!value ? Math.round(value * 100) / 100 + ' см' : '';
+    }
+
+    #unloadHoverFragment(x, y) {
+        this.#valueElement.innerHTML = '';
+        this.socket.sendMessage("DESTROY_CHANNEL " + super.quote(this.#infoImageName) + " 0");
+    }
+
+    #addValue(x, y) {
+        if (!this.#infoImage) {
+            return;
+        }
+        const value = this.#getValue(x, y);
+
+        const element = document.createElement('div');
+        element.className = 'interactive-viewport-value interactive-viewport-value-tmp';
+        element.style.position = 'absolute';
+        element.style.top = y + 'px';   // обычно top — это y, left — x
+        element.style.left = x + 'px';
+        element.innerHTML = `<i style="transform: translate(-50%, -50%)" class="fa fa-crosshairs" aria-hidden="true"></i>${this.#formatValue(value)}`;
+        this.element.parentNode.appendChild(element);
+    }
+
+    #getValue(x, y) {
         const rect = this.element.getBoundingClientRect();
         const patchOffsetX = this.#infoImage.header.x;
         const patchOffsetY = this.#infoImage.header.y;
@@ -68,7 +109,7 @@ export default class ViewportInteractiveStream extends ViewportStream {
         // поддерживается только RAW CV_32FC1
         if (patchY < 0 || patchY > this.#infoImage.header.h - 4 || patchX < 0 || patchX > this.#infoImage.header.w - 4) {
             this.#valueElement.innerHTML = '';
-            return;
+            return null;
         }
 
         let pixels = [];
@@ -84,12 +125,6 @@ export default class ViewportInteractiveStream extends ViewportStream {
 
         pixels.sort();
 
-        const value = pixels[Math.floor(pixels.length / 2)];
-        this.#valueElement.innerHTML = value || '';
-    }
-
-    #unloadHoverFragment(x, y) {
-        this.#valueElement.innerHTML = '';
-        this.socket.sendMessage("DESTROY_CHANNEL " + super.quote(this.#infoImageName) + " 0");
+        return pixels[Math.floor(pixels.length / 2)];
     }
 }
