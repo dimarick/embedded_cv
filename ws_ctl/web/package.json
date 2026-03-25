@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Web panel for robot control",
   "scripts": {
-    "start": "../node_modules/.bin/live-server"
+    "start": "./ws_ctl"
   },
   "dependencies": {
     "bulma": "^1.0.0",
